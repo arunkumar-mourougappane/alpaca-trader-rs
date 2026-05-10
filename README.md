@@ -222,6 +222,7 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | Orders panel 1/2/3 sub-tab key fix | Done |
 | GitHub Actions CI + security audit | Done |
 | Code coverage with cargo-llvm-cov + Codecov | Done |
+| WebSocket integration tests (auth, cancel, reconnect) | Done |
 | Status message auto-dismiss (3 s TTL) | Done |
 | WebSocket stream connection status in header | Done |
 | Order Entry: Time-in-Force (DAY/GTC) selection | Done |
