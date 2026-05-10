@@ -416,11 +416,9 @@ mod tests {
     use super::*;
     use crate::app::test_helpers::*;
     use crate::app::{Modal, OrdersSubTab, Tab};
-    use crate::config::{AlpacaConfig, AlpacaEnv};
     use crate::events::Event;
-    use crate::types::{AccountInfo, MarketClock, Order, Quote, Watchlist};
+    use crate::types::{AccountInfo, MarketClock, Order, Quote};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use std::sync::Arc;
 
     fn key(code: KeyCode) -> Event {
         Event::Input(KeyEvent::new(code, KeyModifiers::NONE))
@@ -512,7 +510,7 @@ mod tests {
         let mut app = make_test_app();
         let clock = MarketClock { is_open: true, ..Default::default() };
         update(&mut app, Event::ClockUpdated(clock));
-        assert_eq!(app.clock.as_ref().unwrap().is_open, true);
+        assert!(app.clock.as_ref().unwrap().is_open);
     }
 
     #[test]
@@ -654,6 +652,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
     fn watchlist_G_jumps_to_bottom() {
         let mut app = watchlist_app();
         update(&mut app, key(KeyCode::Char('G')));
