@@ -4,6 +4,7 @@ version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
+license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "alpaca-trader"

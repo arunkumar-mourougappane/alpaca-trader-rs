@@ -5,14 +5,14 @@
 [![Security audit](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml)
 [![codecov](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs)
 ![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
-![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 An Alpaca Markets trading toolkit for Rust — ships as both an **integratable library** and a **standalone TUI trading app**.
 
 - **Library** (`alpaca_trader_rs` crate): typed async REST client, shared domain types, and WebSocket streaming primitives — embed it in your own Rust application.
 - **App** (`alpaca-trader` binary): a full interactive terminal dashboard built on the library, with live account data, positions, orders, watchlist management, and order entry.
 
-> **Proprietary software.** All use beyond viewing the source requires explicit written permission from the author. See [LICENSE.md](LICENSE.md) and [docs/licensing.md](docs/licensing.md).
+
 
 ---
 
@@ -181,7 +181,8 @@ alpaca-trader-rs/
 ├── .env.example            # Credential template
 ├── run.sh                  # Run script (--paper / --live)
 ├── Cargo.toml
-├── LICENSE.md
+├── LICENSE-MIT
+├── LICENSE-APACHE
 └── README.md
 ```
 
@@ -246,18 +247,17 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | [docs/ui-mockups.md](docs/ui-mockups.md) | ASCII mockups and full keyboard/mouse interaction spec |
 | [docs/api-research.md](docs/api-research.md) | REST endpoint shapes and live test results |
 | [docs/testing.md](docs/testing.md) | Testing strategy: mock patterns, crate rationale, full test case inventory |
-| [docs/licensing.md](docs/licensing.md) | License types, fees, and how to request a Collaboration Agreement |
+| [docs/licensing.md](docs/licensing.md) | License overview and contribution terms |
 
 ---
 
 ## Licensing
 
-This project is proprietary software. Source code is available for evaluation only.
+Licensed under either of
 
-- **Using the library or app** requires Explicit Permission from the author.
-- **Commercial use** requires a paid Collaboration Agreement.
-- **Forking** (public or private) requires Explicit Permission and may incur a fee.
+- [Apache License, Version 2.0](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0
+- [MIT license](LICENSE-MIT) or http://opensource.org/licenses/MIT
 
-To request a license: **arun.mylegend1990@gmail.com**
+at your option.
 
-Full terms: [LICENSE.md](LICENSE.md)
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
