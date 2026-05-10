@@ -107,10 +107,7 @@ async fn key_with_trailing_newline_returns_err_not_panic() {
 
 #[tokio::test]
 async fn secret_with_trailing_newline_returns_err_not_panic() {
-    let client = AlpacaClient::new(bad_secret_config(
-        "http://localhost".into(),
-        "mysecret\n",
-    ));
+    let client = AlpacaClient::new(bad_secret_config("http://localhost".into(), "mysecret\n"));
     let result = client.get_account().await;
     assert!(
         result.is_err(),
