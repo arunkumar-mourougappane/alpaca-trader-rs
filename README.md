@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml)
+[![codecov](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs)
 ![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
 ![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)
 
@@ -220,6 +221,7 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | Unit + integration tests (178 tests) | Done |
 | Orders panel 1/2/3 sub-tab key fix | Done |
 | GitHub Actions CI + security audit | Done |
+| Code coverage with cargo-llvm-cov + Codecov | Done |
 | Status message auto-dismiss (3 s TTL) | Done |
 | WebSocket stream connection status in header | Done |
 | Order Entry: Time-in-Force (DAY/GTC) selection | Done |

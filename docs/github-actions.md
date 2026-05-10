@@ -161,6 +161,27 @@ updates:
 
 LLVM source-based instrumentation. More accurate than tarpaulin and cross-platform.
 
+> **Active in this project:** The `coverage` job in `.github/workflows/ci.yml` uses
+> `cargo-llvm-cov` + Codecov on every push/PR. Results are reported to Codecov and
+> displayed via the badge in `README.md`.
+
+```yaml
+coverage:
+  name: Coverage
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: taiki-e/install-action@cargo-llvm-cov
+    - uses: Swatinem/rust-cache@v2
+    - run: cargo llvm-cov --all-features --lcov --output-path coverage.lcov
+    - uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.lcov
+```
+
+Full reference with additional options:
+
 ```yaml
 - uses: taiki-e/install-action@cargo-llvm-cov
 
