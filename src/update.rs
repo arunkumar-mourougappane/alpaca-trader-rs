@@ -846,17 +846,28 @@ mod tests {
     fn mouse_click_orders_subtab() {
         let (mut app, _rx) = app_with_capacity(4);
         app.active_tab = Tab::Orders;
-        // Subtab bar: 60 wide → each slot ~20 cols (Open / Filled / Cancelled)
-        app.hit_areas.orders_subtab_bar = Some(rect(0, 5, 60, 1));
+        // Simulate per-subtab rects as rendered from actual label widths (0 orders each):
+        //   "1:Open (0)"      → len=10 → width=12, x=0
+        //   "2:Filled (0)"    → len=12 → width=14, x=13 (12 + 1 divider)
+        //   "3:Cancelled (0)" → len=15 → width=17, x=28 (13 + 14 + 1 divider)
+        app.hit_areas.orders_subtab_rects = vec![
+            rect(0, 5, 12, 1),  // Open
+            rect(13, 5, 14, 1), // Filled
+            rect(28, 5, 17, 1), // Cancelled
+        ];
         assert_eq!(app.orders_subtab, OrdersSubTab::Open);
 
-        // Click second subtab (col 20 → Filled)
-        update(&mut app, mouse_click(20, 5));
+        // Click within Filled subtab rect
+        update(&mut app, mouse_click(13, 5));
         assert_eq!(app.orders_subtab, OrdersSubTab::Filled);
 
-        // Click third subtab (col 40 → Cancelled)
-        update(&mut app, mouse_click(40, 5));
+        // Click within Cancelled subtab rect
+        update(&mut app, mouse_click(28, 5));
         assert_eq!(app.orders_subtab, OrdersSubTab::Cancelled);
+
+        // Click back within Open subtab rect
+        update(&mut app, mouse_click(0, 5));
+        assert_eq!(app.orders_subtab, OrdersSubTab::Open);
     }
 
     #[test]

@@ -14,12 +14,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(area);
 
-    app.hit_areas.orders_subtab_bar = Some(chunks[0]);
+    app.hit_areas.orders_subtab_rects.clear();
     render_subtabs(frame, chunks[0], app);
     render_table(frame, chunks[1], app);
 }
 
-fn render_subtabs(frame: &mut Frame, area: Rect, app: &App) {
+fn render_subtabs(frame: &mut Frame, area: Rect, app: &mut App) {
     let open_count = app
         .orders
         .iter()
@@ -47,6 +47,26 @@ fn render_subtabs(frame: &mut Frame, area: Rect, app: &App) {
         format!("2:Filled ({})", filled_count),
         format!("3:Cancelled ({})", cancelled_count),
     ];
+
+    // Compute exact per-subtab rects from actual label widths so mouse hit-testing
+    // maps clicks to the correct subtab regardless of dynamic order counts.
+    // ratatui Tabs renders each title as ` <label> ` (label.len()+2) with `|` dividers.
+    let mut x = area.x;
+    for (i, title) in titles.iter().enumerate() {
+        let w = title.len() as u16 + 2;
+        app.hit_areas
+            .orders_subtab_rects
+            .push(ratatui::layout::Rect {
+                x,
+                y: area.y,
+                width: w,
+                height: 1,
+            });
+        x += w;
+        if i + 1 < titles.len() {
+            x += 1; // `|` divider
+        }
+    }
 
     let selected = match app.orders_subtab {
         OrdersSubTab::Open => 0,

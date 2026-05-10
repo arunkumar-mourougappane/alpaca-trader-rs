@@ -60,17 +60,17 @@ pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
     }
 
     // ── Orders sub-tab bar ───────────────────────────────────────────────────
-    if let Some(subtab_rect) = app.hit_areas.orders_subtab_bar {
-        if hit(subtab_rect, col, row) && app.active_tab == Tab::Orders && subtab_rect.width >= 3 {
-            let tab_w = subtab_rect.width / 3;
-            let idx = ((col - subtab_rect.x) / tab_w).min(2);
-            app.orders_subtab = match idx {
-                0 => OrdersSubTab::Open,
-                1 => OrdersSubTab::Filled,
-                _ => OrdersSubTab::Cancelled,
-            };
-            app.orders_state.select(Some(0));
-            return;
+    if app.active_tab == Tab::Orders && !app.hit_areas.orders_subtab_rects.is_empty() {
+        for (idx, rect) in app.hit_areas.orders_subtab_rects.clone().iter().enumerate() {
+            if hit(*rect, col, row) {
+                app.orders_subtab = match idx {
+                    0 => OrdersSubTab::Open,
+                    1 => OrdersSubTab::Filled,
+                    _ => OrdersSubTab::Cancelled,
+                };
+                app.orders_state.select(Some(0));
+                return;
+            }
         }
     }
 

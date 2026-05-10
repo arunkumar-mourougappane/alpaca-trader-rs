@@ -202,13 +202,14 @@ pub enum Modal {
 /// Used by the mouse event handler to map click coordinates to actions.
 #[derive(Default, Clone, Debug)]
 pub struct HitAreas {
-    /// The tab bar row. Divided into 4 equal segments to identify which tab was clicked.
+    /// The tab bar row. Each tab's exact rect is computed from label widths at hit-test time.
     pub tab_bar: Rect,
     /// Y coordinate of the first data row in the active list panel.
     /// Accounts for block border + header rows. `0` means no active list.
     pub list_data_start_y: u16,
-    /// Orders panel sub-tab bar. Divided into 3 equal segments (Open/Filled/Cancelled).
-    pub orders_subtab_bar: Option<Rect>,
+    /// Orders panel sub-tab rects, one per sub-tab (Open / Filled / Cancelled), computed from
+    /// the actual rendered label widths during each frame so dynamic counts are accounted for.
+    pub orders_subtab_rects: Vec<Rect>,
     /// OrderEntry modal: clickable field rows keyed by [`OrderField`].
     pub modal_fields: Vec<(OrderField, Rect)>,
     /// OrderEntry modal: submit button row.
