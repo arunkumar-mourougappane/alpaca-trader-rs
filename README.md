@@ -1,6 +1,7 @@
 # alpaca-trader-rs
 
 [![CI](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/ci.yml)
+[![Release](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/release.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/release.yml)
 [![Security audit](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml)
 [![codecov](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs)
 ![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
@@ -223,6 +224,7 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | GitHub Actions CI + security audit | Done |
 | Code coverage with cargo-llvm-cov + Codecov | Done |
 | WebSocket integration tests (auth, cancel, reconnect) | Done |
+| Release workflow — pre-compiled binaries on tag push | Done |
 | Status message auto-dismiss (3 s TTL) | Done |
 | WebSocket stream connection status in header | Done |
 | Order Entry: Time-in-Force (DAY/GTC) selection | Done |
