@@ -1,8 +1,27 @@
 use crossterm::event::{KeyCode, KeyModifiers};
+use tokio::sync::mpsc::error::TrySendError;
 
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField, OrdersSubTab, Tab};
 use crate::commands::Command;
 use crate::events::Event;
+
+/// Send a command on the command channel and set the appropriate status message.
+///
+/// - Success → `success_msg`
+/// - Channel full → "System busy — please retry"
+/// - Channel closed → "Command handler stopped — restart app" (+ error log)
+fn send_command(app: &mut App, cmd: Command, success_msg: impl Into<String>) {
+    match app.command_tx.try_send(cmd) {
+        Ok(()) => app.status_msg = success_msg.into(),
+        Err(TrySendError::Full(_)) => {
+            app.status_msg = "System busy — please retry".into();
+        }
+        Err(TrySendError::Closed(_)) => {
+            tracing::error!("command channel closed; command handler has stopped");
+            app.status_msg = "Command handler stopped — restart app".into();
+        }
+    }
+}
 
 pub fn update(app: &mut App, event: Event) {
     match event {
@@ -290,28 +309,31 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 },
                 KeyCode::Enter => {
                     if state.focused_field == OrderField::Submit {
-                        let _ = app.command_tx.try_send(Command::SubmitOrder {
-                            symbol: state.symbol.clone(),
-                            side: if state.side_buy { "buy" } else { "sell" }.into(),
-                            order_type: if state.market_order {
-                                "market"
-                            } else {
-                                "limit"
-                            }
-                            .into(),
-                            qty: if state.qty_input.is_empty() {
-                                None
-                            } else {
-                                Some(state.qty_input.clone())
+                        send_command(
+                            app,
+                            Command::SubmitOrder {
+                                symbol: state.symbol.clone(),
+                                side: if state.side_buy { "buy" } else { "sell" }.into(),
+                                order_type: if state.market_order {
+                                    "market"
+                                } else {
+                                    "limit"
+                                }
+                                .into(),
+                                qty: if state.qty_input.is_empty() {
+                                    None
+                                } else {
+                                    Some(state.qty_input.clone())
+                                },
+                                price: if state.market_order || state.price_input.is_empty() {
+                                    None
+                                } else {
+                                    Some(state.price_input.clone())
+                                },
+                                time_in_force: "day".into(),
                             },
-                            price: if state.market_order || state.price_input.is_empty() {
-                                None
-                            } else {
-                                Some(state.price_input.clone())
-                            },
-                            time_in_force: "day".into(),
-                        });
-                        app.status_msg = "Submitting order…".into();
+                            "Submitting order…",
+                        );
                         app.modal = None;
                         return;
                     } else {
@@ -335,18 +357,24 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 if confirmed {
                     match &action {
                         ConfirmAction::CancelOrder(id) => {
-                            let _ = app.command_tx.try_send(Command::CancelOrder(id.clone()));
-                            app.status_msg = format!("Cancelling {}…", &id[..id.len().min(8)]);
+                            send_command(
+                                app,
+                                Command::CancelOrder(id.clone()),
+                                format!("Cancelling {}…", &id[..id.len().min(8)]),
+                            );
                         }
                         ConfirmAction::RemoveFromWatchlist {
                             watchlist_id,
                             symbol,
                         } => {
-                            let _ = app.command_tx.try_send(Command::RemoveFromWatchlist {
-                                watchlist_id: watchlist_id.clone(),
-                                symbol: symbol.clone(),
-                            });
-                            app.status_msg = format!("Removing {}…", symbol);
+                            send_command(
+                                app,
+                                Command::RemoveFromWatchlist {
+                                    watchlist_id: watchlist_id.clone(),
+                                    symbol: symbol.clone(),
+                                },
+                                format!("Removing {}…", symbol),
+                            );
                         }
                     }
                     app.modal = None;
@@ -392,11 +420,14 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
             KeyCode::Enter => {
                 if !input.is_empty() {
-                    let _ = app.command_tx.try_send(Command::AddToWatchlist {
-                        watchlist_id: watchlist_id.clone(),
-                        symbol: input.clone(),
-                    });
-                    app.status_msg = format!("Adding {}…", input);
+                    send_command(
+                        app,
+                        Command::AddToWatchlist {
+                            watchlist_id: watchlist_id.clone(),
+                            symbol: input.clone(),
+                        },
+                        format!("Adding {}…", input),
+                    );
                 }
                 None
             }
@@ -1034,5 +1065,67 @@ mod tests {
         );
         let symbols = symbol_rx.borrow().clone();
         assert_eq!(symbols, vec!["AAPL", "TSLA", "NVDA"]);
+    }
+
+    // ── send_command error path: channel full / closed (regression for #7) ────
+
+    fn app_with_capacity(cap: usize) -> (App, tokio::sync::mpsc::Receiver<Command>) {
+        use crate::config::{AlpacaConfig, AlpacaEnv};
+        let (command_tx, command_rx) = tokio::sync::mpsc::channel(cap);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let app = App::new(
+            AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: AlpacaEnv::Paper,
+            },
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            command_tx,
+            symbol_tx,
+        );
+        (app, command_rx)
+    }
+
+    #[test]
+    fn channel_full_sets_busy_status_msg() {
+        // Channel capacity 1, pre-fill it so the next try_send hits Full.
+        let (mut app, _rx) = app_with_capacity(1);
+        // Fill the channel
+        let _ = app
+            .command_tx
+            .try_send(Command::CancelOrder("dummy".into()));
+
+        // Now trigger another command via update() — should hit TrySendError::Full
+        use crate::app::{OrderEntryState, OrderField};
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Submit;
+        state.qty_input = "1".into();
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Enter));
+
+        assert_eq!(
+            app.status_msg, "System busy — please retry",
+            "full channel should show busy message"
+        );
+    }
+
+    #[test]
+    fn channel_closed_sets_stopped_status_msg() {
+        // Drop the receiver to close the channel.
+        let (mut app, rx) = app_with_capacity(8);
+        drop(rx);
+
+        use crate::app::{OrderEntryState, OrderField};
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Submit;
+        state.qty_input = "1".into();
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Enter));
+
+        assert_eq!(
+            app.status_msg, "Command handler stopped — restart app",
+            "closed channel should show stopped message"
+        );
     }
 }
