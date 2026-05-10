@@ -28,3 +28,8 @@ tokio-util        = { version = "0.7",  features = ["rt"] }
 # App
 ratatui    = "0.30"
 crossterm  = { version = "0.28", features = ["event-stream"] }
+
+[dev-dependencies]
+wiremock   = "0.6"
+tokio-test = "0.4"
+temp-env   = "0.3"
