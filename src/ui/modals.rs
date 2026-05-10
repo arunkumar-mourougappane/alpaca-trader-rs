@@ -9,7 +9,7 @@ use ratatui::{
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField};
 use crate::ui::{popup_area, theme};
 
-pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
     match modal {
         Modal::Help => render_help(frame, area),
         Modal::OrderEntry(state) => render_order_entry(frame, area, state, app),
@@ -18,7 +18,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &App) {
             message,
             action,
             confirmed,
-        } => render_confirm(frame, area, message, action, *confirmed),
+        } => render_confirm(frame, area, message, action, *confirmed, app),
         Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input),
     }
 }
@@ -101,7 +101,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(footer, footer_area);
 }
 
-fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, app: &App) {
+fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, app: &mut App) {
     let popup = popup_area(area, 45, 60);
     frame.render_widget(Clear, popup);
 
@@ -131,6 +131,16 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Constraint::Length(1), // hint
         ])
         .split(inner);
+
+    // Populate hit areas for mouse click handling
+    app.hit_areas.modal_fields = vec![
+        (OrderField::Symbol, chunks[0]),
+        (OrderField::Side, chunks[2]),
+        (OrderField::OrderType, chunks[3]),
+        (OrderField::Qty, chunks[4]),
+        (OrderField::Price, chunks[5]),
+    ];
+    app.hit_areas.modal_submit = Some(chunks[10]);
 
     let focused = |field: &OrderField| *field == state.focused_field;
 
@@ -374,6 +384,7 @@ fn render_confirm(
     message: &str,
     _action: &ConfirmAction,
     confirmed: bool,
+    app: &mut App,
 ) {
     let popup = popup_area(area, 40, 25);
     frame.render_widget(Clear, popup);
@@ -395,6 +406,9 @@ fn render_confirm(
             Constraint::Length(1),
         ])
         .split(inner);
+
+    // Store button row for mouse hit-testing (left = Yes, right = No)
+    app.hit_areas.modal_confirm_buttons = Some(chunks[2]);
 
     frame.render_widget(
         Paragraph::new(format!("  {}", message)).style(theme::style_bold()),
