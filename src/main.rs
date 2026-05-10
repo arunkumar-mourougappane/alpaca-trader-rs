@@ -33,6 +33,7 @@ mod types {
 
 mod app;
 mod handlers;
+mod input;
 mod ui;
 mod update;
 

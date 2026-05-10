@@ -153,7 +153,14 @@ alpaca-trader-rs/
 │   ├── types.rs            # Shared domain types (serde-deserializable)
 │   ├── events.rs           # Event enum
 │   ├── app.rs              # App state — TEA Model          [app-only]
-│   ├── update.rs           # update(state, event)           [app-only]
+│   ├── update.rs           # update(state, event) + key routing  [app-only]
+│   ├── input/              # Per-panel keyboard input handlers    [app-only]
+│   │   ├── mod.rs          # send_command() + pub re-exports
+│   │   ├── watchlist.rs    # handle_watchlist_key()
+│   │   ├── positions.rs    # handle_positions_key()
+│   │   ├── orders.rs       # handle_orders_key()
+│   │   ├── modal.rs        # handle_modal_key()
+│   │   └── search.rs       # handle_search_key()
 │   ├── handlers/
 │   │   ├── input.rs        # crossterm EventStream → Event  [app-only]
 │   │   └── rest.rs         # Periodic REST polling task     [app-only]
