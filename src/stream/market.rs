@@ -126,6 +126,19 @@ async fn run_once(
             _ = symbol_rx.changed() => {
                 let new_symbols = symbol_rx.borrow().clone();
                 if new_symbols != prev_symbols {
+                    // Unsubscribe symbols that were removed from the watchlist.
+                    // The Alpaca IEX protocol merges subscriptions — a new
+                    // subscribe does NOT replace the existing set, so an
+                    // explicit unsubscribe is required for removed symbols.
+                    let removed: Vec<String> = prev_symbols
+                        .iter()
+                        .filter(|s| !new_symbols.contains(s))
+                        .cloned()
+                        .collect();
+                    if !removed.is_empty() {
+                        unsubscribe(&mut write, &removed).await?;
+                        info!(count = removed.len(), "unsubscribed removed symbols");
+                    }
                     subscribe(&mut write, &new_symbols).await?;
                     info!(count = new_symbols.len(), "updated market quote subscriptions");
                     prev_symbols = new_symbols;
@@ -162,6 +175,20 @@ async fn subscribe(
         .send(Message::Text(sub.to_string().into()))
         .await
         .map_err(|e| anyhow::anyhow!("subscribe send failed: {e}"))
+}
+
+async fn unsubscribe(
+    write: &mut (impl SinkExt<Message, Error = impl std::fmt::Display> + Unpin),
+    symbols: &[String],
+) -> anyhow::Result<()> {
+    let unsub = json!({
+        "action": "unsubscribe",
+        "quotes": symbols
+    });
+    write
+        .send(Message::Text(unsub.to_string().into()))
+        .await
+        .map_err(|e| anyhow::anyhow!("unsubscribe send failed: {e}"))
 }
 
 #[cfg(test)]
@@ -474,5 +501,147 @@ mod integration {
             "should emit StreamDisconnected on first close"
         );
         assert!(saw_quote, "should emit MarketQuote after reconnect");
+    }
+
+    /// Verifies that when a symbol is removed from the watchlist, an
+    /// `{"action":"unsubscribe","quotes":[...]}` message is sent to the server
+    /// before the subsequent subscribe message.
+    #[tokio::test]
+    async fn market_run_once_sends_unsubscribe_on_symbol_removal() {
+        let (listener, url) = bind_local().await;
+
+        // Channel to capture the raw WebSocket frames the client sends
+        let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<String>(16);
+
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(tcp).await.unwrap();
+
+            // Consume auth
+            let _ = ws.next().await;
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"authenticated"}]"#.into(),
+            ))
+            .await
+            .unwrap();
+
+            // Record every client-sent text frame
+            while let Some(Ok(Message::Text(t))) = ws.next().await {
+                let _ = msg_tx.send(t.to_string()).await;
+            }
+        });
+
+        let (tx, _rx) = mpsc::channel(16);
+        let cancel = CancellationToken::new();
+        let cancel2 = cancel.clone();
+
+        // Start with AAPL + TSLA
+        let (sym_tx, mut sym_rx) = watch::channel(vec!["AAPL".to_string(), "TSLA".to_string()]);
+
+        let url2 = url.clone();
+        let config = test_config();
+        tokio::spawn(async move {
+            run_once(&tx, &cancel2, &config, &mut sym_rx, &url2)
+                .await
+                .ok();
+        });
+
+        // Wait for the initial subscribe to be processed
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Remove TSLA — only AAPL remains
+        sym_tx.send(vec!["AAPL".to_string()]).unwrap();
+
+        // Collect messages for a moment then cancel
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        cancel.cancel();
+
+        // Gather all captured frames
+        let mut frames = vec![];
+        while let Ok(m) = msg_rx.try_recv() {
+            frames.push(m);
+        }
+
+        // Verify an unsubscribe for TSLA was sent
+        let unsub_frame = frames
+            .iter()
+            .find(|f| f.contains("unsubscribe") && f.contains("TSLA"));
+        assert!(
+            unsub_frame.is_some(),
+            "expected an unsubscribe frame for TSLA; got: {frames:?}"
+        );
+
+        // Verify the unsubscribe came before the next subscribe
+        let unsub_pos = frames
+            .iter()
+            .position(|f| f.contains("unsubscribe") && f.contains("TSLA"))
+            .unwrap();
+        let resub_pos = frames
+            .iter()
+            .skip(unsub_pos + 1)
+            .position(|f| f.contains("subscribe") && f.contains("AAPL"))
+            .map(|i| i + unsub_pos + 1);
+        assert!(
+            resub_pos.is_some(),
+            "expected a re-subscribe for AAPL after the unsubscribe; got: {frames:?}"
+        );
+    }
+
+    /// Verifies that adding a new symbol (without removing any) does NOT
+    /// send an unsubscribe message — only a subscribe.
+    #[tokio::test]
+    async fn market_run_once_no_unsubscribe_on_symbol_addition() {
+        let (listener, url) = bind_local().await;
+
+        let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<String>(16);
+
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(tcp).await.unwrap();
+            let _ = ws.next().await;
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"authenticated"}]"#.into(),
+            ))
+            .await
+            .unwrap();
+            while let Some(Ok(Message::Text(t))) = ws.next().await {
+                let _ = msg_tx.send(t.to_string()).await;
+            }
+        });
+
+        let (tx, _rx) = mpsc::channel(16);
+        let cancel = CancellationToken::new();
+        let cancel2 = cancel.clone();
+
+        let (sym_tx, mut sym_rx) = watch::channel(vec!["AAPL".to_string()]);
+
+        let url2 = url.clone();
+        let config = test_config();
+        tokio::spawn(async move {
+            run_once(&tx, &cancel2, &config, &mut sym_rx, &url2)
+                .await
+                .ok();
+        });
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+
+        // Add TSLA — no removal
+        sym_tx
+            .send(vec!["AAPL".to_string(), "TSLA".to_string()])
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        cancel.cancel();
+
+        let mut frames = vec![];
+        while let Ok(m) = msg_rx.try_recv() {
+            frames.push(m);
+        }
+
+        let has_unsub = frames.iter().any(|f| f.contains("unsubscribe"));
+        assert!(
+            !has_unsub,
+            "no unsubscribe should be sent when only adding symbols; got: {frames:?}"
+        );
     }
 }
