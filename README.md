@@ -1,5 +1,10 @@
 # alpaca-trader-rs
 
+[![CI](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/ci.yml)
+[![Security audit](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/security.yml)
+![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
+![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)
+
 An Alpaca Markets trading toolkit for Rust — ships as both an **integratable library** and a **standalone TUI trading app**.
 
 - **Library** (`alpaca_trader_rs` crate): typed async REST client, shared domain types, and WebSocket streaming primitives — embed it in your own Rust application.
@@ -207,6 +212,7 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | Test strategy documented | Done |
 | Unit + integration tests (101 tests) | Done |
 | Orders panel 1/2/3 sub-tab key fix | Done |
+| GitHub Actions CI + security audit | Done |
 | WebSocket market data streaming | Phase 2 |
 | WebSocket account/trade stream | Phase 2 |
 | Live order submission | Phase 2 |

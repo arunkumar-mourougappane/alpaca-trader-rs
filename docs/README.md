@@ -73,6 +73,7 @@ The TUI header will show **[PAPER]** to confirm you are in simulation mode.
 | [api-research.md](api-research.md) | Live API test results: watchlist endpoints, response shapes, auth notes |
 | [ui-mockups.md](ui-mockups.md) | ASCII mockups for all panels and modals, keyboard/mouse interaction spec, ratatui widget mapping |
 | [testing.md](testing.md) | Testing strategy: mock patterns, dev-dependency rationale, full test case inventory per module |
+| [github-actions.md](github-actions.md) | GitHub Actions reference: CI, security, coverage, releases, matrix builds, caching |
 | [licensing.md](licensing.md) | License types, fee structure, and how to request a Collaboration Agreement |
 
 ---
