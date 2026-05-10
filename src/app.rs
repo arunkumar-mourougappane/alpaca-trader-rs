@@ -1,6 +1,64 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use super::*;
+    use crate::config::{AlpacaConfig, AlpacaEnv};
+    use crate::types::{Asset, Order, Watchlist};
+
+    pub fn make_test_app() -> App {
+        App::new(
+            AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: AlpacaEnv::Paper,
+            },
+            Arc::new(tokio::sync::Notify::new()),
+        )
+    }
+
+    pub fn make_order(id: &str, status: &str) -> Order {
+        Order {
+            id: id.into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("10".into()),
+            notional: None,
+            order_type: "limit".into(),
+            limit_price: None,
+            status: status.into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            time_in_force: "day".into(),
+        }
+    }
+
+    pub fn make_asset(symbol: &str) -> Asset {
+        Asset {
+            id: format!("id-{symbol}"),
+            symbol: symbol.into(),
+            name: format!("{symbol} Corp"),
+            exchange: "NASDAQ".into(),
+            asset_class: "us_equity".into(),
+            tradable: true,
+            shortable: true,
+            fractionable: true,
+            easy_to_borrow: true,
+        }
+    }
+
+    pub fn make_watchlist(symbols: &[&str]) -> Watchlist {
+        Watchlist {
+            id: "11111111-1111-1111-1111-111111111111".into(),
+            name: "Test".into(),
+            assets: symbols.iter().map(|s| make_asset(s)).collect(),
+        }
+    }
+}
+
 use ratatui::widgets::TableState;
 use tokio::sync::Notify;
 
@@ -246,5 +304,187 @@ impl App {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::test_helpers::*;
+    use crate::types::AccountInfo;
+
+    // ── Tab navigation ────────────────────────────────────────────────────────
+
+    #[test]
+    fn tab_next_wraps_full_cycle() {
+        assert_eq!(Tab::Account.next(), Tab::Watchlist);
+        assert_eq!(Tab::Watchlist.next(), Tab::Positions);
+        assert_eq!(Tab::Positions.next(), Tab::Orders);
+        assert_eq!(Tab::Orders.next(), Tab::Account);
+    }
+
+    #[test]
+    fn tab_prev_wraps_full_cycle() {
+        assert_eq!(Tab::Account.prev(), Tab::Orders);
+        assert_eq!(Tab::Orders.prev(), Tab::Positions);
+        assert_eq!(Tab::Positions.prev(), Tab::Watchlist);
+        assert_eq!(Tab::Watchlist.prev(), Tab::Account);
+    }
+
+    #[test]
+    fn tab_from_index_all_variants() {
+        assert_eq!(Tab::from_index(0), Tab::Account);
+        assert_eq!(Tab::from_index(1), Tab::Watchlist);
+        assert_eq!(Tab::from_index(2), Tab::Positions);
+        assert_eq!(Tab::from_index(3), Tab::Orders);
+        assert_eq!(Tab::from_index(4), Tab::Orders); // out-of-range → Orders
+    }
+
+    #[test]
+    fn tab_index_all_variants() {
+        assert_eq!(Tab::Account.index(), 0);
+        assert_eq!(Tab::Watchlist.index(), 1);
+        assert_eq!(Tab::Positions.index(), 2);
+        assert_eq!(Tab::Orders.index(), 3);
+    }
+
+    // ── OrderField navigation ─────────────────────────────────────────────────
+
+    #[test]
+    fn order_field_next_full_cycle() {
+        assert_eq!(OrderField::Symbol.next(), OrderField::Side);
+        assert_eq!(OrderField::Side.next(), OrderField::OrderType);
+        assert_eq!(OrderField::OrderType.next(), OrderField::Qty);
+        assert_eq!(OrderField::Qty.next(), OrderField::Price);
+        assert_eq!(OrderField::Price.next(), OrderField::Submit);
+        assert_eq!(OrderField::Submit.next(), OrderField::Symbol);
+    }
+
+    #[test]
+    fn order_field_prev_full_cycle() {
+        assert_eq!(OrderField::Symbol.prev(), OrderField::Submit);
+        assert_eq!(OrderField::Submit.prev(), OrderField::Price);
+        assert_eq!(OrderField::Price.prev(), OrderField::Qty);
+        assert_eq!(OrderField::Qty.prev(), OrderField::OrderType);
+        assert_eq!(OrderField::OrderType.prev(), OrderField::Side);
+        assert_eq!(OrderField::Side.prev(), OrderField::Symbol);
+    }
+
+    // ── filtered_orders ───────────────────────────────────────────────────────
+
+    #[test]
+    fn filtered_orders_open_includes_correct_statuses() {
+        let mut app = make_test_app();
+        app.orders = vec![
+            make_order("1", "accepted"),
+            make_order("2", "pending_new"),
+            make_order("3", "partially_filled"),
+            make_order("4", "held"),
+            make_order("5", "new"),
+            make_order("6", "filled"),
+            make_order("7", "canceled"),
+        ];
+        app.orders_subtab = OrdersSubTab::Open;
+        let open = app.filtered_orders();
+        assert_eq!(open.len(), 5);
+        assert!(!open.iter().any(|o| o.status == "filled" || o.status == "canceled"));
+    }
+
+    #[test]
+    fn filtered_orders_filled_only() {
+        let mut app = make_test_app();
+        app.orders = vec![
+            make_order("1", "filled"),
+            make_order("2", "accepted"),
+            make_order("3", "filled"),
+        ];
+        app.orders_subtab = OrdersSubTab::Filled;
+        let filled = app.filtered_orders();
+        assert_eq!(filled.len(), 2);
+        assert!(filled.iter().all(|o| o.status == "filled"));
+    }
+
+    #[test]
+    fn filtered_orders_cancelled_includes_all_terminal_statuses() {
+        let mut app = make_test_app();
+        app.orders = vec![
+            make_order("1", "canceled"),
+            make_order("2", "expired"),
+            make_order("3", "rejected"),
+            make_order("4", "replaced"),
+            make_order("5", "filled"),
+        ];
+        app.orders_subtab = OrdersSubTab::Cancelled;
+        let cancelled = app.filtered_orders();
+        assert_eq!(cancelled.len(), 4);
+    }
+
+    #[test]
+    fn filtered_orders_empty_returns_empty() {
+        let mut app = make_test_app();
+        app.orders_subtab = OrdersSubTab::Open;
+        assert!(app.filtered_orders().is_empty());
+    }
+
+    // ── push_equity ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn push_equity_parses_and_appends_cents() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo { equity: "1000.50".into(), ..Default::default() });
+        app.push_equity();
+        assert_eq!(app.equity_history, vec![100050]);
+    }
+
+    #[test]
+    fn push_equity_caps_at_120_entries() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo { equity: "1".into(), ..Default::default() });
+        for _ in 0..121 {
+            app.push_equity();
+        }
+        assert_eq!(app.equity_history.len(), 120);
+    }
+
+    #[test]
+    fn push_equity_ignores_non_numeric_string() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo { equity: "N/A".into(), ..Default::default() });
+        app.push_equity();
+        assert!(app.equity_history.is_empty());
+    }
+
+    #[test]
+    fn push_equity_no_account_is_noop() {
+        let mut app = make_test_app();
+        app.push_equity();
+        assert!(app.equity_history.is_empty());
+    }
+
+    // ── selected_watchlist_symbol ─────────────────────────────────────────────
+
+    #[test]
+    fn selected_watchlist_symbol_returns_at_index() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL", "TSLA", "NVDA"]));
+        app.watchlist_state.select(Some(1));
+        assert_eq!(app.selected_watchlist_symbol(), Some("TSLA".into()));
+    }
+
+    #[test]
+    fn selected_watchlist_symbol_none_when_no_selection() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        assert_eq!(app.selected_watchlist_symbol(), None);
+    }
+
+    #[test]
+    fn selected_watchlist_symbol_with_search_filter() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL", "TSLA", "AMD"]));
+        app.searching = true;
+        app.search_query = "ts".into();
+        app.watchlist_state.select(Some(0)); // index 0 of the *filtered* list = TSLA
+        assert_eq!(app.selected_watchlist_symbol(), Some("TSLA".into()));
     }
 }
