@@ -219,6 +219,10 @@ Linux-only but simpler setup. Suitable for existing projects already using it.
 
 Builds and uploads pre-compiled binaries to a GitHub Release across multiple targets.
 
+> **Active in this project:** `.github/workflows/release.yml` triggers on `v*` tags and
+> publishes binaries for Linux (`x86_64`), macOS Intel, and macOS Apple Silicon.
+> Windows (`x86_64-pc-windows-msvc`) will be added once Windows TUI compatibility is verified.
+
 ```yaml
 name: Release
 on:
@@ -620,11 +624,10 @@ jobs:
             os: macos-latest
           - target: aarch64-apple-darwin
             os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
+          # Add x86_64-pc-windows-msvc once Windows TUI compatibility is verified
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
