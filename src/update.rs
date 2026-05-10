@@ -3,14 +3,14 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use crate::app::{App, Modal, Tab};
 use crate::events::Event;
 use crate::input::{
-    handle_modal_key, handle_orders_key, handle_positions_key, handle_search_key,
+    handle_modal_key, handle_mouse, handle_orders_key, handle_positions_key, handle_search_key,
     handle_watchlist_key,
 };
 
 pub fn update(app: &mut App, event: Event) {
     match event {
         Event::Input(key) => handle_key(app, key),
-        Event::Mouse(_) => {}
+        Event::Mouse(m) => handle_mouse(app, m),
         Event::Resize(_, _) => {}
 
         Event::AccountUpdated(a) => {
@@ -108,7 +108,10 @@ mod tests {
     use crate::commands::Command;
     use crate::events::Event;
     use crate::types::{AccountInfo, MarketClock, Order, Quote};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+    use ratatui::layout::Rect;
 
     fn key(code: KeyCode) -> Event {
         Event::Input(KeyEvent::new(code, KeyModifiers::NONE))
@@ -116,6 +119,33 @@ mod tests {
 
     fn ctrl(code: KeyCode) -> Event {
         Event::Input(KeyEvent::new(code, KeyModifiers::CONTROL))
+    }
+
+    fn mouse_click(col: u16, row: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn mouse_move(col: u16, row: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn rect(x: u16, y: u16, w: u16, h: u16) -> Rect {
+        Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        }
     }
 
     // ── Data events ───────────────────────────────────────────────────────────
@@ -752,6 +782,82 @@ mod tests {
             app.status_msg, "System busy — please retry",
             "full channel should show busy message"
         );
+    }
+
+    #[test]
+    fn mouse_click_tab_bar_switches_tab() {
+        let (mut app, _rx) = app_with_capacity(4);
+        // Tab bar: full width 80, 4 tabs of 20 cols each, at row 2
+        // Tabs: 0=Account, 1=Watchlist, 2=Positions, 3=Orders
+        app.hit_areas.tab_bar = rect(0, 2, 80, 1);
+        assert_eq!(app.active_tab, Tab::Account);
+
+        // Click in second tab (col 20..39 → Watchlist)
+        update(&mut app, mouse_click(25, 2));
+        assert_eq!(app.active_tab, Tab::Watchlist);
+
+        // Click in third tab (col 40..59 → Positions)
+        update(&mut app, mouse_click(45, 2));
+        assert_eq!(app.active_tab, Tab::Positions);
+    }
+
+    #[test]
+    fn mouse_non_left_click_ignored() {
+        let (mut app, _rx) = app_with_capacity(4);
+        app.hit_areas.tab_bar = rect(0, 2, 80, 1);
+        app.active_tab = Tab::Watchlist;
+        // MouseMove event — must not switch tab
+        update(&mut app, mouse_move(25, 2));
+        assert_eq!(app.active_tab, Tab::Watchlist);
+    }
+
+    #[test]
+    fn mouse_click_orders_subtab() {
+        let (mut app, _rx) = app_with_capacity(4);
+        app.active_tab = Tab::Orders;
+        // Subtab bar: 60 wide → each slot ~20 cols (Open / Filled / Cancelled)
+        app.hit_areas.orders_subtab_bar = Some(rect(0, 5, 60, 1));
+        assert_eq!(app.orders_subtab, OrdersSubTab::Open);
+
+        // Click second subtab (col 20 → Filled)
+        update(&mut app, mouse_click(20, 5));
+        assert_eq!(app.orders_subtab, OrdersSubTab::Filled);
+
+        // Click third subtab (col 40 → Cancelled)
+        update(&mut app, mouse_click(40, 5));
+        assert_eq!(app.orders_subtab, OrdersSubTab::Cancelled);
+    }
+
+    #[test]
+    fn mouse_click_list_row_selects_item() {
+        use crate::types::{Asset, Watchlist};
+
+        let (mut app, _rx) = app_with_capacity(4);
+        let make_asset = |sym: &str| Asset {
+            id: sym.to_string(),
+            symbol: sym.to_string(),
+            name: sym.to_string(),
+            exchange: "NASDAQ".to_string(),
+            asset_class: "us_equity".to_string(),
+            tradable: true,
+            shortable: false,
+            fractionable: false,
+            easy_to_borrow: false,
+        };
+        app.watchlist = Some(Watchlist {
+            id: "wl1".to_string(),
+            name: "Test".to_string(),
+            assets: vec![make_asset("AAPL"), make_asset("GOOG")],
+        });
+        app.watchlist_state.select(Some(0));
+        app.active_tab = Tab::Watchlist;
+
+        // List data starts at row 10 (border + header already accounted for)
+        app.hit_areas.list_data_start_y = 10;
+
+        // Click on row 11 → data_row 1 → idx 1 → selects second asset
+        update(&mut app, mouse_click(5, 11));
+        assert_eq!(app.watchlist_state.selected(), Some(1));
     }
 
     #[test]

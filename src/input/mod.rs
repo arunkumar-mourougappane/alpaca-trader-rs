@@ -1,10 +1,12 @@
 pub(crate) mod modal;
+pub(crate) mod mouse;
 pub(crate) mod orders;
 pub(crate) mod positions;
 pub(crate) mod search;
 pub(crate) mod watchlist;
 
 pub(crate) use modal::handle_modal_key;
+pub(crate) use mouse::handle_mouse;
 pub(crate) use orders::handle_orders_key;
 pub(crate) use positions::handle_positions_key;
 pub(crate) use search::handle_search_key;

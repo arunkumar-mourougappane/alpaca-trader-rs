@@ -14,6 +14,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(area);
 
+    app.hit_areas.orders_subtab_bar = Some(chunks[0]);
     render_subtabs(frame, chunks[0], app);
     render_table(frame, chunks[1], app);
 }
