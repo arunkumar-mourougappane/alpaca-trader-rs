@@ -4,6 +4,7 @@ pub const BRAND_CYAN: Color = Color::Cyan;
 pub const BRAND_RED: Color = Color::Red;
 pub const GREEN: Color = Color::Green;
 pub const RED: Color = Color::Red;
+pub const YELLOW: Color = Color::Yellow;
 pub const DIM: Color = Color::DarkGray;
 pub const BORDER_COLOR: Color = Color::DarkGray;
 pub const SELECTED_BG: Color = Color::Rgb(40, 40, 80);

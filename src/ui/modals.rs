@@ -102,7 +102,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
 }
 
 fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, app: &mut App) {
-    let popup = popup_area(area, 45, 60);
+    let popup = popup_area(area, 45, 65);
     frame.render_widget(Clear, popup);
 
     let block = Block::default()
@@ -117,20 +117,24 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Symbol
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // Side
-            Constraint::Length(1), // Type
-            Constraint::Length(1), // Qty
-            Constraint::Length(1), // Price
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // Est Total
-            Constraint::Length(1), // Buying Power
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // Submit / Cancel
-            Constraint::Length(1), // hint
+            Constraint::Length(1), // [0]  Symbol
+            Constraint::Length(1), // [1]  blank
+            Constraint::Length(1), // [2]  Side
+            Constraint::Length(1), // [3]  Type
+            Constraint::Length(1), // [4]  Qty
+            Constraint::Length(1), // [5]  Price
+            Constraint::Length(1), // [6]  TimeInForce
+            Constraint::Length(1), // [7]  blank
+            Constraint::Length(1), // [8]  Est Total
+            Constraint::Length(1), // [9]  Buying Power
+            Constraint::Length(1), // [10] blank
+            Constraint::Length(1), // [11] Market-closed warning
+            Constraint::Length(1), // [12] Submit / Cancel
+            Constraint::Length(1), // [13] hint
         ])
         .split(inner);
+
+    let market_open = app.clock.as_ref().map(|c| c.is_open).unwrap_or(true);
 
     // Populate hit areas for mouse click handling
     app.hit_areas.modal_fields = vec![
@@ -139,8 +143,9 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         (OrderField::OrderType, chunks[3]),
         (OrderField::Qty, chunks[4]),
         (OrderField::Price, chunks[5]),
+        (OrderField::TimeInForce, chunks[6]),
     ];
-    app.hit_areas.modal_submit = Some(chunks[10]);
+    app.hit_areas.modal_submit = Some(chunks[12]);
 
     let focused = |field: &OrderField| *field == state.focused_field;
 
@@ -232,6 +237,15 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         );
     }
 
+    // TimeInForce
+    let tif_line = Line::from(vec![
+        Span::styled("  TIF     ", Style::default().fg(theme::DIM)),
+        radio(!state.gtc_order, "DAY"),
+        Span::raw("  "),
+        radio(state.gtc_order, "GTC"),
+    ]);
+    frame.render_widget(Paragraph::new(tif_line), chunks[6]);
+
     // Est Total
     let est_total = estimate_total(state);
     frame.render_widget(
@@ -239,7 +253,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Span::styled("  Est. Total  ", Style::default().fg(theme::DIM)),
             Span::styled(est_total, theme::style_bold()),
         ])),
-        chunks[7],
+        chunks[8],
     );
 
     // Buying power
@@ -253,14 +267,30 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Span::styled("  Buying Power  ", Style::default().fg(theme::DIM)),
             Span::styled(bp, theme::style_bold()),
         ])),
-        chunks[8],
+        chunks[9],
     );
 
-    // Buttons
-    let submit_style = if focused(&OrderField::Submit) {
+    // Market-closed warning
+    if !market_open && !state.gtc_order {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![Span::styled(
+                "  ⚠ Market closed — switch to GTC or wait",
+                Style::default()
+                    .fg(theme::YELLOW)
+                    .add_modifier(Modifier::BOLD),
+            )])),
+            chunks[11],
+        );
+    }
+
+    // Submit button — dimmed when market is closed and order is DAY
+    let market_closed_day = !market_open && !state.gtc_order;
+    let submit_style = if focused(&OrderField::Submit) && !market_closed_day {
         Style::default()
             .fg(theme::BRAND_CYAN)
             .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    } else if market_closed_day {
+        Style::default().fg(theme::DIM)
     } else {
         Style::default()
     };
@@ -269,13 +299,13 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         Span::raw("  "),
         Span::styled("[ Esc: Cancel ]", Style::default().fg(theme::DIM)),
     ]);
-    frame.render_widget(Paragraph::new(buttons), chunks[10]);
+    frame.render_widget(Paragraph::new(buttons), chunks[12]);
 
     // Hint
     frame.render_widget(
         Paragraph::new("  Tab:Next  ←/→:Toggle  Enter:Advance  Esc:Close")
             .style(Style::default().fg(theme::DIM)),
-        chunks[11],
+        chunks[13],
     );
 }
 

@@ -196,6 +196,7 @@ pub enum OrderField {
     OrderType,
     Qty,
     Price,
+    TimeInForce,
     Submit,
 }
 
@@ -206,7 +207,8 @@ impl OrderField {
             OrderField::Side => OrderField::OrderType,
             OrderField::OrderType => OrderField::Qty,
             OrderField::Qty => OrderField::Price,
-            OrderField::Price => OrderField::Submit,
+            OrderField::Price => OrderField::TimeInForce,
+            OrderField::TimeInForce => OrderField::Submit,
             OrderField::Submit => OrderField::Symbol,
         }
     }
@@ -218,7 +220,8 @@ impl OrderField {
             OrderField::OrderType => OrderField::Side,
             OrderField::Qty => OrderField::OrderType,
             OrderField::Price => OrderField::Qty,
-            OrderField::Submit => OrderField::Price,
+            OrderField::TimeInForce => OrderField::Price,
+            OrderField::Submit => OrderField::TimeInForce,
         }
     }
 }
@@ -228,6 +231,7 @@ pub struct OrderEntryState {
     pub symbol: String,
     pub side_buy: bool,     // true = BUY, false = SELL
     pub market_order: bool, // true = MARKET, false = LIMIT
+    pub gtc_order: bool,    // true = GTC, false = DAY
     pub qty_input: String,
     pub price_input: String,
     pub focused_field: OrderField,
@@ -239,6 +243,7 @@ impl OrderEntryState {
             symbol,
             side_buy: true,
             market_order: false,
+            gtc_order: false,
             qty_input: String::new(),
             price_input: String::new(),
             focused_field: OrderField::Qty,
@@ -477,14 +482,16 @@ mod tests {
         assert_eq!(OrderField::Side.next(), OrderField::OrderType);
         assert_eq!(OrderField::OrderType.next(), OrderField::Qty);
         assert_eq!(OrderField::Qty.next(), OrderField::Price);
-        assert_eq!(OrderField::Price.next(), OrderField::Submit);
+        assert_eq!(OrderField::Price.next(), OrderField::TimeInForce);
+        assert_eq!(OrderField::TimeInForce.next(), OrderField::Submit);
         assert_eq!(OrderField::Submit.next(), OrderField::Symbol);
     }
 
     #[test]
     fn order_field_prev_full_cycle() {
         assert_eq!(OrderField::Symbol.prev(), OrderField::Submit);
-        assert_eq!(OrderField::Submit.prev(), OrderField::Price);
+        assert_eq!(OrderField::Submit.prev(), OrderField::TimeInForce);
+        assert_eq!(OrderField::TimeInForce.prev(), OrderField::Price);
         assert_eq!(OrderField::Price.prev(), OrderField::Qty);
         assert_eq!(OrderField::Qty.prev(), OrderField::OrderType);
         assert_eq!(OrderField::OrderType.prev(), OrderField::Side);

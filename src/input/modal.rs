@@ -32,6 +32,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 KeyCode::Left | KeyCode::Right => match state.focused_field {
                     OrderField::Side => state.side_buy = !state.side_buy,
                     OrderField::OrderType => state.market_order = !state.market_order,
+                    OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
                     _ => {}
                 },
                 KeyCode::Char(c) => match state.focused_field {
@@ -70,7 +71,9 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             .as_ref()
                             .and_then(|a| a.buying_power.parse::<f64>().ok())
                             .unwrap_or(0.0);
-                        if let Some(err) = crate::input::validate(&state, buying_power) {
+                        let market_open = app.clock.as_ref().map(|c| c.is_open).unwrap_or(true);
+                        if let Some(err) = crate::input::validate(&state, buying_power, market_open)
+                        {
                             app.status_msg = StatusMessage::persistent(err);
                             app.modal = Some(Modal::OrderEntry(state));
                             return;
@@ -96,7 +99,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                 } else {
                                     Some(state.price_input.clone())
                                 },
-                                time_in_force: "day".into(),
+                                time_in_force: if state.gtc_order { "gtc" } else { "day" }.into(),
                             },
                             "Submitting order…",
                         );
