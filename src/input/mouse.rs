@@ -3,9 +3,35 @@ use ratatui::layout::Rect;
 
 use crate::app::{App, Modal, OrderField, OrdersSubTab, Tab};
 
+/// The tab labels exactly as rendered by the `Tabs` widget in `dashboard::render_tabs`.
+/// Each tab renders as ` <label> ` (one leading/trailing space), width = label.len() + 2.
+/// Between tabs there is a `|` divider (1 col).
+const TAB_LABELS: &[&str] = &["1:Account", "2:Watchlist", "3:Positions", "4:Orders"];
+
 /// Returns `true` if (`col`, `row`) is inside `rect`.
 fn hit(rect: Rect, col: u16, row: u16) -> bool {
     col >= rect.x && col < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+}
+
+/// Compute the exact `Rect` for each tab based on actual rendered label widths.
+/// Matches how ratatui's `Tabs` widget lays out: ` label ` then `|` divider between tabs.
+fn tab_rects(tab_bar: Rect) -> Vec<Rect> {
+    let mut rects = Vec::with_capacity(TAB_LABELS.len());
+    let mut x = tab_bar.x;
+    for (i, label) in TAB_LABELS.iter().enumerate() {
+        let w = label.len() as u16 + 2; // 1 leading space + label + 1 trailing space
+        rects.push(Rect {
+            x,
+            y: tab_bar.y,
+            width: w,
+            height: 1,
+        });
+        x += w;
+        if i + 1 < TAB_LABELS.len() {
+            x += 1; // `|` divider
+        }
+    }
+    rects
 }
 
 pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
@@ -24,11 +50,13 @@ pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
 
     // ── Tab bar ──────────────────────────────────────────────────────────────
     let tab_bar = app.hit_areas.tab_bar;
-    if hit(tab_bar, col, row) && tab_bar.width >= 4 {
-        let tab_w = tab_bar.width / 4;
-        let idx = ((col - tab_bar.x) / tab_w).min(3) as usize;
-        app.active_tab = Tab::from_index(idx);
-        return;
+    if tab_bar.height > 0 {
+        for (idx, rect) in tab_rects(tab_bar).iter().enumerate() {
+            if hit(*rect, col, row) {
+                app.active_tab = Tab::from_index(idx);
+                return;
+            }
+        }
     }
 
     // ── Orders sub-tab bar ───────────────────────────────────────────────────

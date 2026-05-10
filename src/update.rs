@@ -787,18 +787,33 @@ mod tests {
     #[test]
     fn mouse_click_tab_bar_switches_tab() {
         let (mut app, _rx) = app_with_capacity(4);
-        // Tab bar: full width 80, 4 tabs of 20 cols each, at row 2
-        // Tabs: 0=Account, 1=Watchlist, 2=Positions, 3=Orders
+        // Tab bar at row 2, full width 80.
+        // Actual ratatui Tabs layout (` label ` + `|` divider):
+        //   Tab 0 "1:Account"   (len 9): cols  0..10  (width 11)
+        //   divider `|`:               col  11
+        //   Tab 1 "2:Watchlist" (len 11): cols 12..24 (width 13)
+        //   divider `|`:               col  25
+        //   Tab 2 "3:Positions" (len 11): cols 26..38 (width 13)
+        //   divider `|`:               col  39
+        //   Tab 3 "4:Orders"    (len  8): cols 40..49 (width 10)
         app.hit_areas.tab_bar = rect(0, 2, 80, 1);
         assert_eq!(app.active_tab, Tab::Account);
 
-        // Click in second tab (col 20..39 → Watchlist)
-        update(&mut app, mouse_click(25, 2));
+        // Click inside "2:Watchlist" (col 18 is within 12..24)
+        update(&mut app, mouse_click(18, 2));
         assert_eq!(app.active_tab, Tab::Watchlist);
 
-        // Click in third tab (col 40..59 → Positions)
-        update(&mut app, mouse_click(45, 2));
+        // Click inside "3:Positions" (col 32 is within 26..38)
+        update(&mut app, mouse_click(32, 2));
         assert_eq!(app.active_tab, Tab::Positions);
+
+        // Click inside "4:Orders" (col 45 is within 40..49)
+        update(&mut app, mouse_click(45, 2));
+        assert_eq!(app.active_tab, Tab::Orders);
+
+        // Click back on "1:Account" (col 5 is within 0..10)
+        update(&mut app, mouse_click(5, 2));
+        assert_eq!(app.active_tab, Tab::Account);
     }
 
     #[test]
