@@ -68,6 +68,8 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             app.should_quit = true
         }
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
+        // '1'/'2'/'3' switch panels globally, but yield to the Orders panel so those
+        // keys can switch sub-tabs (Open / Filled / Cancelled) when Orders is active.
         KeyCode::Char('1') if app.active_tab != Tab::Orders => app.active_tab = Tab::Account,
         KeyCode::Char('2') if app.active_tab != Tab::Orders => app.active_tab = Tab::Watchlist,
         KeyCode::Char('3') if app.active_tab != Tab::Orders => app.active_tab = Tab::Positions,

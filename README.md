@@ -40,7 +40,8 @@ The header badge shows **[PAPER]** in cyan or **[LIVE]** in red at all times.
 
 | Key | Action |
 |-----|--------|
-| `1` / `2` / `3` / `4` | Switch panel: Account / Watchlist / Positions / Orders |
+| `1` / `2` / `3` | Switch panel (Account / Watchlist / Positions) — or switch Orders sub-tab when on Orders panel |
+| `4` | Switch to Orders panel |
 | `Tab` / `Shift-Tab` | Cycle panels forward / backward |
 | `j` / `k` or `↑` / `↓` | Navigate rows |
 | `g` / `G` | Jump to first / last row |
@@ -161,7 +162,7 @@ alpaca-trader-rs/
 │       ├── modals.rs       # Order entry, detail, help, confirm modals
 │       └── theme.rs        # Colours and styles
 ├── tests/
-│   └── client_tests.rs     # AlpacaClient integration tests (wiremock) — Phase 2
+│   └── client_tests.rs     # AlpacaClient integration tests (wiremock)
 ├── docs/                   # Full documentation
 ├── .env.example            # Credential template
 ├── run.sh                  # Run script (--paper / --live)
@@ -204,7 +205,8 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | Paper / Live switching (`run.sh --paper/--live`) | Done |
 | Clippy clean | Done |
 | Test strategy documented | Done |
-| Unit + integration tests | Pending |
+| Unit + integration tests (101 tests) | Done |
+| Orders panel 1/2/3 sub-tab key fix | Done |
 | WebSocket market data streaming | Phase 2 |
 | WebSocket account/trade stream | Phase 2 |
 | Live order submission | Phase 2 |

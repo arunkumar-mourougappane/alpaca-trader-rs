@@ -1,8 +1,14 @@
 # Testing Strategy
 
-Research document covering test coverage strategy, mock patterns, crate selection, and a complete test case inventory for every module in `alpaca-trader-rs`.
+Test coverage strategy, mock patterns, crate rationale, and test case inventory for `alpaca-trader-rs`.
 
-No tests are written yet. This document is the reference for the implementation session.
+**Current state: 101 tests implemented and passing** (`cargo test`).
+
+| Binary | Count | Scope |
+|---|---|---|
+| `lib` | 20 | `types`, `config` — serde, enum methods, env var parsing |
+| `bin` | 67 | `app`, `update`, `handlers/rest` — state logic, keyboard dispatch, REST polling |
+| `tests/client_tests.rs` | 14 | `AlpacaClient` — all 11 HTTP methods via wiremock |
 
 ---
 
@@ -16,8 +22,6 @@ The codebase splits cleanly into three testability tiers:
 | **HTTP integration** | `client` | `wiremock` mock HTTP server; `reqwest` hits it for real |
 | **Async task** | `handlers/rest`, `handlers/input` | `tokio::test` with channel receivers; verify emitted `Event` variants |
 
-Current dev-dependency count: **zero**. All additions are listed below.
-
 ---
 
 ## Recommended Dev Dependencies
@@ -28,6 +32,8 @@ wiremock   = "0.6"   # async HTTP mock server
 tokio-test = "0.4"   # assert_ready!, assert_pending! for channel/future assertions
 temp-env   = "0.3"   # thread-safe env var scoping for config tests
 ```
+
+All three are in `Cargo.toml`. `serde_json` (already in `[dependencies]`) is used in tests without a separate dev entry.
 
 `serde_json` is already in `[dependencies]` and available in tests.
 
@@ -450,11 +456,38 @@ cargo test -- --nocapture
 
 ---
 
-## Notes for Implementation
+## Implementation Notes
 
-- `App::new()` requires `Arc<Notify>` — tests should pass `Arc::new(Notify::new())` and ignore it
-- `AlpacaConfig` fields are all `pub` — construct directly in tests, no need for a builder
-- `update()` takes `&mut App` and `Event` — easy to test in isolation with no async
-- `handlers/rest::poll_once` is `pub async fn` — directly awaitable in `#[tokio::test]`
-- `handlers/rest::run` loops forever — test cancellation with a short `timeout` or immediate `token.cancel()`
-- The `events::Event` enum does not implement `Debug` — add `#[derive(Debug)]` before writing tests that use `assert!(... matches!(e, ...))` with a failure message
+- Helper utilities (`make_test_app`, `make_order`, `make_asset`, `make_watchlist`) live in `src/app.rs` as `pub(crate) mod test_helpers` — import with `use crate::app::test_helpers::*` in sibling test modules.
+- `App::new()` requires `Arc<Notify>` — tests pass `Arc::new(Notify::new())`.
+- `AlpacaConfig` fields are all `pub` — construct directly, no builder needed.
+- `update()` is sync — test it with a simple `update(&mut app, event)` call, no async.
+- `handlers/rest::poll_once` is `pub async fn` — directly awaitable in `#[tokio::test]`.
+- `handlers/rest::run` loops until cancelled — test with `tokio::time::timeout(Duration::from_secs(2), handle)`.
+- `events::Event` has `#[derive(Debug)]` — `matches!` failure messages show the actual value.
+
+---
+
+## Bugs Found During Testing
+
+Both bugs were caught by writing tests and observing failures before fixing the source.
+
+### 1. Panic on short order IDs (`src/update.rs`)
+
+`handle_orders_key` used `&id[..8]` to truncate the order ID for the confirm message. Order IDs shorter than 8 bytes caused a `byte index out of bounds` panic.
+
+**Fix:** `&id[..id.len().min(8)]`
+
+### 2. Orders panel `1`/`2`/`3` keys were dead code (`src/update.rs`)
+
+`handle_key` matched `'1'`/`'2'`/`'3'` globally before calling `handle_panel_key`, so the sub-tab switching code in `handle_orders_key` was unreachable. Pressing `1` on the Orders panel switched to the Account tab instead of the Open sub-tab.
+
+**Fix:** Added `if app.active_tab != Tab::Orders` guards on the global `'1'`/`'2'`/`'3'` arms, so those keys reach `handle_orders_key` when the Orders panel is active. `'4'` still switches to Orders from anywhere.
+
+```rust
+// Before
+KeyCode::Char('1') => app.active_tab = Tab::Account,
+
+// After
+KeyCode::Char('1') if app.active_tab != Tab::Orders => app.active_tab = Tab::Account,
+```

@@ -206,7 +206,9 @@ Triggered by `?` from any context.
 ╔═ Keyboard Shortcuts ═════════════════════╗
 ║                                          ║
 ║  NAVIGATION                              ║
-║  1/2/3/4 or Tab    Switch panels         ║
+║  1/2/3 (non-Orders)  Switch panels       ║
+║  1/2/3 (Orders tab)  Switch sub-tabs     ║
+║  4 or Tab            Switch panels       ║
 ║  j / k  or ↑/↓    Move cursor           ║
 ║  g / G             Top / Bottom          ║
 ║  Enter             Open detail           ║
@@ -236,7 +238,10 @@ Triggered by `?` from any context.
 
 | Key | Action |
 |-----|--------|
-| `1` / `2` / `3` / `4` | Switch to Account / Watchlist / Positions / Orders |
+| `1` | Switch to Account (except when Orders tab is active — see Orders panel) |
+| `2` | Switch to Watchlist (except when Orders tab is active) |
+| `3` | Switch to Positions (except when Orders tab is active) |
+| `4` | Switch to Orders (always) |
 | `Tab` / `Shift-Tab` | Cycle tabs forward / backward |
 | `q` / `Ctrl-C` | Quit |
 | `r` | Force REST re-poll |
