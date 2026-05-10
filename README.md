@@ -1,7 +1,7 @@
 # alpaca-trader-rs
 
-[![CI](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/ci.yml)
-[![Security audit](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/security.yml)
+[![CI](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/ci.yml)
+[![Security audit](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml)
 ![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
 ![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)
 
@@ -24,7 +24,7 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 ### Setup
 
 ```bash
-git clone https://github.com/amouroug/alpaca-trader-rs
+git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
 
 cp .env.example .env
@@ -71,7 +71,7 @@ Add to your `Cargo.toml` (requires a Collaboration Agreement — see [Licensing]
 
 ```toml
 [dependencies]
-alpaca-trader-rs = { git = "https://github.com/amouroug/alpaca-trader-rs" }
+alpaca-trader-rs = { git = "https://github.com/arunkumar-mourougappane/alpaca-trader-rs" }
 tokio = { version = "1", features = ["full"] }
 dotenvy = "0.15"
 ```
