@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/amouroug/alpaca-trader-rs/actions/workflows/security.yml)
-![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)
+![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
 ![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)
 
 An Alpaca Markets trading toolkit for Rust — ships as both an **integratable library** and a **standalone TUI trading app**.

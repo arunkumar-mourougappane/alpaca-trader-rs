@@ -97,21 +97,17 @@ fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = app.watchlist.as_ref().map(|w| w.assets.len()).unwrap_or(0);
 
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            if len > 0 {
-                let i = app.watchlist_state.selected().unwrap_or(0);
-                app.watchlist_state.select(Some((i + 1).min(len - 1)));
-            }
+        KeyCode::Char('j') | KeyCode::Down if len > 0 => {
+            let i = app.watchlist_state.selected().unwrap_or(0);
+            app.watchlist_state.select(Some((i + 1).min(len - 1)));
         }
         KeyCode::Char('k') | KeyCode::Up => {
             let i = app.watchlist_state.selected().unwrap_or(0);
             app.watchlist_state.select(Some(i.saturating_sub(1)));
         }
         KeyCode::Char('g') => app.watchlist_state.select(Some(0)),
-        KeyCode::Char('G') => {
-            if len > 0 {
-                app.watchlist_state.select(Some(len - 1));
-            }
+        KeyCode::Char('G') if len > 0 => {
+            app.watchlist_state.select(Some(len - 1));
         }
         KeyCode::Enter => {
             if let Some(symbol) = app.selected_watchlist_symbol() {
@@ -157,21 +153,17 @@ fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEvent) {
 fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = app.positions.len();
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            if len > 0 {
-                let i = app.positions_state.selected().unwrap_or(0);
-                app.positions_state.select(Some((i + 1).min(len - 1)));
-            }
+        KeyCode::Char('j') | KeyCode::Down if len > 0 => {
+            let i = app.positions_state.selected().unwrap_or(0);
+            app.positions_state.select(Some((i + 1).min(len - 1)));
         }
         KeyCode::Char('k') | KeyCode::Up => {
             let i = app.positions_state.selected().unwrap_or(0);
             app.positions_state.select(Some(i.saturating_sub(1)));
         }
         KeyCode::Char('g') => app.positions_state.select(Some(0)),
-        KeyCode::Char('G') => {
-            if len > 0 {
-                app.positions_state.select(Some(len - 1));
-            }
+        KeyCode::Char('G') if len > 0 => {
+            app.positions_state.select(Some(len - 1));
         }
         KeyCode::Enter => {
             if let Some(symbol) = app.selected_position_symbol() {
@@ -193,21 +185,17 @@ fn handle_orders_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = orders.len();
 
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            if len > 0 {
-                let i = app.orders_state.selected().unwrap_or(0);
-                app.orders_state.select(Some((i + 1).min(len - 1)));
-            }
+        KeyCode::Char('j') | KeyCode::Down if len > 0 => {
+            let i = app.orders_state.selected().unwrap_or(0);
+            app.orders_state.select(Some((i + 1).min(len - 1)));
         }
         KeyCode::Char('k') | KeyCode::Up => {
             let i = app.orders_state.selected().unwrap_or(0);
             app.orders_state.select(Some(i.saturating_sub(1)));
         }
         KeyCode::Char('g') => app.orders_state.select(Some(0)),
-        KeyCode::Char('G') => {
-            if len > 0 {
-                app.orders_state.select(Some(len - 1));
-            }
+        KeyCode::Char('G') if len > 0 => {
+            app.orders_state.select(Some(len - 1));
         }
         KeyCode::Char('1') => {
             app.orders_subtab = OrdersSubTab::Open;
