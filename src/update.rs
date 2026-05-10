@@ -599,7 +599,12 @@ mod tests {
     #[test]
     fn order_entry_submit_sends_submit_order_command() {
         use crate::app::{OrderEntryState, OrderField};
+        use crate::types::AccountInfo;
         let (mut app, mut cmd_rx) = app_with_rx();
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
         let mut state = OrderEntryState::new("AAPL".into());
         state.focused_field = OrderField::Submit;
         state.qty_input = "10".into();
@@ -620,7 +625,12 @@ mod tests {
     #[test]
     fn order_entry_submit_market_order_omits_price() {
         use crate::app::{OrderEntryState, OrderField};
+        use crate::types::AccountInfo;
         let (mut app, mut cmd_rx) = app_with_rx();
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
         let mut state = OrderEntryState::new("TSLA".into());
         state.focused_field = OrderField::Submit;
         state.market_order = true;
@@ -772,9 +782,15 @@ mod tests {
 
         // Now trigger another command via update() — should hit TrySendError::Full
         use crate::app::{OrderEntryState, OrderField};
+        use crate::types::AccountInfo;
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
         let mut state = OrderEntryState::new("AAPL".into());
         state.focused_field = OrderField::Submit;
         state.qty_input = "1".into();
+        state.price_input = "100.00".into();
         app.modal = Some(Modal::OrderEntry(state));
         update(&mut app, key(KeyCode::Enter));
 
@@ -867,9 +883,15 @@ mod tests {
         drop(rx);
 
         use crate::app::{OrderEntryState, OrderField};
+        use crate::types::AccountInfo;
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
         let mut state = OrderEntryState::new("AAPL".into());
         state.focused_field = OrderField::Submit;
         state.qty_input = "1".into();
+        state.price_input = "100.00".into();
         app.modal = Some(Modal::OrderEntry(state));
         update(&mut app, key(KeyCode::Enter));
 
@@ -877,5 +899,96 @@ mod tests {
             app.status_msg, "Command handler stopped — restart app",
             "closed channel should show stopped message"
         );
+    }
+
+    // ── Validation gate tests ─────────────────────────────────────────────────
+
+    fn order_entry_submit_state(symbol: &str) -> crate::app::OrderEntryState {
+        use crate::app::{OrderEntryState, OrderField};
+        let mut s = OrderEntryState::new(symbol.into());
+        s.focused_field = OrderField::Submit;
+        s.market_order = false;
+        s.qty_input = "10".into();
+        s.price_input = "100.00".into();
+        s
+    }
+
+    #[test]
+    fn validation_empty_symbol_keeps_modal_open() {
+        let (mut app, _rx) = app_with_capacity(4);
+        let mut state = order_entry_submit_state("");
+        state.symbol.clear();
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(
+            app.modal.is_some(),
+            "modal must stay open on validation failure"
+        );
+        assert!(
+            !app.status_msg.is_empty(),
+            "status_msg must contain error text"
+        );
+    }
+
+    #[test]
+    fn validation_zero_qty_keeps_modal_open() {
+        let (mut app, _rx) = app_with_capacity(4);
+        let mut state = order_entry_submit_state("AAPL");
+        state.qty_input = "0".into();
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_some());
+        assert!(!app.status_msg.is_empty());
+    }
+
+    #[test]
+    fn validation_non_numeric_price_on_limit_keeps_modal_open() {
+        let (mut app, _rx) = app_with_capacity(4);
+        let mut state = order_entry_submit_state("AAPL");
+        state.price_input = "bad".into();
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_some());
+        assert!(!app.status_msg.is_empty());
+    }
+
+    #[test]
+    fn validation_exceeds_buying_power_keeps_modal_open() {
+        use crate::types::AccountInfo;
+        let (mut app, _rx) = app_with_capacity(4);
+        app.account = Some(AccountInfo {
+            buying_power: "500".into(), // 10 × 100 = 1000 > 500
+            ..Default::default()
+        });
+        let state = order_entry_submit_state("AAPL");
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_some());
+        assert!(!app.status_msg.is_empty());
+    }
+
+    #[test]
+    fn validation_pass_sends_command_and_closes_modal() {
+        use crate::types::AccountInfo;
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
+        let state = order_entry_submit_state("AAPL");
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_none(), "modal should close on valid submit");
+        cmd_rx.try_recv().expect("command should be sent");
     }
 }

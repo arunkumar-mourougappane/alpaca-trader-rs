@@ -65,6 +65,16 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 },
                 KeyCode::Enter => {
                     if state.focused_field == OrderField::Submit {
+                        let buying_power = app
+                            .account
+                            .as_ref()
+                            .and_then(|a| a.buying_power.parse::<f64>().ok())
+                            .unwrap_or(0.0);
+                        if let Some(err) = crate::input::validate(&state, buying_power) {
+                            app.status_msg = err;
+                            app.modal = Some(Modal::OrderEntry(state));
+                            return;
+                        }
                         send_command(
                             app,
                             Command::SubmitOrder {
