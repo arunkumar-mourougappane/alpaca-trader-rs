@@ -433,7 +433,11 @@ mod tests {
     #[test]
     fn account_updated_sets_account_and_pushes_equity() {
         let mut app = make_test_app();
-        let acc = AccountInfo { equity: "500".into(), status: "ACTIVE".into(), ..Default::default() };
+        let acc = AccountInfo {
+            equity: "500".into(),
+            status: "ACTIVE".into(),
+            ..Default::default()
+        };
         update(&mut app, Event::AccountUpdated(acc));
         assert!(app.account.is_some());
         assert_eq!(app.equity_history.len(), 1);
@@ -450,10 +454,14 @@ mod tests {
     fn positions_updated_non_empty_auto_selects_zero() {
         let mut app = make_test_app();
         let pos = vec![crate::types::Position {
-            symbol: "AAPL".into(), qty: "10".into(),
-            avg_entry_price: "100".into(), current_price: "110".into(),
-            market_value: "1100".into(), unrealized_pl: "100".into(),
-            unrealized_plpc: "0.1".into(), side: "long".into(),
+            symbol: "AAPL".into(),
+            qty: "10".into(),
+            avg_entry_price: "100".into(),
+            current_price: "110".into(),
+            market_value: "1100".into(),
+            unrealized_pl: "100".into(),
+            unrealized_plpc: "0.1".into(),
+            side: "long".into(),
             asset_class: "us_equity".into(),
         }];
         update(&mut app, Event::PositionsUpdated(pos));
@@ -481,7 +489,11 @@ mod tests {
     fn trade_update_existing_replaces_in_place() {
         let mut app = make_test_app();
         app.orders = vec![make_order("o1", "accepted")];
-        let updated = Order { id: "o1".into(), status: "filled".into(), ..make_order("o1", "filled") };
+        let updated = Order {
+            id: "o1".into(),
+            status: "filled".into(),
+            ..make_order("o1", "filled")
+        };
         update(&mut app, Event::TradeUpdate(updated));
         assert_eq!(app.orders.len(), 1);
         assert_eq!(app.orders[0].status, "filled");
@@ -499,7 +511,12 @@ mod tests {
     #[test]
     fn market_quote_inserted() {
         let mut app = make_test_app();
-        let q = Quote { symbol: "AAPL".into(), ap: Some(185.0), bp: Some(184.9), ..Default::default() };
+        let q = Quote {
+            symbol: "AAPL".into(),
+            ap: Some(185.0),
+            bp: Some(184.9),
+            ..Default::default()
+        };
         update(&mut app, Event::MarketQuote(q));
         assert!(app.quotes.contains_key("AAPL"));
         assert_eq!(app.quotes["AAPL"].ap, Some(185.0));
@@ -508,7 +525,10 @@ mod tests {
     #[test]
     fn clock_updated() {
         let mut app = make_test_app();
-        let clock = MarketClock { is_open: true, ..Default::default() };
+        let clock = MarketClock {
+            is_open: true,
+            ..Default::default()
+        };
         update(&mut app, Event::ClockUpdated(clock));
         assert!(app.clock.as_ref().unwrap().is_open);
     }
@@ -699,10 +719,7 @@ mod tests {
     fn orders_app() -> App {
         let mut app = make_test_app();
         app.active_tab = Tab::Orders;
-        app.orders = vec![
-            make_order("o1", "accepted"),
-            make_order("o2", "accepted"),
-        ];
+        app.orders = vec![make_order("o1", "accepted"), make_order("o2", "accepted")];
         app.orders_state.select(Some(0));
         app
     }
@@ -764,7 +781,9 @@ mod tests {
         state.focused_field = OrderField::Qty;
         app.modal = Some(Modal::OrderEntry(state));
         update(&mut app, key(KeyCode::Tab));
-        assert!(matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.focused_field == OrderField::Price));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.focused_field == OrderField::Price)
+        );
     }
 
     #[test]

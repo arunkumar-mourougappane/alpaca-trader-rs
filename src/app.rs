@@ -309,8 +309,8 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::test_helpers::*;
+    use super::*;
     use crate::types::AccountInfo;
 
     // ── Tab navigation ────────────────────────────────────────────────────────
@@ -387,7 +387,9 @@ mod tests {
         app.orders_subtab = OrdersSubTab::Open;
         let open = app.filtered_orders();
         assert_eq!(open.len(), 5);
-        assert!(!open.iter().any(|o| o.status == "filled" || o.status == "canceled"));
+        assert!(!open
+            .iter()
+            .any(|o| o.status == "filled" || o.status == "canceled"));
     }
 
     #[test]
@@ -431,7 +433,10 @@ mod tests {
     #[test]
     fn push_equity_parses_and_appends_cents() {
         let mut app = make_test_app();
-        app.account = Some(AccountInfo { equity: "1000.50".into(), ..Default::default() });
+        app.account = Some(AccountInfo {
+            equity: "1000.50".into(),
+            ..Default::default()
+        });
         app.push_equity();
         assert_eq!(app.equity_history, vec![100050]);
     }
@@ -439,7 +444,10 @@ mod tests {
     #[test]
     fn push_equity_caps_at_120_entries() {
         let mut app = make_test_app();
-        app.account = Some(AccountInfo { equity: "1".into(), ..Default::default() });
+        app.account = Some(AccountInfo {
+            equity: "1".into(),
+            ..Default::default()
+        });
         for _ in 0..121 {
             app.push_equity();
         }
@@ -449,7 +457,10 @@ mod tests {
     #[test]
     fn push_equity_ignores_non_numeric_string() {
         let mut app = make_test_app();
-        app.account = Some(AccountInfo { equity: "N/A".into(), ..Default::default() });
+        app.account = Some(AccountInfo {
+            equity: "N/A".into(),
+            ..Default::default()
+        });
         app.push_equity();
         assert!(app.equity_history.is_empty());
     }

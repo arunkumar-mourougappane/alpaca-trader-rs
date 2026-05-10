@@ -127,42 +127,63 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn test_config(base_url: String) -> AlpacaConfig {
-        AlpacaConfig { base_url, key: "PKTEST".into(), secret: "secret".into(), env: AlpacaEnv::Paper }
+        AlpacaConfig {
+            base_url,
+            key: "PKTEST".into(),
+            secret: "secret".into(),
+            env: AlpacaEnv::Paper,
+        }
     }
 
     async fn mount_all(server: &MockServer) {
-        Mock::given(method("GET")).and(path("/account"))
+        Mock::given(method("GET"))
+            .and(path("/account"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": "ACTIVE", "equity": "100000", "buying_power": "200000",
                 "cash": "100000", "long_market_value": "0",
                 "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
-            }))).mount(server).await;
+            })))
+            .mount(server)
+            .await;
 
-        Mock::given(method("GET")).and(path("/positions"))
+        Mock::given(method("GET"))
+            .and(path("/positions"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(server).await;
+            .mount(server)
+            .await;
 
-        Mock::given(method("GET")).and(path("/orders"))
+        Mock::given(method("GET"))
+            .and(path("/orders"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(server).await;
+            .mount(server)
+            .await;
 
-        Mock::given(method("GET")).and(path("/clock"))
+        Mock::given(method("GET"))
+            .and(path("/clock"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "is_open": false,
                 "next_open": "2026-05-12T13:30:00Z",
                 "next_close": "2026-05-12T20:00:00Z",
                 "timestamp": "2026-05-11T12:00:00Z"
-            }))).mount(server).await;
+            })))
+            .mount(server)
+            .await;
 
-        Mock::given(method("GET")).and(path("/watchlists"))
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([
                 {"id": "wl-id-1", "name": "Primary"}
-            ]))).mount(server).await;
+            ])))
+            .mount(server)
+            .await;
 
-        Mock::given(method("GET")).and(path("/watchlists/wl-id-1"))
+        Mock::given(method("GET"))
+            .and(path("/watchlists/wl-id-1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": "wl-id-1", "name": "Primary", "assets": []
-            }))).mount(server).await;
+            })))
+            .mount(server)
+            .await;
     }
 
     #[tokio::test]
@@ -179,71 +200,116 @@ mod tests {
             events.push(e);
         }
 
-        assert!(events.iter().any(|e| matches!(e, Event::AccountUpdated(_))), "missing AccountUpdated");
-        assert!(events.iter().any(|e| matches!(e, Event::PositionsUpdated(_))), "missing PositionsUpdated");
-        assert!(events.iter().any(|e| matches!(e, Event::OrdersUpdated(_))), "missing OrdersUpdated");
-        assert!(events.iter().any(|e| matches!(e, Event::ClockUpdated(_))), "missing ClockUpdated");
-        assert!(events.iter().any(|e| matches!(e, Event::WatchlistUpdated(_))), "missing WatchlistUpdated");
+        assert!(
+            events.iter().any(|e| matches!(e, Event::AccountUpdated(_))),
+            "missing AccountUpdated"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::PositionsUpdated(_))),
+            "missing PositionsUpdated"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, Event::OrdersUpdated(_))),
+            "missing OrdersUpdated"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e, Event::ClockUpdated(_))),
+            "missing ClockUpdated"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            "missing WatchlistUpdated"
+        );
     }
 
     #[tokio::test]
     async fn poll_once_account_error_sends_status_msg() {
         let server = MockServer::start().await;
 
-        Mock::given(method("GET")).and(path("/account"))
+        Mock::given(method("GET"))
+            .and(path("/account"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/positions"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/positions"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/orders"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/orders"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/clock"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/watchlists"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
         let (tx, mut rx) = mpsc::channel(32);
         poll_once(tx, client).await;
 
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        assert!(events.iter().any(|e| matches!(e, Event::StatusMsg(m) if m.contains("Account error"))));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::StatusMsg(m) if m.contains("Account error"))));
     }
 
     #[tokio::test]
     async fn poll_once_empty_watchlist_list_skips_watchlist_fetch() {
         let server = MockServer::start().await;
 
-        Mock::given(method("GET")).and(path("/account"))
+        Mock::given(method("GET"))
+            .and(path("/account"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "status": "ACTIVE", "equity": "0", "buying_power": "0",
                 "cash": "0", "long_market_value": "0",
                 "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
-            }))).mount(&server).await;
-        Mock::given(method("GET")).and(path("/positions"))
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/positions"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/orders"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/orders"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/clock"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "is_open": false, "next_open": "", "next_close": "", "timestamp": ""
-            }))).mount(&server).await;
-        Mock::given(method("GET")).and(path("/watchlists"))
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
         let (tx, mut rx) = mpsc::channel(32);
         poll_once(tx, client).await;
 
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        assert!(!events.iter().any(|e| matches!(e, Event::WatchlistUpdated(_))));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, Event::WatchlistUpdated(_))));
     }
 
     #[tokio::test]

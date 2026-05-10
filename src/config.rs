@@ -6,19 +6,19 @@ mod tests {
 
     fn paper_vars(endpoint: &str) -> Vec<(&'static str, Option<String>)> {
         vec![
-            ("ALPACA_ENV",            Some("paper".into())),
+            ("ALPACA_ENV", Some("paper".into())),
             ("PAPER_ALPACA_ENDPOINT", Some(endpoint.into())),
-            ("PAPER_ALPACA_KEY",      Some("PKTEST000".into())),
-            ("PAPER_ALPACA_SECRET",   Some("secret000".into())),
+            ("PAPER_ALPACA_KEY", Some("PKTEST000".into())),
+            ("PAPER_ALPACA_SECRET", Some("secret000".into())),
         ]
     }
 
     fn live_vars(endpoint: &str) -> Vec<(&'static str, Option<String>)> {
         vec![
-            ("ALPACA_ENV",           Some("live".into())),
+            ("ALPACA_ENV", Some("live".into())),
             ("LIVE_ALPACA_ENDPOINT", Some(endpoint.into())),
-            ("LIVE_ALPACA_KEY",      Some("AKTEST000".into())),
-            ("LIVE_ALPACA_SECRET",   Some("secret000".into())),
+            ("LIVE_ALPACA_KEY", Some("AKTEST000".into())),
+            ("LIVE_ALPACA_SECRET", Some("secret000".into())),
         ]
     }
 
@@ -101,10 +101,13 @@ mod tests {
     fn from_env_missing_paper_key_errors() {
         temp_env::with_vars(
             [
-                ("ALPACA_ENV",            Some("paper".to_string())),
-                ("PAPER_ALPACA_ENDPOINT", Some("https://paper-api.alpaca.markets/v2".to_string())),
-                ("PAPER_ALPACA_KEY",      None),
-                ("PAPER_ALPACA_SECRET",   Some("secret".to_string())),
+                ("ALPACA_ENV", Some("paper".to_string())),
+                (
+                    "PAPER_ALPACA_ENDPOINT",
+                    Some("https://paper-api.alpaca.markets/v2".to_string()),
+                ),
+                ("PAPER_ALPACA_KEY", None),
+                ("PAPER_ALPACA_SECRET", Some("secret".to_string())),
             ],
             || {
                 assert!(AlpacaConfig::from_env().is_err());

@@ -101,8 +101,14 @@ mod tests {
             limit_price: Some("185.00".into()),
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"type\""), "body should use 'type' key: {json}");
-        assert!(!json.contains("\"order_type\""), "body must not use 'order_type': {json}");
+        assert!(
+            json.contains("\"type\""),
+            "body should use 'type' key: {json}"
+        );
+        assert!(
+            !json.contains("\"order_type\""),
+            "body must not use 'order_type': {json}"
+        );
     }
 
     #[test]
@@ -118,8 +124,14 @@ mod tests {
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("\"qty\""), "qty should be omitted: {json}");
-        assert!(!json.contains("\"limit_price\""), "limit_price should be omitted: {json}");
-        assert!(json.contains("\"notional\""), "notional should be present: {json}");
+        assert!(
+            !json.contains("\"limit_price\""),
+            "limit_price should be omitted: {json}"
+        );
+        assert!(
+            json.contains("\"notional\""),
+            "notional should be present: {json}"
+        );
     }
 }
 
