@@ -3,7 +3,7 @@ use std::time::Instant;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::app::{App, Modal, StatusMessage, Tab};
-use crate::events::Event;
+use crate::events::{Event, StreamKind};
 use crate::input::{
     handle_modal_key, handle_mouse, handle_orders_key, handle_positions_key, handle_search_key,
     handle_watchlist_key,
@@ -52,6 +52,14 @@ pub fn update(app: &mut App, event: Event) {
             }
         }
         Event::StatusMsg(msg) => app.status_msg = StatusMessage::persistent(msg),
+        Event::StreamConnected(kind) => match kind {
+            StreamKind::Market => app.market_stream_ok = true,
+            StreamKind::Account => app.account_stream_ok = true,
+        },
+        Event::StreamDisconnected(kind) => match kind {
+            StreamKind::Market => app.market_stream_ok = false,
+            StreamKind::Account => app.account_stream_ok = false,
+        },
         Event::Tick => {
             if let Some(exp) = app.status_msg.expires_at {
                 if exp <= Instant::now() {
@@ -114,7 +122,7 @@ mod tests {
     use crate::app::test_helpers::*;
     use crate::app::{Modal, OrdersSubTab, Tab};
     use crate::commands::Command;
-    use crate::events::Event;
+    use crate::events::{Event, StreamKind};
     use crate::types::{AccountInfo, MarketClock, Order, Quote};
     use crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -266,6 +274,57 @@ mod tests {
         let mut app = make_test_app();
         update(&mut app, Event::StatusMsg("hello".into()));
         assert_eq!(app.status_msg, "hello");
+    }
+
+    #[test]
+    fn stream_connected_market_sets_flag() {
+        let mut app = make_test_app();
+        assert!(!app.market_stream_ok);
+        update(&mut app, Event::StreamConnected(StreamKind::Market));
+        assert!(app.market_stream_ok);
+        assert!(
+            !app.account_stream_ok,
+            "account flag must remain unaffected"
+        );
+    }
+
+    #[test]
+    fn stream_connected_account_sets_flag() {
+        let mut app = make_test_app();
+        update(&mut app, Event::StreamConnected(StreamKind::Account));
+        assert!(app.account_stream_ok);
+        assert!(!app.market_stream_ok, "market flag must remain unaffected");
+    }
+
+    #[test]
+    fn stream_disconnected_market_clears_flag() {
+        let mut app = make_test_app();
+        app.market_stream_ok = true;
+        app.account_stream_ok = true;
+        update(&mut app, Event::StreamDisconnected(StreamKind::Market));
+        assert!(!app.market_stream_ok);
+        assert!(app.account_stream_ok, "account flag must remain unaffected");
+    }
+
+    #[test]
+    fn stream_disconnected_account_clears_flag() {
+        let mut app = make_test_app();
+        app.market_stream_ok = true;
+        app.account_stream_ok = true;
+        update(&mut app, Event::StreamDisconnected(StreamKind::Account));
+        assert!(!app.account_stream_ok);
+        assert!(app.market_stream_ok, "market flag must remain unaffected");
+    }
+
+    #[test]
+    fn stream_connected_then_disconnected_roundtrip() {
+        let mut app = make_test_app();
+        update(&mut app, Event::StreamConnected(StreamKind::Market));
+        update(&mut app, Event::StreamConnected(StreamKind::Account));
+        assert!(app.market_stream_ok && app.account_stream_ok);
+        update(&mut app, Event::StreamDisconnected(StreamKind::Market));
+        assert!(!app.market_stream_ok);
+        assert!(app.account_stream_ok);
     }
 
     #[test]

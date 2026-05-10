@@ -1,6 +1,13 @@
 use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Watchlist};
 use crossterm::event::{KeyEvent, MouseEvent};
 
+/// Identifies which WebSocket stream a connection-status event concerns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    Market,
+    Account,
+}
+
 #[derive(Debug)]
 pub enum Event {
     Input(KeyEvent),
@@ -15,6 +22,9 @@ pub enum Event {
     // WebSocket (Phase 2)
     MarketQuote(Quote),
     TradeUpdate(Order),
+    // WebSocket stream connection status
+    StreamConnected(StreamKind),
+    StreamDisconnected(StreamKind),
     // Control
     Tick,
     StatusMsg(String),

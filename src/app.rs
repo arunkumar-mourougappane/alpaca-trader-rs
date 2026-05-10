@@ -319,6 +319,11 @@ pub struct App {
     pub status_msg: StatusMessage,
     pub should_quit: bool,
 
+    /// `true` while the market-data WebSocket is connected and authenticated.
+    pub market_stream_ok: bool,
+    /// `true` while the account WebSocket is connected and authenticated.
+    pub account_stream_ok: bool,
+
     /// Interactive element positions from the last rendered frame.
     pub hit_areas: HitAreas,
 }
@@ -352,6 +357,8 @@ impl App {
             searching: false,
             status_msg: StatusMessage::persistent("Loading…"),
             should_quit: false,
+            market_stream_ok: false,
+            account_stream_ok: false,
             hit_areas: HitAreas::default(),
         }
     }
