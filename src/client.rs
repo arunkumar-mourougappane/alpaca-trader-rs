@@ -19,17 +19,19 @@ impl AlpacaClient {
         }
     }
 
-    fn auth_headers(&self) -> HeaderMap {
+    fn auth_headers(&self) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
         headers.insert(
             "APCA-API-KEY-ID",
-            HeaderValue::from_str(&self.config.key).unwrap(),
+            HeaderValue::from_str(&self.config.key)
+                .context("API key contains invalid header characters")?,
         );
         headers.insert(
             "APCA-API-SECRET-KEY",
-            HeaderValue::from_str(&self.config.secret).unwrap(),
+            HeaderValue::from_str(&self.config.secret)
+                .context("API secret contains invalid header characters")?,
         );
-        headers
+        Ok(headers)
     }
 
     fn url(&self, path: &str) -> String {
@@ -39,7 +41,7 @@ impl AlpacaClient {
     pub async fn get_account(&self) -> Result<AccountInfo> {
         self.http
             .get(self.url("/account"))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("GET /account request failed")?
@@ -51,7 +53,7 @@ impl AlpacaClient {
     pub async fn get_positions(&self) -> Result<Vec<Position>> {
         self.http
             .get(self.url("/positions"))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("GET /positions request failed")?
@@ -64,7 +66,7 @@ impl AlpacaClient {
         self.http
             .get(self.url("/orders"))
             .query(&[("status", status), ("limit", "100")])
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("GET /orders request failed")?
@@ -76,7 +78,7 @@ impl AlpacaClient {
     pub async fn submit_order(&self, req: &OrderRequest) -> Result<Order> {
         self.http
             .post(self.url("/orders"))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .json(req)
             .send()
             .await
@@ -89,7 +91,7 @@ impl AlpacaClient {
     pub async fn cancel_order(&self, id: &str) -> Result<()> {
         self.http
             .delete(self.url(&format!("/orders/{}", id)))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("DELETE /orders/{id} request failed")?;
@@ -99,7 +101,7 @@ impl AlpacaClient {
     pub async fn get_clock(&self) -> Result<MarketClock> {
         self.http
             .get(self.url("/clock"))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("GET /clock request failed")?
@@ -111,7 +113,7 @@ impl AlpacaClient {
     pub async fn list_watchlists(&self) -> Result<Vec<WatchlistSummary>> {
         self.http
             .get(self.url("/watchlists"))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("GET /watchlists request failed")?
@@ -123,7 +125,7 @@ impl AlpacaClient {
     pub async fn get_watchlist(&self, id: &str) -> Result<Watchlist> {
         self.http
             .get(self.url(&format!("/watchlists/{}", id)))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("GET /watchlists/{id} request failed")?
@@ -136,7 +138,7 @@ impl AlpacaClient {
         let body = serde_json::json!({ "symbol": symbol });
         self.http
             .post(self.url(&format!("/watchlists/{}", id)))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .json(&body)
             .send()
             .await
@@ -149,7 +151,7 @@ impl AlpacaClient {
     pub async fn remove_from_watchlist(&self, id: &str, symbol: &str) -> Result<Watchlist> {
         self.http
             .delete(self.url(&format!("/watchlists/{}/{}", id, symbol)))
-            .headers(self.auth_headers())
+            .headers(self.auth_headers()?)
             .send()
             .await
             .context("DELETE /watchlists/{id}/{symbol} request failed")?
