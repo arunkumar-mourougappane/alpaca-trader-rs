@@ -64,6 +64,96 @@ fn watchlist_json(id: &str) -> serde_json::Value {
     })
 }
 
+// ── auth_headers – invalid credentials (regression for issue #5) ─────────────
+//
+// Before the fix, HeaderValue::from_str().unwrap() would panic on any key or
+// secret that contains non-ASCII, whitespace, or control characters.  Each
+// test below constructs a client with a bad credential and asserts that the
+// first call returns Err (with a descriptive message) rather than panicking.
+
+fn bad_key_config(base_url: String, key: &str) -> AlpacaConfig {
+    AlpacaConfig {
+        base_url,
+        key: key.into(),
+        secret: "good-secret".into(),
+        env: AlpacaEnv::Paper,
+    }
+}
+
+fn bad_secret_config(base_url: String, secret: &str) -> AlpacaConfig {
+    AlpacaConfig {
+        base_url,
+        key: "PKTEST000".into(),
+        secret: secret.into(),
+        env: AlpacaEnv::Paper,
+    }
+}
+
+#[tokio::test]
+async fn key_with_trailing_newline_returns_err_not_panic() {
+    // Trailing newline is the most common copy-paste mistake.
+    let client = AlpacaClient::new(bad_key_config("http://localhost".into(), "PKTEST\n"));
+    let result = client.get_account().await;
+    assert!(
+        result.is_err(),
+        "expected Err for key with trailing newline, got Ok"
+    );
+    let msg = format!("{:#}", result.unwrap_err());
+    assert!(
+        msg.contains("API key"),
+        "error message should mention 'API key', got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn secret_with_trailing_newline_returns_err_not_panic() {
+    let client = AlpacaClient::new(bad_secret_config(
+        "http://localhost".into(),
+        "mysecret\n",
+    ));
+    let result = client.get_account().await;
+    assert!(
+        result.is_err(),
+        "expected Err for secret with trailing newline, got Ok"
+    );
+    let msg = format!("{:#}", result.unwrap_err());
+    assert!(
+        msg.contains("API secret"),
+        "error message should mention 'API secret', got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn key_with_non_ascii_returns_err_not_panic() {
+    let client = AlpacaClient::new(bad_key_config("http://localhost".into(), "PK\u{00e9}TEST"));
+    let result = client.get_account().await;
+    assert!(
+        result.is_err(),
+        "expected Err for key with non-ASCII char, got Ok"
+    );
+}
+
+#[tokio::test]
+async fn key_with_control_character_returns_err_not_panic() {
+    // ASCII control character (DEL = 0x7f) is also invalid in an HTTP header.
+    let client = AlpacaClient::new(bad_key_config("http://localhost".into(), "PK\x7fTEST"));
+    let result = client.get_account().await;
+    assert!(
+        result.is_err(),
+        "expected Err for key with control character, got Ok"
+    );
+}
+
+#[tokio::test]
+async fn key_with_embedded_space_returns_err_not_panic() {
+    let client = AlpacaClient::new(bad_key_config("http://localhost".into(), "PK TEST 000"));
+    let result = client.get_account().await;
+    assert!(
+        result.is_err(),
+        "expected Err for key with embedded space, got Ok"
+    );
+}
+
 // ── Auth headers ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
