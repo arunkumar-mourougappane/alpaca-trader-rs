@@ -101,20 +101,83 @@ pub fn init() -> anyhow::Result<WorkerGuard> {
 }
 
 fn log_dir() -> std::path::PathBuf {
+    log_dir_from(dirs::home_dir())
+}
+
+/// Determine the log directory given an optional home path.
+///
+/// Resolution order (first hit wins):
+/// 1. Platform-appropriate subdirectory under `home` (preferred)
+/// 2. `./alpaca-trader-logs` relative to the current working directory
+/// 3. `<temp_dir>/alpaca-trader-logs`
+///
+/// A `tracing::warn!` is emitted whenever a fallback is used so the operator
+/// can see where logs are being written.
+pub(crate) fn log_dir_from(home: Option<std::path::PathBuf>) -> std::path::PathBuf {
     #[cfg(target_os = "macos")]
-    {
-        let mut p = dirs::home_dir().expect("no home directory");
-        p.push("Library/Logs/alpaca-trader");
-        p
-    }
+    let platform_dir = home.map(|h| h.join("Library/Logs/alpaca-trader"));
+
     #[cfg(not(target_os = "macos"))]
-    {
-        let mut p = dirs::data_local_dir().unwrap_or_else(|| {
-            let mut h = dirs::home_dir().expect("no home directory");
-            h.push(".local/share");
-            h
-        });
-        p.push("alpaca-trader/logs");
-        p
+    let platform_dir = home.map(|h| h.join(".local/share/alpaca-trader/logs"));
+
+    if let Some(dir) = platform_dir {
+        return dir;
+    }
+
+    // Fallback 1: current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        tracing::warn!(
+            path = %cwd.display(),
+            "$HOME is not set; writing logs relative to current directory"
+        );
+        return cwd.join("alpaca-trader-logs");
+    }
+
+    // Fallback 2: system temp directory
+    let tmp = std::env::temp_dir();
+    tracing::warn!(
+        path = %tmp.display(),
+        "could not determine current directory; writing logs to temp directory"
+    );
+    tmp.join("alpaca-trader-logs")
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::log_dir_from;
+    use std::path::PathBuf;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn home_present_returns_macos_log_path() {
+        let dir = log_dir_from(Some(PathBuf::from("/Users/tester")));
+        assert_eq!(
+            dir,
+            PathBuf::from("/Users/tester/Library/Logs/alpaca-trader")
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn home_present_returns_xdg_log_path() {
+        let dir = log_dir_from(Some(PathBuf::from("/home/tester")));
+        assert_eq!(
+            dir,
+            PathBuf::from("/home/tester/.local/share/alpaca-trader/logs")
+        );
+    }
+
+    #[test]
+    fn no_home_falls_back_to_non_panicking_dir() {
+        // When home is absent the function must NOT panic and must return a
+        // path ending in "alpaca-trader-logs" (cwd or temp fallback).
+        let dir = log_dir_from(None);
+        assert!(
+            dir.ends_with("alpaca-trader-logs"),
+            "fallback path should end with alpaca-trader-logs, got: {}",
+            dir.display()
+        );
     }
 }
