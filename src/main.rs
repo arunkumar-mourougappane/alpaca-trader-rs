@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
     let refresh_notify = Arc::new(Notify::new());
 
     // Command channel — sync update() → async command handler
-    let (command_tx, command_rx) = mpsc::channel::<alpaca_trader_rs::commands::Command>(64);
+    let (command_tx, command_rx) = mpsc::channel::<alpaca_trader_rs::commands::Command>(8);
 
     // Symbol watch channel — pushes watchlist symbols to the market stream
     let (symbol_tx, symbol_rx) = watch::channel::<Vec<String>>(vec![]);
