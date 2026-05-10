@@ -5,7 +5,7 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 - **Library** (`alpaca_trader_rs` crate): typed async REST client, shared domain types, and WebSocket streaming primitives — embed it in your own Rust application.
 - **App** (`alpaca-trader` binary): a full interactive terminal dashboard built on the library, with live account data, positions, orders, watchlist management, and order entry.
 
-> This software is proprietary. All use beyond viewing the source requires explicit written permission from the author. See [LICENSE.md](LICENSE.md) and [docs/licensing.md](docs/licensing.md).
+> **Proprietary software.** All use beyond viewing the source requires explicit written permission from the author. See [LICENSE.md](LICENSE.md) and [docs/licensing.md](docs/licensing.md).
 
 ---
 
@@ -67,6 +67,7 @@ Add to your `Cargo.toml` (requires a Collaboration Agreement — see [Licensing]
 [dependencies]
 alpaca-trader-rs = { git = "https://github.com/amouroug/alpaca-trader-rs" }
 tokio = { version = "1", features = ["full"] }
+dotenvy = "0.15"
 ```
 
 ### Fetch account info
@@ -128,9 +129,9 @@ client.remove_from_watchlist(&wl.id, "TLRY").await?;
 | `config` | `AlpacaConfig`, `AlpacaEnv` |
 | `client` | `AlpacaClient` — `get_account()`, `get_positions()`, `get_orders()`, `submit_order()`, `cancel_order()`, `get_clock()`, `list_watchlists()`, `get_watchlist()`, `add_to_watchlist()`, `remove_from_watchlist()` |
 | `types` | `AccountInfo`, `Position`, `Order`, `OrderRequest`, `OrderSide`, `OrderType`, `TimeInForce`, `Quote`, `MarketClock`, `Watchlist`, `WatchlistSummary`, `Asset` |
-| `events` | `Event` — unified event enum used by both streams and the TUI app |
+| `events` | `Event` — unified event enum consumed by the TUI app |
 
-> `stream::MarketStream` and `stream::AccountStream` (WebSocket) are implemented in Phase 2.
+> `stream::MarketStream` and `stream::AccountStream` (WebSocket live data) are Phase 2.
 
 ---
 
@@ -145,20 +146,22 @@ alpaca-trader-rs/
 │   ├── client.rs           # AlpacaClient: all REST methods
 │   ├── types.rs            # Shared domain types (serde-deserializable)
 │   ├── events.rs           # Event enum
-│   ├── app.rs              # App state — TEA Model  [app-only]
-│   ├── update.rs           # update(state, event)   [app-only]
-│   └── ui/                 #                        [app-only]
-│       ├── mod.rs           # render(frame, app) + popup_area()
-│       ├── dashboard.rs     # Header, tab bar, status bar
-│       ├── account.rs       # Account panel + sparkline
-│       ├── watchlist.rs     # Watchlist table
-│       ├── positions.rs     # Positions table
-│       ├── orders.rs        # Orders table + sub-tabs
-│       ├── modals.rs        # All modals (order entry, detail, help, confirm)
-│       └── theme.rs         # Colours and styles
-├── src/handlers/
-│   ├── input.rs            # crossterm EventStream → Event channel
-│   └── rest.rs             # Periodic REST polling task
+│   ├── app.rs              # App state — TEA Model          [app-only]
+│   ├── update.rs           # update(state, event)           [app-only]
+│   ├── handlers/
+│   │   ├── input.rs        # crossterm EventStream → Event  [app-only]
+│   │   └── rest.rs         # Periodic REST polling task     [app-only]
+│   └── ui/                 #                                [app-only]
+│       ├── mod.rs          # render(frame, app) + popup_area()
+│       ├── dashboard.rs    # Header, tab bar, status bar
+│       ├── account.rs      # Account panel + sparkline
+│       ├── watchlist.rs    # Watchlist table + search
+│       ├── positions.rs    # Positions table + totals
+│       ├── orders.rs       # Orders table + sub-tabs
+│       ├── modals.rs       # Order entry, detail, help, confirm modals
+│       └── theme.rs        # Colours and styles
+├── tests/
+│   └── client_tests.rs     # AlpacaClient integration tests (wiremock) — Phase 2
 ├── docs/                   # Full documentation
 ├── .env.example            # Credential template
 ├── run.sh                  # Run script (--paper / --live)
@@ -171,7 +174,7 @@ alpaca-trader-rs/
 
 ## Environment Variables
 
-Stored in `.env` with `LIVE_` / `PAPER_` prefixes. `ALPACA_ENV` (or `--paper`/`--live` flag) selects which set is active.
+Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag to `run.sh` (or `ALPACA_ENV` in `.env`) selects which set is active.
 
 | Variable | Description |
 |---|---|
@@ -190,19 +193,22 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. `ALPACA_ENV` (or `--paper`/`-
 | Feature | Status |
 |---|---|
 | REST client (`AlpacaClient`) | Done |
-| TUI shell (header, tabs, status bar) | Done |
-| Account panel + sparkline | Done |
-| Watchlist panel + search | Done |
-| Positions panel + totals | Done |
-| Orders panel + sub-tabs | Done |
+| TUI shell — header, tabs, status bar | Done |
+| Account panel + equity sparkline | Done |
+| Watchlist panel + live search | Done |
+| Positions panel + totals footer | Done |
+| Orders panel + Open/Filled/Cancelled sub-tabs | Done |
 | Order Entry modal | Done |
 | Symbol Detail modal | Done |
 | Help overlay | Done |
-| Paper / Live switching (`run.sh`) | Done |
+| Paper / Live switching (`run.sh --paper/--live`) | Done |
+| Clippy clean | Done |
+| Test strategy documented | Done |
+| Unit + integration tests | Pending |
 | WebSocket market data streaming | Phase 2 |
 | WebSocket account/trade stream | Phase 2 |
 | Live order submission | Phase 2 |
-| Watchlist add/remove (confirmed) | Phase 2 |
+| Watchlist add/remove (wired to REST) | Phase 2 |
 
 ---
 
@@ -214,6 +220,7 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. `ALPACA_ENV` (or `--paper`/`-
 | [docs/credentials-setup.md](docs/credentials-setup.md) | Obtaining and configuring Alpaca API keys |
 | [docs/ui-mockups.md](docs/ui-mockups.md) | ASCII mockups and full keyboard/mouse interaction spec |
 | [docs/api-research.md](docs/api-research.md) | REST endpoint shapes and live test results |
+| [docs/testing.md](docs/testing.md) | Testing strategy: mock patterns, crate rationale, full test case inventory |
 | [docs/licensing.md](docs/licensing.md) | License types, fees, and how to request a Collaboration Agreement |
 
 ---
