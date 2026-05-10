@@ -8,6 +8,8 @@ pub(crate) mod test_helpers {
     use crate::types::{Asset, Order, Watchlist};
 
     pub fn make_test_app() -> App {
+        let (command_tx, _) = tokio::sync::mpsc::channel(1);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
         App::new(
             AlpacaConfig {
                 base_url: "http://localhost".into(),
@@ -16,6 +18,8 @@ pub(crate) mod test_helpers {
                 env: AlpacaEnv::Paper,
             },
             Arc::new(tokio::sync::Notify::new()),
+            command_tx,
+            symbol_tx,
         )
     }
 
@@ -60,8 +64,9 @@ pub(crate) mod test_helpers {
 }
 
 use ratatui::widgets::TableState;
-use tokio::sync::Notify;
+use tokio::sync::{mpsc, watch, Notify};
 
+use crate::commands::Command;
 use crate::config::AlpacaConfig;
 use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Watchlist};
 
@@ -194,6 +199,8 @@ pub enum Modal {
 pub struct App {
     pub config: AlpacaConfig,
     pub refresh_notify: Arc<Notify>,
+    pub command_tx: mpsc::Sender<Command>,
+    pub symbol_tx: watch::Sender<Vec<String>>,
 
     pub account: Option<AccountInfo>,
     pub positions: Vec<Position>,
@@ -218,10 +225,17 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: AlpacaConfig, refresh_notify: Arc<Notify>) -> Self {
+    pub fn new(
+        config: AlpacaConfig,
+        refresh_notify: Arc<Notify>,
+        command_tx: mpsc::Sender<Command>,
+        symbol_tx: watch::Sender<Vec<String>>,
+    ) -> Self {
         Self {
             config,
             refresh_notify,
+            command_tx,
+            symbol_tx,
             account: None,
             positions: Vec::new(),
             orders: Vec::new(),

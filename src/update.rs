@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField, OrdersSubTab, Tab};
+use crate::commands::Command;
 use crate::events::Event;
 
 pub fn update(app: &mut App, event: Event) {
@@ -27,6 +28,9 @@ pub fn update(app: &mut App, event: Event) {
         }
         Event::ClockUpdated(c) => app.clock = Some(c),
         Event::WatchlistUpdated(w) => {
+            // Push new symbol list to the market stream for resubscription
+            let symbols: Vec<String> = w.assets.iter().map(|a| a.symbol.clone()).collect();
+            let _ = app.symbol_tx.send(symbols);
             if app.watchlist_state.selected().is_none() && !w.assets.is_empty() {
                 app.watchlist_state.select(Some(0));
             }
@@ -286,8 +290,23 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 },
                 KeyCode::Enter => {
                     if state.focused_field == OrderField::Submit {
-                        // Order submission handled in main loop via command channel (Phase 2)
-                        app.status_msg = "Order submission coming in Phase 2".into();
+                        let _ = app.command_tx.try_send(Command::SubmitOrder {
+                            symbol: state.symbol.clone(),
+                            side: if state.side_buy { "buy" } else { "sell" }.into(),
+                            order_type: if state.market_order { "market" } else { "limit" }.into(),
+                            qty: if state.qty_input.is_empty() {
+                                None
+                            } else {
+                                Some(state.qty_input.clone())
+                            },
+                            price: if state.market_order || state.price_input.is_empty() {
+                                None
+                            } else {
+                                Some(state.price_input.clone())
+                            },
+                            time_in_force: "day".into(),
+                        });
+                        app.status_msg = "Submitting order…".into();
                         app.modal = None;
                         return;
                     } else {
@@ -310,16 +329,21 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 KeyCode::Left | KeyCode::Right | KeyCode::Char('y') | KeyCode::Char('n') => {
                     confirmed = matches!(key.code, KeyCode::Char('y') | KeyCode::Left);
                     if confirmed {
-                        // Trigger action via notify + status (Phase 2: send command via channel)
                         match &action {
                             ConfirmAction::CancelOrder(id) => {
-                                app.status_msg = format!("Cancelling order {}…", &id[..8]);
+                                let _ = app.command_tx.try_send(Command::CancelOrder(id.clone()));
+                                app.status_msg =
+                                    format!("Cancelling {}…", &id[..id.len().min(8)]);
                             }
-                            ConfirmAction::RemoveFromWatchlist { symbol, .. } => {
+                            ConfirmAction::RemoveFromWatchlist { watchlist_id, symbol } => {
+                                let _ =
+                                    app.command_tx.try_send(Command::RemoveFromWatchlist {
+                                        watchlist_id: watchlist_id.clone(),
+                                        symbol: symbol.clone(),
+                                    });
                                 app.status_msg = format!("Removing {}…", symbol);
                             }
                         }
-                        app.refresh_notify.notify_one();
                         app.modal = None;
                         return;
                     }
@@ -364,8 +388,11 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
             KeyCode::Enter => {
                 if !input.is_empty() {
+                    let _ = app.command_tx.try_send(Command::AddToWatchlist {
+                        watchlist_id: watchlist_id.clone(),
+                        symbol: input.clone(),
+                    });
                     app.status_msg = format!("Adding {}…", input);
-                    app.refresh_notify.notify_one();
                 }
                 None
             }
@@ -838,5 +865,167 @@ mod tests {
         app.searching = true;
         update(&mut app, key(KeyCode::Enter));
         assert!(!app.searching);
+    }
+
+    // ── Phase 2: command sends ────────────────────────────────────────────────
+
+    fn app_with_rx() -> (App, tokio::sync::mpsc::Receiver<Command>) {
+        use crate::config::{AlpacaConfig, AlpacaEnv};
+        let (command_tx, command_rx) = tokio::sync::mpsc::channel(16);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let app = App::new(
+            AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: AlpacaEnv::Paper,
+            },
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            command_tx,
+            symbol_tx,
+        );
+        (app, command_rx)
+    }
+
+    #[test]
+    fn order_entry_submit_sends_submit_order_command() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, mut cmd_rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Submit;
+        state.qty_input = "10".into();
+        state.price_input = "185.00".into();
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_none(), "modal should close after submit");
+        assert_eq!(app.status_msg, "Submitting order…");
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::SubmitOrder { symbol, .. } if symbol == "AAPL"),
+            "expected SubmitOrder for AAPL"
+        );
+    }
+
+    #[test]
+    fn order_entry_submit_market_order_omits_price() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, mut cmd_rx) = app_with_rx();
+        let mut state = OrderEntryState::new("TSLA".into());
+        state.focused_field = OrderField::Submit;
+        state.market_order = true;
+        state.qty_input = "5".into();
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::SubmitOrder { order_type, price: None, .. }
+                if order_type == "market"),
+            "market order should have no price"
+        );
+    }
+
+    #[test]
+    fn confirm_cancel_order_sends_cancel_command() {
+        use crate::app::ConfirmAction;
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.active_tab = Tab::Orders;
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("order-xyz".into()),
+            confirmed: false,
+        });
+
+        update(&mut app, key(KeyCode::Char('y')));
+
+        assert!(app.modal.is_none());
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::CancelOrder(id) if id == "order-xyz"),
+            "expected CancelOrder command"
+        );
+    }
+
+    #[test]
+    fn confirm_remove_watchlist_sends_remove_command() {
+        use crate::app::ConfirmAction;
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::Confirm {
+            message: "Remove?".into(),
+            action: ConfirmAction::RemoveFromWatchlist {
+                watchlist_id: "wl-id".into(),
+                symbol: "TLRY".into(),
+            },
+            confirmed: false,
+        });
+
+        update(&mut app, key(KeyCode::Char('y')));
+
+        assert!(app.modal.is_none());
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::RemoveFromWatchlist { symbol, .. } if symbol == "TLRY"),
+            "expected RemoveFromWatchlist command"
+        );
+    }
+
+    #[test]
+    fn add_symbol_enter_sends_add_command() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::AddSymbol {
+            input: "NVDA".into(),
+            watchlist_id: "wl-id".into(),
+        });
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_none());
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::AddToWatchlist { symbol, .. } if symbol == "NVDA"),
+            "expected AddToWatchlist command"
+        );
+    }
+
+    #[test]
+    fn add_symbol_empty_input_sends_no_command() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::AddSymbol {
+            input: String::new(),
+            watchlist_id: "wl-id".into(),
+        });
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(cmd_rx.try_recv().is_err(), "no command for empty input");
+    }
+
+    #[test]
+    fn watchlist_updated_pushes_symbols_to_symbol_tx() {
+        use tokio::sync::watch;
+        use crate::config::{AlpacaConfig, AlpacaEnv};
+        let (command_tx, _) = tokio::sync::mpsc::channel(1);
+        let (symbol_tx, symbol_rx) = watch::channel(vec![]);
+        let mut app = App::new(
+            AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: AlpacaEnv::Paper,
+            },
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            command_tx,
+            symbol_tx,
+        );
+
+        let wl = make_watchlist(&["AAPL", "TSLA", "NVDA"]);
+        update(&mut app, Event::WatchlistUpdated(wl));
+
+        assert!(symbol_rx.has_changed().unwrap_or(false), "symbol_tx should have been updated");
+        let symbols = symbol_rx.borrow().clone();
+        assert_eq!(symbols, vec!["AAPL", "TSLA", "NVDA"]);
     }
 }
