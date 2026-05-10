@@ -18,7 +18,7 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 
 ### Prerequisites
 
-- Rust 1.85+ (`rustup update stable`)
+- Rust 1.88+ (`rustup update stable`)
 - An Alpaca Markets account — paper trading is free at [alpaca.markets](https://alpaca.markets)
 
 ### Setup
