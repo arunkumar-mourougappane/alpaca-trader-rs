@@ -6,6 +6,9 @@ on:
 
 jobs:
   upload-assets:
+    permissions:
+      contents: write   # required to create a GitHub Release and upload assets
+
     strategy:
       matrix:
         include:
@@ -24,5 +27,5 @@ jobs:
         with:
           bin: alpaca-trader
           target: ${{ matrix.target }}
-          archive: $name-$target.$ext
+          archive: $bin-$target
           token: ${{ secrets.GITHUB_TOKEN }}
