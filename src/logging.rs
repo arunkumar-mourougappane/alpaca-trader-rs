@@ -32,7 +32,9 @@ impl<S: tracing::Subscriber> Layer<S> for SyslogLayer {
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut visitor = MessageVisitor { message: String::new() };
+        let mut visitor = MessageVisitor {
+            message: String::new(),
+        };
         event.record(&mut visitor);
         if visitor.message.is_empty() {
             return;
@@ -41,9 +43,9 @@ impl<S: tracing::Subscriber> Layer<S> for SyslogLayer {
             let msg = &visitor.message;
             let _ = match *event.metadata().level() {
                 tracing::Level::ERROR => logger.err(msg),
-                tracing::Level::WARN  => logger.warning(msg),
-                tracing::Level::INFO  => logger.info(msg),
-                _                     => logger.debug(msg),
+                tracing::Level::WARN => logger.warning(msg),
+                tracing::Level::INFO => logger.info(msg),
+                _ => logger.debug(msg),
             };
         }
     }
@@ -82,11 +84,11 @@ pub fn init() -> anyhow::Result<WorkerGuard> {
         pid: std::process::id(),
     })
     .ok()
-    .map(|logger| SyslogLayer { logger: Mutex::new(logger) });
+    .map(|logger| SyslogLayer {
+        logger: Mutex::new(logger),
+    });
 
-    let registry = tracing_subscriber::registry()
-        .with(filter)
-        .with(file_layer);
+    let registry = tracing_subscriber::registry().with(filter).with(file_layer);
 
     if let Some(syslog) = syslog_layer {
         registry.with(syslog).init();

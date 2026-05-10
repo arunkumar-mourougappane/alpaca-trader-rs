@@ -293,7 +293,12 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         let _ = app.command_tx.try_send(Command::SubmitOrder {
                             symbol: state.symbol.clone(),
                             side: if state.side_buy { "buy" } else { "sell" }.into(),
-                            order_type: if state.market_order { "market" } else { "limit" }.into(),
+                            order_type: if state.market_order {
+                                "market"
+                            } else {
+                                "limit"
+                            }
+                            .into(),
                             qty: if state.qty_input.is_empty() {
                                 None
                             } else {
@@ -324,49 +329,48 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             message,
             action,
             mut confirmed,
-        } => {
-            match key.code {
-                KeyCode::Left | KeyCode::Right | KeyCode::Char('y') | KeyCode::Char('n') => {
-                    confirmed = matches!(key.code, KeyCode::Char('y') | KeyCode::Left);
-                    if confirmed {
-                        match &action {
-                            ConfirmAction::CancelOrder(id) => {
-                                let _ = app.command_tx.try_send(Command::CancelOrder(id.clone()));
-                                app.status_msg =
-                                    format!("Cancelling {}…", &id[..id.len().min(8)]);
-                            }
-                            ConfirmAction::RemoveFromWatchlist { watchlist_id, symbol } => {
-                                let _ =
-                                    app.command_tx.try_send(Command::RemoveFromWatchlist {
-                                        watchlist_id: watchlist_id.clone(),
-                                        symbol: symbol.clone(),
-                                    });
-                                app.status_msg = format!("Removing {}…", symbol);
-                            }
+        } => match key.code {
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('y') | KeyCode::Char('n') => {
+                confirmed = matches!(key.code, KeyCode::Char('y') | KeyCode::Left);
+                if confirmed {
+                    match &action {
+                        ConfirmAction::CancelOrder(id) => {
+                            let _ = app.command_tx.try_send(Command::CancelOrder(id.clone()));
+                            app.status_msg = format!("Cancelling {}…", &id[..id.len().min(8)]);
                         }
-                        app.modal = None;
-                        return;
+                        ConfirmAction::RemoveFromWatchlist {
+                            watchlist_id,
+                            symbol,
+                        } => {
+                            let _ = app.command_tx.try_send(Command::RemoveFromWatchlist {
+                                watchlist_id: watchlist_id.clone(),
+                                symbol: symbol.clone(),
+                            });
+                            app.status_msg = format!("Removing {}…", symbol);
+                        }
                     }
-                    None
+                    app.modal = None;
+                    return;
                 }
-                KeyCode::Enter => {
-                    if confirmed {
-                        app.modal = None;
-                        return;
-                    }
-                    Some(Modal::Confirm {
-                        message,
-                        action,
-                        confirmed,
-                    })
+                None
+            }
+            KeyCode::Enter => {
+                if confirmed {
+                    app.modal = None;
+                    return;
                 }
-                _ => Some(Modal::Confirm {
+                Some(Modal::Confirm {
                     message,
                     action,
                     confirmed,
-                }),
+                })
             }
-        }
+            _ => Some(Modal::Confirm {
+                message,
+                action,
+                confirmed,
+            }),
+        },
 
         Modal::AddSymbol {
             mut input,
@@ -1005,8 +1009,8 @@ mod tests {
 
     #[test]
     fn watchlist_updated_pushes_symbols_to_symbol_tx() {
-        use tokio::sync::watch;
         use crate::config::{AlpacaConfig, AlpacaEnv};
+        use tokio::sync::watch;
         let (command_tx, _) = tokio::sync::mpsc::channel(1);
         let (symbol_tx, symbol_rx) = watch::channel(vec![]);
         let mut app = App::new(
@@ -1024,7 +1028,10 @@ mod tests {
         let wl = make_watchlist(&["AAPL", "TSLA", "NVDA"]);
         update(&mut app, Event::WatchlistUpdated(wl));
 
-        assert!(symbol_rx.has_changed().unwrap_or(false), "symbol_tx should have been updated");
+        assert!(
+            symbol_rx.has_changed().unwrap_or(false),
+            "symbol_tx should have been updated"
+        );
         let symbols = symbol_rx.borrow().clone();
         assert_eq!(symbols, vec!["AAPL", "TSLA", "NVDA"]);
     }

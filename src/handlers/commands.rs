@@ -39,17 +39,19 @@ pub async fn run(
 }
 
 #[instrument(skip(tx, client, refresh_notify))]
-async fn handle(
-    cmd: Command,
-    tx: &Sender<Event>,
-    client: &AlpacaClient,
-    refresh_notify: &Notify,
-) {
+async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh_notify: &Notify) {
     match cmd {
-        Command::SubmitOrder { symbol, side, order_type, qty, price, time_in_force } => {
+        Command::SubmitOrder {
+            symbol,
+            side,
+            order_type,
+            qty,
+            price,
+            time_in_force,
+        } => {
             let tif = match time_in_force.as_str() {
                 "gtc" => TimeInForce::Gtc,
-                _     => TimeInForce::Day,
+                _ => TimeInForce::Day,
             };
             let req = OrderRequest {
                 symbol: symbol.clone(),
@@ -83,13 +85,18 @@ async fn handle(
                 }
                 Err(e) => {
                     warn!(error = %e, order_id = %id, "cancel failed (may already be filled)");
-                    let _ = tx.send(Event::StatusMsg(format!("Cancel error: {e}"))).await;
+                    let _ = tx
+                        .send(Event::StatusMsg(format!("Cancel error: {e}")))
+                        .await;
                 }
             }
             refresh_notify.notify_one();
         }
 
-        Command::AddToWatchlist { watchlist_id, symbol } => {
+        Command::AddToWatchlist {
+            watchlist_id,
+            symbol,
+        } => {
             info!(symbol = %symbol, "adding to watchlist");
             match client.add_to_watchlist(&watchlist_id, &symbol).await {
                 Ok(wl) => {
@@ -99,12 +106,17 @@ async fn handle(
                 }
                 Err(e) => {
                     error!(error = %e, "add to watchlist failed");
-                    let _ = tx.send(Event::StatusMsg(format!("Watchlist error: {e}"))).await;
+                    let _ = tx
+                        .send(Event::StatusMsg(format!("Watchlist error: {e}")))
+                        .await;
                 }
             }
         }
 
-        Command::RemoveFromWatchlist { watchlist_id, symbol } => {
+        Command::RemoveFromWatchlist {
+            watchlist_id,
+            symbol,
+        } => {
             info!(symbol = %symbol, "removing from watchlist");
             match client.remove_from_watchlist(&watchlist_id, &symbol).await {
                 Ok(wl) => {
@@ -114,7 +126,9 @@ async fn handle(
                 }
                 Err(e) => {
                     error!(error = %e, "remove from watchlist failed");
-                    let _ = tx.send(Event::StatusMsg(format!("Watchlist error: {e}"))).await;
+                    let _ = tx
+                        .send(Event::StatusMsg(format!("Watchlist error: {e}")))
+                        .await;
                 }
             }
         }
@@ -298,7 +312,9 @@ mod tests {
 
         let events = collect_events(&mut rx).await;
         assert!(
-            events.iter().any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
             "expected WatchlistUpdated event"
         );
     }
@@ -329,7 +345,9 @@ mod tests {
 
         let events = collect_events(&mut rx).await;
         assert!(
-            events.iter().any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
             "expected WatchlistUpdated event"
         );
     }

@@ -76,7 +76,12 @@ async fn main() -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(config.clone(), refresh_notify.clone(), command_tx, symbol_tx);
+    let mut app = App::new(
+        config.clone(),
+        refresh_notify.clone(),
+        command_tx,
+        symbol_tx,
+    );
 
     // Event channel
     let (tx, mut rx) = mpsc::channel::<Event>(256);
