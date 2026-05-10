@@ -31,7 +31,7 @@ pub async fn run(
 }
 
 pub async fn poll_once(tx: Sender<Event>, client: Arc<AlpacaClient>) {
-    poll_all(&client, &tx).await;
+    tokio::join!(poll_all(&client, &tx), poll_portfolio_history(&client, &tx));
 }
 
 async fn poll_all(client: &AlpacaClient, tx: &Sender<Event>) {
@@ -114,6 +114,20 @@ async fn poll_watchlist(client: &AlpacaClient, tx: &Sender<Event>) {
     }
 }
 
+async fn poll_portfolio_history(client: &AlpacaClient, tx: &Sender<Event>) {
+    match client.get_portfolio_history().await {
+        Ok(h) => {
+            let data: Vec<f64> = h.equity.into_iter().flatten().collect();
+            if !data.is_empty() {
+                let _ = tx.send(Event::PortfolioHistoryLoaded(data)).await;
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Portfolio history unavailable: {}", e);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,6 +198,19 @@ mod tests {
             })))
             .mount(server)
             .await;
+
+        Mock::given(method("GET"))
+            .and(path("/account/portfolio/history"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "equity": [100000.0, 100100.5, null, 100200.0],
+                "timestamp": [1000, 1060, 1120, 1180],
+                "profit_loss": [0.0, 100.5, null, 200.0],
+                "profit_loss_pct": [0.0, 0.001, null, 0.002],
+                "base_value": 100000.0,
+                "timeframe": "1Min"
+            })))
+            .mount(server)
+            .await;
     }
 
     #[tokio::test]
@@ -223,6 +250,12 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, Event::WatchlistUpdated(_))),
             "missing WatchlistUpdated"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::PortfolioHistoryLoaded(_))),
+            "missing PortfolioHistoryLoaded"
         );
     }
 
@@ -329,5 +362,153 @@ mod tests {
             .await
             .expect("run() did not exit within 2 seconds")
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn poll_once_sends_portfolio_history_with_nulls_filtered() {
+        let server = MockServer::start().await;
+        mount_all(&server).await;
+
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_once(tx, client).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let history_event = events
+            .iter()
+            .find_map(|e| {
+                if let Event::PortfolioHistoryLoaded(data) = e {
+                    Some(data)
+                } else {
+                    None
+                }
+            })
+            .expect("PortfolioHistoryLoaded should be emitted");
+
+        // mount_all provides [100000.0, 100100.5, null, 100200.0]
+        // null is filtered out → 3 values
+        assert_eq!(history_event.len(), 3);
+        assert!((history_event[0] - 100000.0).abs() < 0.01);
+        assert!((history_event[1] - 100100.5).abs() < 0.01);
+        assert!((history_event[2] - 100200.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn poll_once_portfolio_history_error_is_silently_ignored() {
+        let server = MockServer::start().await;
+        mount_all(&server).await;
+
+        // Override portfolio history with a 500 error by pointing at a fresh server
+        // that has no mocks (all unmocked paths → wiremock returns 404).
+        // We only need to confirm no PortfolioHistoryLoaded arrives when the call fails.
+        let err_server = MockServer::start().await;
+        // Mount all except portfolio history on err_server so other events arrive.
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "ACTIVE", "equity": "100000", "buying_power": "200000",
+                "cash": "100000", "long_market_value": "0",
+                "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
+            })))
+            .mount(&err_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/positions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&err_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&err_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "is_open": false, "next_open": "", "next_close": "", "timestamp": ""
+            })))
+            .mount(&err_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&err_server)
+            .await;
+        // No mock for /account/portfolio/history → wiremock returns 500-ish
+
+        let client = Arc::new(AlpacaClient::new(test_config(err_server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_once(tx, client).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::PortfolioHistoryLoaded(_))),
+            "portfolio history error must not emit PortfolioHistoryLoaded"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_once_portfolio_history_all_null_does_not_emit_event() {
+        let server = MockServer::start().await;
+
+        // Minimal mocks so poll_all doesn't fail loudly
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "ACTIVE", "equity": "0", "buying_power": "0",
+                "cash": "0", "long_market_value": "0",
+                "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/positions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "is_open": false, "next_open": "", "next_close": "", "timestamp": ""
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        // All equity values are null (market closed all day)
+        Mock::given(method("GET"))
+            .and(path("/account/portfolio/history"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "equity": [null, null, null],
+                "timestamp": [1000, 1060, 1120],
+                "profit_loss": [null, null, null],
+                "profit_loss_pct": [null, null, null],
+                "base_value": 0.0,
+                "timeframe": "1Min"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_once(tx, client).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::PortfolioHistoryLoaded(_))),
+            "all-null equity must not emit PortfolioHistoryLoaded"
+        );
     }
 }

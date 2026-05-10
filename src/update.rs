@@ -60,6 +60,11 @@ pub fn update(app: &mut App, event: Event) {
             StreamKind::Market => app.market_stream_ok = false,
             StreamKind::Account => app.account_stream_ok = false,
         },
+        Event::PortfolioHistoryLoaded(data) => {
+            // Convert dollar values → cents (u64) to match equity_history format.
+            // Keep all samples; ongoing push_equity() calls will append new ones.
+            app.equity_history = data.into_iter().map(|v| (v * 100.0) as u64).collect();
+        }
         Event::Tick => {
             if let Some(exp) = app.status_msg.expires_at {
                 if exp <= Instant::now() {
@@ -332,6 +337,45 @@ mod tests {
         let mut app = make_test_app();
         update(&mut app, Event::Quit);
         assert!(app.should_quit);
+    }
+
+    // ── PortfolioHistoryLoaded ────────────────────────────────────────────────
+
+    #[test]
+    fn portfolio_history_loaded_replaces_equity_history() {
+        let mut app = make_test_app();
+        let data = vec![1000.0_f64, 1001.5, 1002.0];
+        update(&mut app, Event::PortfolioHistoryLoaded(data));
+        assert_eq!(app.equity_history, vec![100000, 100150, 100200]);
+    }
+
+    #[test]
+    fn portfolio_history_loaded_overwrites_existing_history() {
+        let mut app = make_test_app();
+        app.equity_history = vec![99999];
+        let data = vec![500.0_f64, 600.0];
+        update(&mut app, Event::PortfolioHistoryLoaded(data));
+        assert_eq!(app.equity_history, vec![50000, 60000]);
+    }
+
+    #[test]
+    fn portfolio_history_loaded_empty_vec_clears_history() {
+        let mut app = make_test_app();
+        app.equity_history = vec![12345];
+        update(&mut app, Event::PortfolioHistoryLoaded(vec![]));
+        assert!(app.equity_history.is_empty());
+    }
+
+    #[test]
+    fn portfolio_history_loaded_preserves_all_samples() {
+        let mut app = make_test_app();
+        let data: Vec<f64> = (0..390).map(|i| 100.0 + i as f64 * 0.1).collect();
+        update(&mut app, Event::PortfolioHistoryLoaded(data));
+        assert_eq!(
+            app.equity_history.len(),
+            390,
+            "all intraday samples should be kept"
+        );
     }
 
     #[test]

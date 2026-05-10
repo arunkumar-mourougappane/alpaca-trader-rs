@@ -25,6 +25,8 @@ pub enum Event {
     // WebSocket stream connection status
     StreamConnected(StreamKind),
     StreamDisconnected(StreamKind),
+    // Startup: pre-populate equity sparkline from portfolio history API
+    PortfolioHistoryLoaded(Vec<f64>),
     // Control
     Tick,
     StatusMsg(String),
