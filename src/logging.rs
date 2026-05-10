@@ -1,3 +1,4 @@
+//! Application logging setup using `tracing` and `tracing-appender`.
 use std::sync::Mutex;
 
 use tracing_appender::non_blocking::WorkerGuard;

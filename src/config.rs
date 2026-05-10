@@ -1,3 +1,4 @@
+//! Runtime configuration loaded from environment variables.
 use anyhow::{anyhow, Context, Result};
 
 #[cfg(test)]
@@ -116,22 +117,47 @@ mod tests {
     }
 }
 
+/// Selects which Alpaca trading environment to connect to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlpacaEnv {
+    /// Alpaca paper-trading environment — uses simulated funds with no real money.
     Paper,
+    /// Alpaca live-trading environment — uses real funds; handle with care.
     Live,
 }
 
+/// Runtime configuration loaded from environment variables.
+///
+/// Construct via [`AlpacaConfig::from_env`]; the individual fields are
+/// exposed so downstream code can read the resolved values without
+/// re-parsing the environment.
 #[derive(Debug, Clone)]
 pub struct AlpacaConfig {
-    /// REST base URL, includes /v2, no trailing slash
+    /// REST base URL including `/v2`, without a trailing slash.
+    ///
+    /// Example: `https://paper-api.alpaca.markets/v2`
     pub base_url: String,
+    /// Alpaca API key ID (`APCA-API-KEY-ID` header value).
     pub key: String,
+    /// Alpaca API secret key (`APCA-API-SECRET-KEY` header value).
     pub secret: String,
+    /// Which environment (paper / live) this config targets.
     pub env: AlpacaEnv,
 }
 
 impl AlpacaConfig {
+    /// Load configuration from environment variables.
+    ///
+    /// Reads `ALPACA_ENV` (defaults to `"paper"`) then picks the matching set
+    /// of variables:
+    ///
+    /// | Env | Variables required |
+    /// |-----|--------------------|
+    /// | `paper` | `PAPER_ALPACA_ENDPOINT`, `PAPER_ALPACA_KEY`, `PAPER_ALPACA_SECRET` |
+    /// | `live`  | `LIVE_ALPACA_ENDPOINT`,  `LIVE_ALPACA_KEY`,  `LIVE_ALPACA_SECRET`  |
+    ///
+    /// Returns an error if any required variable is missing or if `ALPACA_ENV`
+    /// is set to an unrecognised value.
     pub fn from_env() -> Result<Self> {
         let env_label = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".into());
 
@@ -173,6 +199,9 @@ impl AlpacaConfig {
         }
     }
 
+    /// Returns a short uppercase label for the current environment.
+    ///
+    /// Returns `"PAPER"` or `"LIVE"`. Useful for status-bar display.
     pub fn env_label(&self) -> &'static str {
         match self.env {
             AlpacaEnv::Paper => "PAPER",
