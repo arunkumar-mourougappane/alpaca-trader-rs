@@ -3,7 +3,8 @@ use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::config::AlpacaConfig;
 use crate::types::{
-    AccountInfo, MarketClock, Order, OrderRequest, Position, Watchlist, WatchlistSummary,
+    AccountInfo, MarketClock, Order, OrderRequest, PortfolioHistory, Position, Watchlist,
+    WatchlistSummary,
 };
 
 pub struct AlpacaClient {
@@ -158,5 +159,18 @@ impl AlpacaClient {
             .json::<Watchlist>()
             .await
             .context("DELETE /watchlists/{id}/{symbol} parse failed")
+    }
+
+    pub async fn get_portfolio_history(&self) -> Result<PortfolioHistory> {
+        self.http
+            .get(self.url("/account/portfolio/history"))
+            .query(&[("timeframe", "1Min"), ("period", "1D")])
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .context("GET /account/portfolio/history request failed")?
+            .json::<PortfolioHistory>()
+            .await
+            .context("GET /account/portfolio/history parse failed")
     }
 }

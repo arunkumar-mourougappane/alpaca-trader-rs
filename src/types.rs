@@ -293,3 +293,13 @@ pub struct Asset {
     #[serde(default)]
     pub easy_to_borrow: bool,
 }
+
+/// Response from `GET /v2/account/portfolio/history`.
+///
+/// The `equity` array contains one value per time bucket; entries are `null`
+/// when the market was closed during that interval.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PortfolioHistory {
+    /// Dollar equity values per time bucket; `None` means market was closed.
+    pub equity: Vec<Option<f64>>,
+}
