@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::config::AlpacaConfig;
-use crate::events::Event;
+use crate::events::{Event, StreamKind};
 use crate::types::Quote;
 
 const DATA_URL: &str = "wss://stream.data.alpaca.markets/v2/iex";
@@ -52,6 +52,7 @@ pub async fn run(
             }
             Err(e) => {
                 warn!(error = %e, backoff_secs = backoff, "market stream disconnected, reconnecting");
+                let _ = tx.send(Event::StreamDisconnected(StreamKind::Market)).await;
                 tokio::select! {
                     _ = cancel.cancelled() => return,
                     _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
@@ -94,6 +95,7 @@ async fn run_once(
     let symbols = symbol_rx.borrow().clone();
     subscribe(&mut write, &symbols).await?;
     info!(count = symbols.len(), "subscribed to market quotes");
+    let _ = tx.send(Event::StreamConnected(StreamKind::Market)).await;
 
     let mut prev_symbols = symbols;
 

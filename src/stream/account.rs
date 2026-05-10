@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 use crate::config::AlpacaConfig;
-use crate::events::Event;
+use crate::events::{Event, StreamKind};
 use crate::types::Order;
 
 const MAX_BACKOFF_SECS: u64 = 30;
@@ -42,6 +42,9 @@ pub async fn run(tx: Sender<Event>, cancel: CancellationToken, config: AlpacaCon
             Ok(_) => return,
             Err(e) => {
                 warn!(error = %e, backoff_secs = backoff, "account stream disconnected, reconnecting");
+                let _ = tx
+                    .send(Event::StreamDisconnected(StreamKind::Account))
+                    .await;
                 tokio::select! {
                     _ = cancel.cancelled() => return,
                     _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
@@ -87,6 +90,7 @@ async fn run_once(
     });
     write.send(Message::Text(listen.to_string().into())).await?;
     info!("account stream subscribed to trade_updates");
+    let _ = tx.send(Event::StreamConnected(StreamKind::Account)).await;
 
     loop {
         tokio::select! {

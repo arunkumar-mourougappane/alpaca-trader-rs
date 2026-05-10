@@ -1,7 +1,7 @@
 use chrono::Local;
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
     Frame,
@@ -26,7 +26,7 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
     let now = Local::now().format("%H:%M:%S ET  %Y-%m-%d").to_string();
 
-    let line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             format!(" [{}] ", env_label),
             Style::default().fg(env_color).add_modifier(Modifier::BOLD),
@@ -40,7 +40,24 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             format!("Market: {}   {}", market_status, now),
             Style::default().fg(theme::DIM),
         ),
-    ]);
+    ];
+
+    if !app.market_stream_ok || !app.account_stream_ok {
+        let which = match (app.market_stream_ok, app.account_stream_ok) {
+            (false, false) => " ⚠ STREAM",
+            (false, true) => " ⚠ MARKET",
+            (true, false) => " ⚠ ACCOUNT",
+            _ => unreachable!(),
+        };
+        spans.push(Span::styled(
+            which,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let line = Line::from(spans);
 
     let paragraph = Paragraph::new(line)
         .block(Block::default().borders(Borders::ALL))
