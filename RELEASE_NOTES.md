@@ -91,7 +91,7 @@ The following features are designed but not yet implemented:
 ## Getting Started
 
 ```bash
-git clone https://github.com/amouroug/alpaca-trader-rs
+git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
 cp .env.example .env
 # Fill in credentials — see docs/credentials-setup.md
