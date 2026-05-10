@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::send_command;
-use crate::app::{App, ConfirmAction, Modal, OrderField};
+use crate::app::{App, ConfirmAction, Modal, OrderField, StatusMessage};
 use crate::commands::Command;
 
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
@@ -71,7 +71,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             .and_then(|a| a.buying_power.parse::<f64>().ok())
                             .unwrap_or(0.0);
                         if let Some(err) = crate::input::validate(&state, buying_power) {
-                            app.status_msg = err;
+                            app.status_msg = StatusMessage::persistent(err);
                             app.modal = Some(Modal::OrderEntry(state));
                             return;
                         }

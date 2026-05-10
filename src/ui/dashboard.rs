@@ -75,7 +75,7 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
     let status = if app.status_msg.is_empty() {
         panel_hints.to_string()
     } else {
-        format!("  {}  │{}", app.status_msg, panel_hints)
+        format!("  {}  │{}", app.status_msg.text, panel_hints)
     };
 
     let para = Paragraph::new(status).style(Style::default().fg(theme::DIM));

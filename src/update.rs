@@ -1,6 +1,8 @@
+use std::time::Instant;
+
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::app::{App, Modal, Tab};
+use crate::app::{App, Modal, StatusMessage, Tab};
 use crate::events::Event;
 use crate::input::{
     handle_modal_key, handle_mouse, handle_orders_key, handle_positions_key, handle_search_key,
@@ -49,8 +51,14 @@ pub fn update(app: &mut App, event: Event) {
                 app.orders.insert(0, o);
             }
         }
-        Event::StatusMsg(msg) => app.status_msg = msg,
-        Event::Tick => {}
+        Event::StatusMsg(msg) => app.status_msg = StatusMessage::persistent(msg),
+        Event::Tick => {
+            if let Some(exp) = app.status_msg.expires_at {
+                if exp <= Instant::now() {
+                    app.status_msg.clear();
+                }
+            }
+        }
         Event::Quit => app.should_quit = true,
     }
 }
@@ -84,7 +92,7 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Tab => app.active_tab = app.active_tab.next(),
         KeyCode::BackTab => app.active_tab = app.active_tab.prev(),
         KeyCode::Char('r') => {
-            app.status_msg = "Refreshing…".into();
+            app.status_msg = StatusMessage::transient("Refreshing…");
             app.refresh_notify.notify_one();
         }
         _ => handle_panel_key(app, key),
@@ -274,6 +282,68 @@ mod tests {
         update(&mut app, Event::Tick);
         assert!(!app.should_quit);
         assert_eq!(app.status_msg, before_status);
+    }
+
+    #[test]
+    fn tick_clears_expired_transient_status_msg() {
+        use std::time::{Duration, Instant};
+        let mut app = make_test_app();
+        // Set an already-expired transient message.
+        app.status_msg = crate::app::StatusMessage {
+            text: "Order submitted".into(),
+            expires_at: Some(Instant::now() - Duration::from_secs(1)),
+        };
+        update(&mut app, Event::Tick);
+        assert!(
+            app.status_msg.is_empty(),
+            "expired transient message should be cleared"
+        );
+    }
+
+    #[test]
+    fn tick_does_not_clear_unexpired_transient_status_msg() {
+        use std::time::{Duration, Instant};
+        let mut app = make_test_app();
+        // Set a transient message that expires in the far future.
+        app.status_msg = crate::app::StatusMessage {
+            text: "Refreshing…".into(),
+            expires_at: Some(Instant::now() + Duration::from_secs(60)),
+        };
+        update(&mut app, Event::Tick);
+        assert_eq!(
+            app.status_msg, "Refreshing…",
+            "non-expired message must not be cleared"
+        );
+    }
+
+    #[test]
+    fn tick_does_not_clear_persistent_status_msg() {
+        let mut app = make_test_app();
+        app.status_msg = crate::app::StatusMessage::persistent("Loading…");
+        update(&mut app, Event::Tick);
+        assert_eq!(
+            app.status_msg, "Loading…",
+            "persistent message must survive tick"
+        );
+    }
+
+    #[test]
+    fn status_msg_transient_has_expiry() {
+        let msg = crate::app::StatusMessage::transient("Submitting order…");
+        assert!(!msg.text.is_empty());
+        assert!(
+            msg.expires_at.is_some(),
+            "transient message must have an expiry"
+        );
+    }
+
+    #[test]
+    fn status_msg_persistent_has_no_expiry() {
+        let msg = crate::app::StatusMessage::persistent("Error: unauthorized");
+        assert!(
+            msg.expires_at.is_none(),
+            "persistent message must have no expiry"
+        );
     }
 
     // ── Global key events ─────────────────────────────────────────────────────
