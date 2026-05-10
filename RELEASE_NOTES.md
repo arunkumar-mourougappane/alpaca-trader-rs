@@ -1,43 +1,81 @@
-# Release Notes — v0.1.0
+# Release Notes — v0.2.0
 
-**Release date:** 2026-05-09
+**Release date:** 2026-05-10
 **MSRV:** Rust 1.88+
+**Previous release:** [v0.1.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.1.0)
 
 ---
 
 ## Overview
 
-First public release of `alpaca-trader-rs` — an Alpaca Markets trading toolkit for Rust shipping as both an embeddable library crate and a standalone terminal UI application.
+v0.2.0 completes the Phase 2 roadmap: live WebSocket streaming for market data and account events, a fully wired async command channel for order submission and watchlist mutations, structured logging, and a raft of UX and reliability improvements. The test suite has grown from 101 to **188 tests**.
 
 ---
 
-## What's Included
+## What's New
 
-### Library (`alpaca_trader_rs`)
+### WebSocket Streaming (Phase 2 — now complete)
 
-- **`AlpacaClient`** — async REST client built on `reqwest` 0.13 with APCA authentication headers. Covers all core endpoints: account info, positions, orders (list / submit / cancel), market clock, and watchlists.
-- **`AlpacaConfig`** — loads paper or live credentials from environment variables, with trailing-slash normalisation and automatic `/v2` suffix handling.
-- **Domain types** — fully `serde`-deserializable structs for `AccountInfo`, `Position`, `Order`, `Quote`, `Watchlist`, `MarketClock`, and supporting enums (`OrderSide`, `OrderType`, `TimeInForce`).
-- **`Event` enum** — bridges terminal input, REST poll results, WebSocket data (Phase 2), and control signals over a single `tokio::sync::mpsc` channel.
+- **`src/stream/market.rs`** — connects to the Alpaca IEX market data WebSocket, authenticates, and streams real-time NBBO quotes for every symbol in the active watchlist. Resubscribes automatically when the watchlist changes; sends an explicit `unsubscribe` message for removed symbols (the protocol merges subscriptions and does not replace them). Reconnects with exponential backoff (1 s → 30 s cap) on disconnect.
+- **`src/stream/account.rs`** — connects to the Alpaca account/trade update stream and forwards `TradeUpdate` events for order fills and status changes. Same exponential-backoff reconnection strategy.
+- **Connection status indicators** — the TUI header now shows live `[MKT ●]` / `[ACCT ●]` badges, updated in real time via `Event::StreamConnected` / `Event::StreamDisconnected`.
 
-### Application (`alpaca-trader` binary)
+### Command Channel (Phase 2 — now complete)
 
-- **TUI dashboard** built on `ratatui` 0.30 and `crossterm` 0.29 with four panels:
-  - **Account** — equity, buying power, cash, day-trade count, and a scrolling equity sparkline.
-  - **Watchlist** — symbol list with live search/filter (`/`), add (`a`), and remove (`d`).
-  - **Positions** — open positions table with P&L and totals footer.
-  - **Orders** — Open / Filled / Cancelled sub-tabs; inline order entry modal; cancel confirmation dialog.
-- **Order Entry modal** — market or limit orders, buy/sell, qty, price, time-in-force.
-- **Symbol Detail modal** — per-symbol quote snapshot.
-- **Help overlay** — full keyboard reference (`?`).
-- **Paper / Live switching** — `run.sh --paper` (default) / `run.sh --live`; header badge shows `[PAPER]` (cyan) or `[LIVE]` (red) at all times.
-- **REST poll loop** — concurrent five-endpoint poll every 5 seconds via `tokio::join!`; manual refresh via `r` key.
+- **`src/commands.rs`** — defines the `Command` enum (`SubmitOrder`, `CancelOrder`, `AddToWatchlist`, `RemoveFromWatchlist`) bridging the synchronous `update()` function to the async task world.
+- **`src/handlers/commands.rs`** — async command-handler task that receives commands from `update()` over an `mpsc` channel and dispatches them to `AlpacaClient`. Live order submission and watchlist mutation now make real REST calls.
 
-### Key Bindings
+### Logging
+
+- **`src/logging.rs`** — structured logging via `tracing` + `tracing-appender` + `syslog`. Writes to a rolling file at a platform-appropriate path (`$HOME/Library/Logs/alpaca-trader/` on macOS, `$HOME/.local/share/alpaca-trader/` on Linux) and forwards to the system syslog. `RUST_LOG` controls the log level at runtime.
+
+### UX Improvements
+
+- **Mouse click handling** — clicking a tab bar label switches to that panel; clicking Orders sub-tab labels switches sub-tabs. Hit-testing uses actual rendered label widths, not fixed offsets.
+- **Order Entry validation** — the order form is validated before dispatching a command: empty symbol, zero quantity, and a missing price on limit orders are all rejected with a status-bar error message.
+- **Time-in-Force toggle** — the Order Entry modal now includes a DAY / GTC selector. When the market is closed, submitting a DAY order is blocked with a warning.
+- **Status message auto-dismiss** — status-bar messages clear automatically after 3 seconds; no manual `Esc` required.
+- **Portfolio history sparkline** — the Account panel equity sparkline is now pre-populated from `GET /account/portfolio/history` at startup (1-minute bars for the current trading day), so the chart is immediately useful even before the first real-time tick.
+
+### Developer Experience
+
+- **`#![deny(missing_docs)]`** — enforced across the entire library crate. Every public struct, enum, variant, field, and method now has a `///` doc comment; every public module has a `//!` module-level doc.
+- **CI: code coverage** — a `coverage` job runs `cargo-llvm-cov --lcov` and uploads results to Codecov. Codecov badge added to README.
+- **CI: release workflow** — `.github/workflows/release.yml` compiles and uploads pre-built binaries for `x86_64-linux`, `x86_64-darwin`, and `aarch64-darwin` on every `v*` tag push. Release badge added to README.
+- **Release profile** — `Cargo.toml` gains `[profile.release]` with `opt-level = 3`, `lto = "thin"`, `codegen-units = 1`, `strip = "symbols"`, expected to reduce binary size by ~30–50%.
+
+---
+
+## Bug Fixes
+
+| Fix | File | Detail |
+|-----|------|--------|
+| Stream unsubscribe on symbol removal | `src/stream/market.rs` | The Alpaca IEX protocol merges subscriptions; removed symbols were still streaming until the connection recycled. An explicit `unsubscribe` frame is now sent before the re-subscribe. |
+| Client header panic | `src/client.rs` | `AlpacaClient::new` called `.unwrap()` on header value construction; non-ASCII or space-containing keys now return a proper `Result::Err`. |
+| Logging init with `$HOME` unset | `src/logging.rs` | Logging initialiser no longer panics when `$HOME` is absent; falls back to a temporary directory. |
+| Tab bar hit-test | `src/handlers/input.rs` | Mouse clicks on tab bar labels used fixed offsets; replaced with widths measured from the rendered text. |
+| Orders sub-tab hit-test | `src/handlers/input.rs` | Sub-tab mouse click areas now use the exact rects captured during the last `render()` pass. |
+| Closed command channel | `src/handlers/commands.rs` | Command sends to a closed or full channel are now handled gracefully instead of silently dropped. |
+
+---
+
+## Tests
+
+**188 tests total** (up from 101 in v0.1.0):
+
+| Scope | Count | Highlights |
+|---|---|---|
+| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 43 | 8 WebSocket integration tests (auth, auth-failure, cancel, reconnect) × 2 streams; 2 unsubscribe tests; serde + env-var unit tests |
+| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`) | 126 | State logic, keyboard dispatch, mouse click paths, validation, command dispatch, REST polling |
+| HTTP integration (`tests/client_tests.rs`) | 19 | All 11 `AlpacaClient` methods against a `wiremock` mock; auth header validation; regression tests for non-ASCII keys |
+
+---
+
+## Key Bindings (unchanged from v0.1.0)
 
 | Key | Action |
 |-----|--------|
-| `1` / `2` / `3` | Switch panel (Account / Watchlist / Positions) — or switch Orders sub-tab when Orders is active |
+| `1` / `2` / `3` | Switch panel — or Orders sub-tab when Orders is active |
 | `4` | Switch to Orders panel |
 | `Tab` / `Shift-Tab` | Cycle panels forward / backward |
 | `j` / `k` or `↑` / `↓` | Navigate rows |
@@ -52,40 +90,6 @@ First public release of `alpaca-trader-rs` — an Alpaca Markets trading toolkit
 | `Esc` | Close modal |
 | `q` / `Ctrl-C` | Quit |
 
-### Infrastructure
-
-- **GitHub Actions CI** — `fmt`, `clippy` (`-D warnings`), `test` (Ubuntu + macOS matrix), `msrv` (1.88), `docs` jobs.
-- **Security audit** — `cargo-audit` on every `Cargo.toml`/`Cargo.lock` push and weekly schedule.
-- **Dependabot** — weekly automated dependency updates for Cargo and GitHub Actions.
-
-### Tests
-
-101 tests across three tiers:
-
-| Scope | Count | Approach |
-|---|---|---|
-| `types`, `config` | 20 | Pure unit — serde, enum helpers, env var parsing |
-| `app`, `update`, `handlers/rest` | 67 | State logic, keyboard dispatch, async REST polling |
-| `tests/client_tests.rs` | 14 | HTTP integration via `wiremock` mock server |
-
----
-
-## Bug Fixes
-
-- **Panic on short order IDs** (`src/update.rs`) — `&id[..8]` replaced with `&id[..id.len().min(8)]` to prevent a byte-index panic on IDs shorter than 8 characters.
-- **Orders panel `1`/`2`/`3` keys unreachable** (`src/update.rs`) — global key handler was intercepting digit keys before the Orders sub-tab handler could see them. Fixed by adding `if app.active_tab != Tab::Orders` guards.
-
----
-
-## Known Limitations / Phase 2
-
-The following features are designed but not yet implemented:
-
-- WebSocket market data streaming (real-time quotes)
-- WebSocket account/trade stream
-- Live order submission (REST wired; UI modal complete)
-- Watchlist add/remove wired to REST API
-
 ---
 
 ## Getting Started
@@ -94,7 +98,7 @@ The following features are designed but not yet implemented:
 git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
 cp .env.example .env
-# Fill in credentials — see docs/credentials-setup.md
+# Fill in your credentials — see docs/credentials-setup.md
 ./run.sh           # paper trading (default)
 ./run.sh --live    # live trading
 ```

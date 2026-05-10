@@ -219,7 +219,7 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | Paper / Live switching (`run.sh --paper/--live`) | Done |
 | Clippy clean | Done |
 | Test strategy documented | Done |
-| Unit + integration tests (178 tests) | Done |
+| Unit + integration tests (188 tests) | Done |
 | Orders panel 1/2/3 sub-tab key fix | Done |
 | GitHub Actions CI + security audit | Done |
 | Code coverage with cargo-llvm-cov + Codecov | Done |
@@ -230,10 +230,10 @@ Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag
 | Order Entry: Time-in-Force (DAY/GTC) selection | Done |
 | Order Entry: market-closed warning + DAY order block | Done |
 | Equity sparkline pre-populated from portfolio history API | Done |
-| WebSocket market data streaming | Phase 2 |
-| WebSocket account/trade stream | Phase 2 |
-| Live order submission | Phase 2 |
-| Watchlist add/remove (wired to REST) | Phase 2 |
+| WebSocket market data streaming | Done |
+| WebSocket account/trade stream | Done |
+| Live order submission | Done |
+| Watchlist add/remove (wired to REST) | Done |
 
 ---
 
