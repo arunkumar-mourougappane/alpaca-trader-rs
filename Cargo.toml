@@ -2,6 +2,7 @@
 name = "alpaca-trader-rs"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
 
 [[bin]]
