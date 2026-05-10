@@ -1,7 +1,81 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use ratatui::layout::Rect;
+
+const STATUS_MSG_TTL: Duration = Duration::from_secs(3);
+
+/// A status bar message that may auto-expire.
+///
+/// Transient messages (e.g. "Order submitted", "Refreshing…") carry a 3-second TTL and are
+/// cleared automatically on the next `Tick` after they expire. Persistent messages (errors,
+/// "Loading…") set `expires_at = None` so they stay until replaced.
+#[derive(Clone, Debug)]
+pub struct StatusMessage {
+    pub text: String,
+    pub expires_at: Option<Instant>,
+}
+
+impl StatusMessage {
+    /// Creates a transient message that auto-dismisses after 3 seconds.
+    pub fn transient(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            expires_at: Some(Instant::now() + STATUS_MSG_TTL),
+        }
+    }
+
+    /// Creates a persistent message that stays until explicitly replaced.
+    pub fn persistent(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            expires_at: None,
+        }
+    }
+
+    /// Returns `true` if the message text is empty (nothing to display).
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+
+    /// Clears the message text and removes any expiry.
+    pub fn clear(&mut self) {
+        self.text.clear();
+        self.expires_at = None;
+    }
+}
+
+impl Default for StatusMessage {
+    fn default() -> Self {
+        Self::persistent("")
+    }
+}
+
+/// Allow `PartialEq` comparisons against string literals in tests.
+impl PartialEq<str> for StatusMessage {
+    fn eq(&self, other: &str) -> bool {
+        self.text == other
+    }
+}
+
+impl PartialEq<&str> for StatusMessage {
+    fn eq(&self, other: &&str) -> bool {
+        self.text == *other
+    }
+}
+
+impl PartialEq<String> for StatusMessage {
+    fn eq(&self, other: &String) -> bool {
+        self.text == *other
+    }
+}
+
+impl PartialEq<StatusMessage> for StatusMessage {
+    fn eq(&self, other: &StatusMessage) -> bool {
+        self.text == other.text
+    }
+}
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
@@ -242,7 +316,7 @@ pub struct App {
     pub search_query: String,
     pub searching: bool,
 
-    pub status_msg: String,
+    pub status_msg: StatusMessage,
     pub should_quit: bool,
 
     /// Interactive element positions from the last rendered frame.
@@ -276,7 +350,7 @@ impl App {
             modal: None,
             search_query: String::new(),
             searching: false,
-            status_msg: String::from("Loading…"),
+            status_msg: StatusMessage::persistent("Loading…"),
             should_quit: false,
             hit_areas: HitAreas::default(),
         }
