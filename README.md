@@ -181,6 +181,7 @@ alpaca-trader-rs/
 ├── .env.example            # Credential template
 ├── run.sh                  # Run script (--paper / --live)
 ├── Cargo.toml
+├── LICENSE.md
 ├── LICENSE-MIT
 ├── LICENSE-APACHE
 └── README.md
