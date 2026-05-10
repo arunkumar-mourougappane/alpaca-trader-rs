@@ -1,6 +1,7 @@
 use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Watchlist};
 use crossterm::event::{KeyEvent, MouseEvent};
 
+#[derive(Debug)]
 pub enum Event {
     Input(KeyEvent),
     Mouse(MouseEvent),
