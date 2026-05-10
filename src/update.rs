@@ -257,15 +257,11 @@ fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 },
                 KeyCode::Char(c) => match state.focused_field {
                     OrderField::Symbol => state.symbol.push(c),
-                    OrderField::Qty => {
-                        if c.is_ascii_digit() || c == '.' {
-                            state.qty_input.push(c);
-                        }
+                    OrderField::Qty if c.is_ascii_digit() || c == '.' => {
+                        state.qty_input.push(c);
                     }
-                    OrderField::Price => {
-                        if c.is_ascii_digit() || c == '.' {
-                            state.price_input.push(c);
-                        }
+                    OrderField::Price if c.is_ascii_digit() || c == '.' => {
+                        state.price_input.push(c);
                     }
                     OrderField::Side => {
                         if c == 'b' || c == 'B' {
