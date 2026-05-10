@@ -62,7 +62,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --no-deps --all-features
         env:
-          RUSTDOCFLAGS: "-D warnings"
+          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
 
   coverage:
     name: Coverage

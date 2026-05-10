@@ -1,3 +1,11 @@
+//! Real-time market data WebSocket stream.
+//!
+//! Connects to the Alpaca market data stream endpoint, authenticates,
+//! subscribes to quotes for the symbols in the active watchlist, and
+//! forwards [`MarketQuote`] events to the application event channel.
+//! Reconnects automatically with a backoff delay on disconnection.
+//!
+//! [`MarketQuote`]: crate::events::Event::MarketQuote
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};

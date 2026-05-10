@@ -1,3 +1,4 @@
+//! Domain types used throughout the library and the binary crate.
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
@@ -135,62 +136,99 @@ mod tests {
     }
 }
 
+/// Snapshot of account balances and status from `GET /account`.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct AccountInfo {
+    /// Account status (e.g., `"ACTIVE"`).
     pub status: String,
+    /// Total account equity as a dollar string.
     pub equity: String,
+    /// Buying power available for new orders, as a dollar string.
     pub buying_power: String,
+    /// Cash balance, as a dollar string.
     pub cash: String,
+    /// Total long market value of all positions, as a dollar string.
     pub long_market_value: String,
+    /// Number of day trades made in the rolling 5-business-day window.
     pub daytrade_count: u32,
+    /// Whether the account has been flagged as a pattern day trader.
     pub pattern_day_trader: bool,
+    /// Account currency (typically `"USD"`).
     pub currency: String,
+    /// Total portfolio value; may be absent on some account types.
     #[serde(default)]
     pub portfolio_value: Option<String>,
 }
 
+/// A single open or closed position held in the account.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Position {
+    /// Ticker symbol (e.g., `"AAPL"`).
     pub symbol: String,
+    /// Number of shares held (positive = long, may be fractional).
     pub qty: String,
+    /// Average cost basis per share, as a dollar string.
     pub avg_entry_price: String,
+    /// Current price per share, as a dollar string.
     pub current_price: String,
+    /// Current market value of the entire position, as a dollar string.
     pub market_value: String,
+    /// Total unrealised profit/loss, as a dollar string.
     pub unrealized_pl: String,
+    /// Total unrealised profit/loss percentage, as a decimal string.
     pub unrealized_plpc: String,
+    /// Position side: `"long"` or `"short"`.
     pub side: String,
+    /// Asset class (e.g., `"us_equity"`, `"crypto"`).
     #[serde(default)]
     pub asset_class: String,
 }
 
+/// An order placed with the broker (open, filled, cancelled, etc.).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Order {
+    /// Unique order ID assigned by Alpaca.
     pub id: String,
+    /// Ticker symbol the order is for.
     pub symbol: String,
+    /// Order direction: `"buy"` or `"sell"`.
     pub side: String,
+    /// Whole-share quantity. Mutually exclusive with `notional`.
     #[serde(default)]
     pub qty: Option<String>,
+    /// Dollar notional amount. Mutually exclusive with `qty`.
     #[serde(default)]
     pub notional: Option<String>,
+    /// Order type: `"market"`, `"limit"`, etc.
     pub order_type: String,
+    /// Limit price for limit orders; absent for market orders.
     #[serde(default)]
     pub limit_price: Option<String>,
+    /// Current order status (e.g., `"new"`, `"filled"`, `"canceled"`).
     pub status: String,
+    /// ISO 8601 timestamp of when the order was submitted.
     #[serde(default)]
     pub submitted_at: Option<String>,
+    /// ISO 8601 timestamp of when the order was fully filled.
     #[serde(default)]
     pub filled_at: Option<String>,
+    /// Number of shares filled so far.
     pub filled_qty: String,
+    /// Time-in-force: `"day"`, `"gtc"`, etc.
     pub time_in_force: String,
 }
 
+/// Direction of an order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderSide {
+    /// Buy (long) order.
     Buy,
+    /// Sell (short or close-long) order.
     Sell,
 }
 
 impl OrderSide {
+    /// Returns the lowercase API string for this side: `"buy"` or `"sell"`.
     pub fn as_str(&self) -> &'static str {
         match self {
             OrderSide::Buy => "buy",
@@ -199,13 +237,17 @@ impl OrderSide {
     }
 }
 
+/// Execution type of an order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderType {
+    /// Execute immediately at the best available price.
     Market,
+    /// Execute only at the specified limit price or better.
     Limit,
 }
 
 impl OrderType {
+    /// Returns the lowercase API string: `"market"` or `"limit"`.
     pub fn as_str(&self) -> &'static str {
         match self {
             OrderType::Market => "market",
@@ -214,13 +256,17 @@ impl OrderType {
     }
 }
 
+/// How long an order remains active before it is automatically cancelled.
 #[derive(Debug, Clone)]
 pub enum TimeInForce {
+    /// Active only for the current trading day.
     Day,
+    /// Active until explicitly cancelled (Good Till Cancelled).
     Gtc,
 }
 
 impl TimeInForce {
+    /// Returns the lowercase API string: `"day"` or `"gtc"`.
     pub fn as_str(&self) -> &'static str {
         match self {
             TimeInForce::Day => "day",
@@ -229,67 +275,109 @@ impl TimeInForce {
     }
 }
 
+/// Request body sent to `POST /orders`.
+///
+/// Either `qty` or `notional` must be set; not both.
 #[derive(Debug, Clone, Serialize)]
 pub struct OrderRequest {
+    /// Ticker symbol to trade.
     pub symbol: String,
+    /// Whole-share quantity; omitted when using notional.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qty: Option<String>,
+    /// Dollar notional; omitted when using share quantity.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notional: Option<String>,
+    /// Order direction — `"buy"` or `"sell"`.
     pub side: String,
+    /// Order type — `"market"`, `"limit"`, etc.
     #[serde(rename = "type")]
     pub order_type: String,
+    /// Time-in-force — `"day"`, `"gtc"`, etc.
     pub time_in_force: String,
+    /// Required for limit orders; omitted for market orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_price: Option<String>,
 }
 
+/// Current market clock from `GET /clock`.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct MarketClock {
+    /// `true` if the primary US equity market is currently open.
     pub is_open: bool,
+    /// ISO 8601 timestamp of the next market open.
     pub next_open: String,
+    /// ISO 8601 timestamp of the next market close.
     pub next_close: String,
+    /// Current server timestamp in ISO 8601 format.
     pub timestamp: String,
 }
 
+/// Latest NBBO quote for a symbol from the market data stream.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Quote {
+    /// Ticker symbol this quote is for.
     pub symbol: String,
+    /// Ask price (best offer), absent before the first quote arrives.
     #[serde(default)]
     pub ap: Option<f64>,
+    /// Bid price (best bid), absent before the first quote arrives.
     #[serde(default)]
     pub bp: Option<f64>,
+    /// Ask size in round lots.
     #[serde(default)]
     pub as_: Option<u64>,
+    /// Bid size in round lots.
     #[serde(default)]
     pub bs: Option<u64>,
 }
 
+/// Brief watchlist descriptor returned by `GET /watchlists`.
+///
+/// For the full asset list use [`Watchlist`] via [`AlpacaClient::get_watchlist`].
+///
+/// [`AlpacaClient::get_watchlist`]: crate::client::AlpacaClient::get_watchlist
 #[derive(Debug, Clone, Deserialize)]
 pub struct WatchlistSummary {
+    /// Unique watchlist identifier (UUID).
     pub id: String,
+    /// Human-readable watchlist name.
     pub name: String,
 }
 
+/// Full watchlist including its constituent assets.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Watchlist {
+    /// Unique watchlist identifier (UUID).
     pub id: String,
+    /// Human-readable watchlist name.
     pub name: String,
+    /// Ordered list of assets in this watchlist.
     #[serde(default)]
     pub assets: Vec<Asset>,
 }
 
+/// An individual asset returned inside a [`Watchlist`] or from `GET /assets`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Asset {
+    /// Unique asset identifier (UUID).
     pub id: String,
+    /// Ticker symbol (e.g., `"AAPL"`).
     pub symbol: String,
+    /// Full company or asset name.
     pub name: String,
+    /// Exchange on which the asset trades (e.g., `"NASDAQ"`).
     pub exchange: String,
+    /// Asset class (e.g., `"us_equity"`, `"crypto"`).
     #[serde(rename = "class")]
     pub asset_class: String,
+    /// Whether the asset is currently tradable via the API.
     pub tradable: bool,
+    /// Whether the asset can be sold short.
     pub shortable: bool,
+    /// Whether fractional-share quantities are supported.
     pub fractionable: bool,
+    /// Whether the asset is easy to borrow for shorting.
     #[serde(default)]
     pub easy_to_borrow: bool,
 }

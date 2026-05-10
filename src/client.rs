@@ -1,3 +1,4 @@
+//! Async HTTP client wrapping the Alpaca Markets REST API.
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue};
 
@@ -7,12 +8,18 @@ use crate::types::{
     WatchlistSummary,
 };
 
+/// Async HTTP client for the Alpaca Markets REST API.
+///
+/// All methods require valid credentials in the [`AlpacaConfig`] provided at
+/// construction time. Each call sets the `APCA-API-KEY-ID` and
+/// `APCA-API-SECRET-KEY` request headers automatically.
 pub struct AlpacaClient {
     http: reqwest::Client,
     config: AlpacaConfig,
 }
 
 impl AlpacaClient {
+    /// Create a new client using the given configuration.
     pub fn new(config: AlpacaConfig) -> Self {
         Self {
             http: reqwest::Client::new(),
@@ -39,6 +46,7 @@ impl AlpacaClient {
         format!("{}{}", self.config.base_url, path)
     }
 
+    /// Fetch the current account snapshot (`GET /account`).
     pub async fn get_account(&self) -> Result<AccountInfo> {
         self.http
             .get(self.url("/account"))
@@ -51,6 +59,7 @@ impl AlpacaClient {
             .context("GET /account parse failed")
     }
 
+    /// Fetch all current open positions (`GET /positions`).
     pub async fn get_positions(&self) -> Result<Vec<Position>> {
         self.http
             .get(self.url("/positions"))
@@ -63,6 +72,9 @@ impl AlpacaClient {
             .context("GET /positions parse failed")
     }
 
+    /// Fetch orders filtered by `status` (`GET /orders?status=<status>&limit=100`).
+    ///
+    /// Common values for `status`: `"open"`, `"closed"`, `"all"`.
     pub async fn get_orders(&self, status: &str) -> Result<Vec<Order>> {
         self.http
             .get(self.url("/orders"))
@@ -76,6 +88,9 @@ impl AlpacaClient {
             .context("GET /orders parse failed")
     }
 
+    /// Submit a new order (`POST /orders`).
+    ///
+    /// Returns the created [`Order`] with its assigned `id` and initial status.
     pub async fn submit_order(&self, req: &OrderRequest) -> Result<Order> {
         self.http
             .post(self.url("/orders"))
@@ -89,6 +104,7 @@ impl AlpacaClient {
             .context("POST /orders parse failed")
     }
 
+    /// Cancel an open order by its ID (`DELETE /orders/{id}`).
     pub async fn cancel_order(&self, id: &str) -> Result<()> {
         self.http
             .delete(self.url(&format!("/orders/{}", id)))
@@ -99,6 +115,9 @@ impl AlpacaClient {
         Ok(())
     }
 
+    /// Fetch the current market clock (`GET /clock`).
+    ///
+    /// Returns whether the market is open and the next open/close times.
     pub async fn get_clock(&self) -> Result<MarketClock> {
         self.http
             .get(self.url("/clock"))
@@ -111,6 +130,11 @@ impl AlpacaClient {
             .context("GET /clock parse failed")
     }
 
+    /// List all watchlists for the account (`GET /watchlists`).
+    ///
+    /// Returns summaries (id + name only). Use [`get_watchlist`] to fetch full asset lists.
+    ///
+    /// [`get_watchlist`]: AlpacaClient::get_watchlist
     pub async fn list_watchlists(&self) -> Result<Vec<WatchlistSummary>> {
         self.http
             .get(self.url("/watchlists"))
@@ -123,6 +147,7 @@ impl AlpacaClient {
             .context("GET /watchlists parse failed")
     }
 
+    /// Fetch a watchlist including its full asset list (`GET /watchlists/{id}`).
     pub async fn get_watchlist(&self, id: &str) -> Result<Watchlist> {
         self.http
             .get(self.url(&format!("/watchlists/{}", id)))
@@ -135,6 +160,9 @@ impl AlpacaClient {
             .context("GET /watchlists/{id} parse failed")
     }
 
+    /// Add a symbol to a watchlist (`POST /watchlists/{id}`).
+    ///
+    /// Returns the updated [`Watchlist`] with the new symbol included.
     pub async fn add_to_watchlist(&self, id: &str, symbol: &str) -> Result<Watchlist> {
         let body = serde_json::json!({ "symbol": symbol });
         self.http
@@ -149,6 +177,9 @@ impl AlpacaClient {
             .context("POST /watchlists/{id} parse failed")
     }
 
+    /// Remove a symbol from a watchlist (`DELETE /watchlists/{id}/{symbol}`).
+    ///
+    /// Returns the updated [`Watchlist`] with the symbol removed.
     pub async fn remove_from_watchlist(&self, id: &str, symbol: &str) -> Result<Watchlist> {
         self.http
             .delete(self.url(&format!("/watchlists/{}/{}", id, symbol)))
@@ -161,6 +192,10 @@ impl AlpacaClient {
             .context("DELETE /watchlists/{id}/{symbol} parse failed")
     }
 
+    /// Fetch intraday portfolio equity history (`GET /account/portfolio/history`).
+    ///
+    /// Requests 1-minute bars for the current trading day. Equity values are
+    /// `None` for buckets when the market was closed.
     pub async fn get_portfolio_history(&self) -> Result<PortfolioHistory> {
         self.http
             .get(self.url("/account/portfolio/history"))

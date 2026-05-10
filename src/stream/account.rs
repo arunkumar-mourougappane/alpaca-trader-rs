@@ -1,3 +1,10 @@
+//! Account and order update WebSocket stream.
+//!
+//! Connects to the Alpaca account stream endpoint, authenticates, and
+//! forwards [`TradeUpdate`] events to the application event channel.
+//! Reconnects automatically with a backoff delay on disconnection.
+//!
+//! [`TradeUpdate`]: crate::events::Event::TradeUpdate
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
