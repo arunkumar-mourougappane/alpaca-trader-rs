@@ -51,7 +51,7 @@ rpassword  = "7"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender   = "0.2"
-syslog             = "6"
+syslog             = "7"
 dirs               = "6"
 
 # Platform-conditional keychain storage (no C-library dependency on any platform)
