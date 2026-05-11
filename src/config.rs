@@ -114,6 +114,26 @@ mod tests {
     }
 }
 
+/// Credentials resolved from env vars, OS keychain, or an interactive prompt.
+///
+/// Produced by the binary-crate's `credentials::resolve()` and consumed by
+/// [`AlpacaConfig::from_credentials`].
+#[derive(Debug, Clone)]
+pub struct ResolvedCredentials {
+    /// Raw endpoint URL (without `/v2` normalisation).
+    ///
+    /// For live trading this is typically `https://api.alpaca.markets`.
+    /// For paper trading it is `https://paper-api.alpaca.markets/v2` (already
+    /// contains `/v2` — [`AlpacaConfig::from_credentials`] handles both forms).
+    pub endpoint: String,
+    /// Alpaca API key ID (`APCA-API-KEY-ID` header value).
+    pub key: String,
+    /// Alpaca API secret key (`APCA-API-SECRET-KEY` header value).
+    pub secret: String,
+    /// Which trading environment these credentials belong to.
+    pub env: AlpacaEnv,
+}
+
 /// Selects which Alpaca trading environment to connect to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlpacaEnv {
@@ -189,6 +209,33 @@ impl AlpacaConfig {
                 })
             }
         }
+    }
+
+    /// Build configuration from pre-resolved credentials.
+    ///
+    /// Applies the same URL normalisation as [`AlpacaConfig::from_env`]:
+    /// live endpoints have `/v2` appended; paper endpoints are used as-is
+    /// (with any trailing slash stripped).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint string is empty.
+    pub fn from_credentials(creds: ResolvedCredentials) -> Result<Self> {
+        if creds.endpoint.is_empty() {
+            return Err(anyhow::anyhow!("endpoint must not be empty"));
+        }
+        let base_url = match creds.env {
+            AlpacaEnv::Live => {
+                format!("{}/v2", creds.endpoint.trim_end_matches('/'))
+            }
+            AlpacaEnv::Paper => creds.endpoint.trim_end_matches('/').to_string(),
+        };
+        Ok(Self {
+            base_url,
+            key: creds.key,
+            secret: creds.secret,
+            env: creds.env,
+        })
     }
 
     /// Returns a short uppercase label for the current environment.
