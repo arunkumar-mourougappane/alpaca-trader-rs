@@ -29,6 +29,12 @@ struct Args {
     /// Omit to use the live account (real money — default).
     #[arg(long)]
     paper: bool,
+
+    /// Delete stored keychain credentials for the given environment and exit.
+    ///
+    /// Example: `alpaca-trader --reset paper` or `alpaca-trader --reset live`
+    #[arg(long, value_name = "ENV", value_parser = ["paper", "live"])]
+    reset: Option<String>,
 }
 
 // Bridge library modules into the binary crate so sub-modules can use `crate::config` etc.
@@ -64,6 +70,17 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     dotenvy::dotenv().ok();
+
+    // ── --reset: delete keychain credentials and exit ──────────────────────────
+    if let Some(ref env_str) = args.reset {
+        let env = if env_str == "paper" {
+            AlpacaEnv::Paper
+        } else {
+            AlpacaEnv::Live
+        };
+        credentials::reset(env);
+        return Ok(());
+    }
 
     // ── Logging — must come before enable_raw_mode() ───────────────────────────
     let _log_guard = alpaca_trader_rs::logging::init().unwrap_or_else(|e| {
