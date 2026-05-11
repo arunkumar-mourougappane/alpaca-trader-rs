@@ -164,11 +164,39 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
 /// Prints a status message to stderr. On platforms without keychain support,
 /// prints an informational message and returns without error.
 pub fn reset(env: AlpacaEnv) {
-    let (kr_prefix, env_label) = match env {
-        AlpacaEnv::Live => ("live", "live"),
-        AlpacaEnv::Paper => ("paper", "paper"),
+    let (kr_prefix, env_label, env_prefix) = match env {
+        AlpacaEnv::Live => ("live", "live", "LIVE_ALPACA"),
+        AlpacaEnv::Paper => ("paper", "paper", "PAPER_ALPACA"),
     };
 
+    // ── Report env var sources ────────────────────────────────────────────────
+    // dotenvy::dotenv() is called before reset() in main, so vars from .env
+    // files are already in the environment at this point.
+    let has_unified = std::env::var("ALPACA_API_KEY").ok().filter(|s| !s.is_empty()).is_some()
+        && std::env::var("ALPACA_API_SECRET").ok().filter(|s| !s.is_empty()).is_some();
+    let has_prefixed =
+        std::env::var(format!("{env_prefix}_KEY")).ok().filter(|s| !s.is_empty()).is_some()
+            && std::env::var(format!("{env_prefix}_SECRET"))
+                .ok()
+                .filter(|s| !s.is_empty())
+                .is_some();
+
+    if has_unified {
+        eprintln!(
+            "Note: ALPACA_API_KEY / ALPACA_API_SECRET are set in your environment or a .env file."
+        );
+        eprintln!("      To stop using them, remove or unset those variables.");
+    }
+    if has_prefixed {
+        eprintln!(
+            "Note: {env_prefix}_KEY / {env_prefix}_SECRET are set in your environment or a .env file."
+        );
+        eprintln!(
+            "      To stop using them, remove or unset those variables (check ~/.env or .env)."
+        );
+    }
+
+    // ── Remove keychain entries ───────────────────────────────────────────────
     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     {
         let key_user = format!("{kr_prefix}-api-key");
@@ -196,7 +224,11 @@ pub fn reset(env: AlpacaEnv) {
         if any_error {
             eprintln!("Some entries could not be removed. You may need to remove them manually.");
         } else if removed == 0 {
-            eprintln!("No {env_label} credentials found in keychain (nothing to remove).");
+            if !has_unified && !has_prefixed {
+                eprintln!("No {env_label} credentials found in keychain or environment (nothing to remove).");
+            } else {
+                eprintln!("No {env_label} credentials found in keychain (see env var note above).");
+            }
         } else {
             eprintln!("✓ {env_label} credentials removed from keychain.");
         }
@@ -206,13 +238,13 @@ pub fn reset(env: AlpacaEnv) {
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         let _ = kr_prefix;
-        eprintln!("Keychain storage is not supported on this platform — nothing to reset.");
-        eprintln!(
-            "To clear credentials, unset the {}_ALPACA_KEY / {}_ALPACA_SECRET \
-             environment variables.",
-            env_label.to_uppercase(),
-            env_label.to_uppercase()
-        );
+        if !has_unified && !has_prefixed {
+            eprintln!("Keychain storage is not supported on this platform — nothing to reset.");
+            eprintln!(
+                "To clear credentials, unset the {env_prefix}_KEY / {env_prefix}_SECRET \
+                 environment variables."
+            );
+        }
     }
 }
 
