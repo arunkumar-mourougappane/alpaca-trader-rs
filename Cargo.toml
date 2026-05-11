@@ -1,6 +1,6 @@
 [package]
 name = "alpaca-trader-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.88"
 authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
@@ -31,6 +31,7 @@ tokio-util        = { version = "0.7",  features = ["rt"] }
 ratatui    = "0.30"
 crossterm  = { version = "0.29", features = ["event-stream"] }
 clap       = { version = "4", features = ["derive"] }
+rpassword  = "7"
 
 # Logging
 tracing            = "0.1"
@@ -38,6 +39,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender   = "0.2"
 syslog             = "6"
 dirs               = "6"
+
+# Platform-conditional keychain storage (no C-library dependency on any platform)
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# linux-native uses kernel keyutils — cross-compiles cleanly; no libdbus required
+keyring = { version = "3", features = ["linux-native"] }
 
 [dev-dependencies]
 wiremock   = "0.6"

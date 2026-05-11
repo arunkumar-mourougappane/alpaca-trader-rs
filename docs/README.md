@@ -115,7 +115,8 @@ The `.env` file holds credentials for both environments under separate prefixes:
 | `PAPER_ALPACA_ENDPOINT` | `https://paper-api.alpaca.markets/v2` |
 | `PAPER_ALPACA_KEY` | Paper trading API key ID |
 | `PAPER_ALPACA_SECRET` | Paper trading API secret key |
-| `ALPACA_ENV` | `paper` (default) or `live` — selects which prefix to use |
+
+Environment variables are optional — on first launch the app will prompt interactively and offer to save credentials to the OS keychain.
 
 See [credentials-setup.md](credentials-setup.md) for setup details.
 
@@ -123,11 +124,9 @@ See [credentials-setup.md](credentials-setup.md) for setup details.
 
 ## Paper vs Live Trading
 
-Set `ALPACA_ENV=paper` (the default) to trade against Alpaca's simulation environment — no real money involved. Set `ALPACA_ENV=live` to use the live account. Both key pairs live in the same `.env` file; no code changes are needed to switch.
+Run with `--paper` to trade against Alpaca's simulation environment — no real money involved. Omit the flag (the default) to use the live account. The TUI header shows **[PAPER]** in cyan or **[LIVE]** in red so the active environment is always visible.
 
-The TUI header shows **[PAPER]** in cyan or **[LIVE]** in red so the active environment is always visible.
-
-> Always develop and test with `ALPACA_ENV=paper`. Paper trading resets positions daily at market open.
+> Always develop and test with `--paper`. Paper trading resets positions daily at market open.
 
 ---
 

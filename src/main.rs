@@ -50,6 +50,7 @@ mod types {
 }
 
 mod app;
+mod credentials;
 mod handlers;
 mod input;
 mod ui;
@@ -78,19 +79,16 @@ async fn main() -> anyhow::Result<()> {
         AlpacaEnv::Live
     };
 
-    let config = AlpacaConfig::from_env(env).map_err(|e| {
+    // Resolve credentials before entering raw-mode (may print/prompt to terminal).
+    let creds = credentials::resolve(env).map_err(|e| {
+        tracing::error!(error = %e, "credential resolution failed");
+        eprintln!("Error: {e}");
+        e
+    })?;
+
+    let config = AlpacaConfig::from_credentials(creds).map_err(|e| {
         tracing::error!(error = %e, "configuration error");
         eprintln!("Configuration error: {e}");
-        if args.paper {
-            eprintln!(
-                "Set PAPER_ALPACA_ENDPOINT, PAPER_ALPACA_KEY and PAPER_ALPACA_SECRET in your environment or .env file."
-            );
-        } else {
-            eprintln!(
-                "Set LIVE_ALPACA_ENDPOINT, LIVE_ALPACA_KEY and LIVE_ALPACA_SECRET in your environment or .env file."
-            );
-            eprintln!("Use --paper to connect to the paper-trading environment instead.");
-        }
         e
     })?;
 
