@@ -32,34 +32,69 @@ This guide covers how to obtain and configure Alpaca API credentials for both pa
 
 ## 3. Configure Credentials
 
-The application reads credentials from a `.env` file at the project root. Both environments are stored in the same file using a `LIVE_` / `PAPER_` prefix so you can switch at runtime without editing the file.
+Starting with v0.3.0, a `.env` file is no longer required. The app resolves credentials
+using a four-tier priority chain — the first match wins:
 
-### `.env` File Structure
+| Priority | Source | Notes |
+|---|---|---|
+| 1 | `ALPACA_API_KEY` + `ALPACA_API_SECRET` env vars | Unified pair; ideal for CI, Docker, systemd |
+| 2 | `LIVE_ALPACA_KEY`/`SECRET` or `PAPER_ALPACA_KEY`/`SECRET` | Per-environment; typical developer `.env` files |
+| 3 | OS-native keychain | macOS Keychain, Windows Credential Store, Linux keyutils |
+| 4 | Interactive TTY prompt | First-run: app prompts and offers to save to keychain |
+
+### Option A — Let the app prompt (recommended for desktop)
+
+Just run the app. On first run with no credentials configured it will ask for your
+API key and secret, then offer to save them to the OS keychain so you won't be
+prompted again.
+
+```bash
+alpaca-trader --paper   # prompted once for paper keys
+alpaca-trader           # prompted once for live keys
+```
+
+To clear stored keychain entries later:
+
+```bash
+alpaca-trader --reset paper
+alpaca-trader --reset live
+```
+
+### Option B — `.env` file (recommended for development)
+
+```bash
+cp .env.example .env
+# Edit .env and fill in your keys
+```
+
+Both environments can live in the same file:
 
 ```env
-LIVE_ALPACA_ENDPOINT=https://api.alpaca.markets
-LIVE_ALPACA_KEY=your-live-key-id
-LIVE_ALPACA_SECRET=your-live-secret-key
-
+# Paper trading (simulated funds — used with: alpaca-trader --paper)
 PAPER_ALPACA_ENDPOINT=https://paper-api.alpaca.markets/v2
 PAPER_ALPACA_KEY=your-paper-key-id
 PAPER_ALPACA_SECRET=your-paper-secret-key
+
+# Live trading (real money — default)
+LIVE_ALPACA_ENDPOINT=https://api.alpaca.markets
+LIVE_ALPACA_KEY=your-live-key-id
+LIVE_ALPACA_SECRET=your-live-secret-key
 ```
 
-> `PAPER_ALPACA_ENDPOINT` already includes `/v2`. `LIVE_ALPACA_ENDPOINT` does not — append `/v2` in code when constructing request URLs.
+> `PAPER_ALPACA_ENDPOINT` already includes `/v2`. `LIVE_ALPACA_ENDPOINT` does not — the app appends `/v2` when constructing request URLs.
 
-Load before running:
+### Option C — Unified env vars (CI / containers)
+
+A single `ALPACA_API_KEY` + `ALPACA_API_SECRET` pair is used for whichever environment
+(`--paper` or live) is active at runtime:
 
 ```bash
-set -a && source .env && set +a
-cargo run
+export ALPACA_API_KEY=your-key-id
+export ALPACA_API_SECRET=your-secret-key
+alpaca-trader --paper
 ```
 
-Or use the `dotenvy` crate (add to `Cargo.toml`) to load it automatically at startup.
-
 ### Selecting an Environment at Runtime
-
-The environment is selected via the `--paper` CLI flag. The binary defaults to **live** when the flag is absent. Only the credentials for the active environment are read — the opposing set is ignored entirely.
 
 ```bash
 alpaca-trader           # live trading (real money — default)
@@ -71,13 +106,6 @@ Using `run.sh`:
 ```bash
 ./run.sh           # live (default)
 ./run.sh --paper   # paper
-```
-
-In Rust, the environment is resolved in `src/main.rs` and passed directly to `AlpacaConfig::from_env`:
-
-```rust
-let env = if args.paper { AlpacaEnv::Paper } else { AlpacaEnv::Live };
-AlpacaConfig::from_env(env)?;
 ```
 
 ---
@@ -151,5 +179,5 @@ Expected response: `"ACTIVE"`
 - [ ] `.env` file is listed in `.gitignore`
 - [ ] API keys are **never** hard-coded in source files
 - [ ] Paper trading keys are used during all development and testing
-- [ ] Live keys are stored in a secrets manager (e.g., macOS Keychain, 1Password, AWS Secrets Manager) rather than a plain `.env` file
+- [ ] Live keys are stored in the OS keychain (via the built-in first-run prompt) rather than a plain `.env` file
 - [ ] Live keys have IP allow-listing enabled in the Alpaca dashboard if your deployment has a static IP

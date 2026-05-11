@@ -12,8 +12,6 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 - **Library** (`alpaca_trader_rs` crate): typed async REST client, shared domain types, and WebSocket streaming primitives — embed it in your own Rust application.
 - **App** (`alpaca-trader` binary): a full interactive terminal dashboard built on the library, with live account data, positions, orders, watchlist management, and order entry.
 
-
-
 ---
 
 ## Running the App
@@ -23,15 +21,50 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 - Rust 1.88+ (`rustup update stable`)
 - An Alpaca Markets account — paper trading is free at [alpaca.markets](https://alpaca.markets)
 
-### Setup
+### Installation
 
 ```bash
 git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
-
-cp .env.example .env
-# Fill in your API keys — see docs/credentials-setup.md
 ```
+
+### Credential Setup
+
+The app resolves credentials in priority order (highest wins):
+
+| Priority | Method | When to use |
+|---|---|---|
+| 1 | `ALPACA_API_KEY` + `ALPACA_API_SECRET` env vars | CI, Docker, systemd — single pair for both environments |
+| 2 | `LIVE_ALPACA_KEY`/`SECRET` or `PAPER_ALPACA_KEY`/`SECRET` env vars | Per-environment `.env` file on developer machines |
+| 3 | OS-native keychain | Desktop users — keys are saved once and reused |
+| 4 | Interactive TTY prompt (first run) | No credentials configured yet — app prompts and offers to save to keychain |
+
+**Option A — First run (interactive, recommended for desktop):**
+
+Just run the app. If no credentials are found, it prompts for your API key and secret, then
+offers to save them to the OS keychain (macOS Keychain, Windows Credential Store, or Linux keyutils).
+
+```bash
+./run.sh --paper   # prompted for paper keys on first run
+./run.sh           # prompted for live keys on first run
+```
+
+**Option B — `.env` file (recommended for development):**
+
+```bash
+cp .env.example .env
+# Edit .env and fill in your API keys — see docs/credentials-setup.md
+```
+
+**Option C — Environment variables (CI / containers):**
+
+```bash
+export ALPACA_API_KEY=your-key-id
+export ALPACA_API_SECRET=your-secret-key
+./run.sh --paper
+```
+
+> See [docs/credentials-setup.md](docs/credentials-setup.md) for obtaining keys from the Alpaca dashboard.
 
 ### Run
 
@@ -42,6 +75,18 @@ cp .env.example .env
 ```
 
 The header badge shows **[PAPER]** in cyan or **[LIVE]** in red at all times.
+
+### Managing Stored Credentials
+
+To clear credentials saved in the OS keychain:
+
+```bash
+alpaca-trader --reset paper   # remove paper keychain entries
+alpaca-trader --reset live    # remove live keychain entries
+```
+
+If credentials were loaded from a `.env` file or environment variable instead, the command
+prints the variable names to unset and the file to edit.
 
 ### Key Bindings
 
@@ -150,6 +195,7 @@ alpaca-trader-rs/
 ├── src/
 │   ├── lib.rs              # Library root — public API
 │   ├── main.rs             # Binary entry point — TUI app
+│   ├── credentials.rs      # Credential resolution: env vars → keychain → TTY prompt  [app-only]
 │   ├── config.rs           # AlpacaConfig: env resolution, paper/live selection
 │   ├── client.rs           # AlpacaClient: all REST methods
 │   ├── types.rs            # Shared domain types (serde-deserializable)
@@ -191,21 +237,30 @@ alpaca-trader-rs/
 
 ## Environment Variables
 
-Credentials are stored in `.env` using `LIVE_` / `PAPER_` prefixes. Only the
-variables for the active environment are read — the opposing set is ignored.
-The environment is chosen via the `--paper` CLI flag (default: live).
+Credentials are loaded from the environment (or a `.env` file via `dotenvy`). Only the
+variables for the active environment are used — the opposing set is ignored.
 
 > ⚠️ **Breaking change from v0.2.0**: the default environment is now **live**.
 > Users who previously relied on the paper default must pass `--paper` explicitly.
+> `ALPACA_ENV` is no longer read.
+
+### Unified pair (highest priority)
 
 | Variable | Description |
 |---|---|
-| `PAPER_ALPACA_ENDPOINT` | `https://paper-api.alpaca.markets/v2` — required with `--paper` |
-| `PAPER_ALPACA_KEY` | Paper API key ID — required with `--paper` |
-| `PAPER_ALPACA_SECRET` | Paper API secret key — required with `--paper` |
-| `LIVE_ALPACA_ENDPOINT` | `https://api.alpaca.markets` — required by default |
-| `LIVE_ALPACA_KEY` | Live API key ID — required by default |
-| `LIVE_ALPACA_SECRET` | Live API secret key — required by default |
+| `ALPACA_API_KEY` | API key ID — used for whichever environment (`--paper` or live) is active |
+| `ALPACA_API_SECRET` | API secret key — paired with `ALPACA_API_KEY` |
+
+### Per-environment variables
+
+| Variable | Description |
+|---|---|
+| `PAPER_ALPACA_ENDPOINT` | `https://paper-api.alpaca.markets/v2` — optional override |
+| `PAPER_ALPACA_KEY` | Paper API key ID |
+| `PAPER_ALPACA_SECRET` | Paper API secret key |
+| `LIVE_ALPACA_ENDPOINT` | `https://api.alpaca.markets` — optional override |
+| `LIVE_ALPACA_KEY` | Live API key ID |
+| `LIVE_ALPACA_SECRET` | Live API secret key |
 
 ---
 
@@ -225,7 +280,7 @@ The environment is chosen via the `--paper` CLI flag (default: live).
 | Paper / Live switching (`run.sh --paper/--live`) | Done |
 | Clippy clean | Done |
 | Test strategy documented | Done |
-| Unit + integration tests (188 tests) | Done |
+| Unit + integration tests (198 tests) | Done |
 | Orders panel 1/2/3 sub-tab key fix | Done |
 | GitHub Actions CI + security audit | Done |
 | Code coverage with cargo-llvm-cov + Codecov | Done |
@@ -240,6 +295,10 @@ The environment is chosen via the `--paper` CLI flag (default: live).
 | WebSocket account/trade stream | Done |
 | Live order submission | Done |
 | Watchlist add/remove (wired to REST) | Done |
+| OS-native keychain credential storage (macOS / Windows / Linux) | Done |
+| Interactive first-run credential prompt with keychain save offer | Done |
+| `ALPACA_API_KEY` / `ALPACA_API_SECRET` unified env vars | Done |
+| `--reset <paper\|live>` CLI flag to clear stored keychain credentials | Done |
 
 ---
 
