@@ -2,11 +2,13 @@
 //!
 //! Resolution order (highest → lowest priority):
 //!
-//! 1. **Environment variables** (`{ENV}_ALPACA_KEY` / `{ENV}_ALPACA_SECRET`) —
-//!    populated by `.env` via `dotenvy`, shell exports, CI secrets, or Docker.
-//! 2. **OS-native keychain** (macOS Keychain Access, Windows Credential Store,
+//! 1. **`ALPACA_API_KEY` + `ALPACA_API_SECRET`** — unified pair; ideal for CI,
+//!    Docker, and systemd where a single key pair is configured.
+//! 2. **`{ENV}_ALPACA_KEY` + `{ENV}_ALPACA_SECRET`** — per-environment vars
+//!    (`LIVE_*` or `PAPER_*`); developer `.env` files and multi-environment setups.
+//! 3. **OS-native keychain** (macOS Keychain Access, Windows Credential Store,
 //!    Linux kernel keyutils) — no C-library dependency on any platform.
-//! 3. **Interactive TTY prompt** via `rpassword` — runs once on first launch
+//! 4. **Interactive TTY prompt** via `rpassword` — runs once on first launch
 //!    and offers to persist credentials in the OS keychain.
 //!
 //! Call [`resolve`] **before** `enable_raw_mode()` — it may print to stderr
@@ -39,7 +41,30 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
     let endpoint =
         std::env::var(format!("{prefix}_ENDPOINT")).unwrap_or_else(|_| default_ep.to_string());
 
-    // ── Step 1: environment variables ─────────────────────────────────────────
+    // ── Step 1a: unified env vars (ALPACA_API_KEY / ALPACA_API_SECRET) ─────────
+    // These take priority and work regardless of live/paper mode — ideal for CI,
+    // Docker, and systemd where a single key pair is configured.
+    let unified_key = std::env::var("ALPACA_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty());
+    let unified_secret = std::env::var("ALPACA_API_SECRET")
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    if let (Some(key), Some(secret)) = (unified_key, unified_secret) {
+        tracing::debug!(
+            env = env_label,
+            "credentials loaded from ALPACA_API_KEY / ALPACA_API_SECRET"
+        );
+        return Ok(ResolvedCredentials {
+            endpoint,
+            key,
+            secret,
+            env,
+        });
+    }
+
+    // ── Step 1b: per-environment env vars ({ENV}_ALPACA_KEY / _SECRET) ─────────
     let env_key = std::env::var(format!("{prefix}_KEY"))
         .ok()
         .filter(|s| !s.is_empty());
@@ -205,4 +230,227 @@ fn save_keychain_pair(prefix: &str, key: &str, secret: &str) -> Result<()> {
         .and_then(|e| e.set_password(secret))
         .map_err(|e| anyhow::anyhow!("keychain write error (secret): {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper: clear all credential env vars around a test closure.
+    fn with_no_env_creds<F: FnOnce()>(f: F) {
+        temp_env::with_vars(
+            [
+                ("ALPACA_API_KEY", None::<&str>),
+                ("ALPACA_API_SECRET", None::<&str>),
+                ("LIVE_ALPACA_KEY", None::<&str>),
+                ("LIVE_ALPACA_SECRET", None::<&str>),
+                ("PAPER_ALPACA_KEY", None::<&str>),
+                ("PAPER_ALPACA_SECRET", None::<&str>),
+                ("LIVE_ALPACA_ENDPOINT", None::<&str>),
+                ("PAPER_ALPACA_ENDPOINT", None::<&str>),
+            ],
+            f,
+        );
+    }
+
+    // ── Unified env var tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn unified_vars_resolve_for_live() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("unified-key")),
+                    ("ALPACA_API_SECRET", Some("unified-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.key, "unified-key");
+                    assert_eq!(creds.secret, "unified-secret");
+                    assert!(matches!(creds.env, AlpacaEnv::Live));
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn unified_vars_resolve_for_paper() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("unified-key")),
+                    ("ALPACA_API_SECRET", Some("unified-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Paper).unwrap();
+                    assert_eq!(creds.key, "unified-key");
+                    assert_eq!(creds.secret, "unified-secret");
+                    assert!(matches!(creds.env, AlpacaEnv::Paper));
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn unified_vars_use_default_live_endpoint() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("k")),
+                    ("ALPACA_API_SECRET", Some("s")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.endpoint, DEFAULT_LIVE_ENDPOINT);
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn unified_vars_use_default_paper_endpoint() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("k")),
+                    ("ALPACA_API_SECRET", Some("s")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Paper).unwrap();
+                    assert_eq!(creds.endpoint, DEFAULT_PAPER_ENDPOINT);
+                },
+            );
+        });
+    }
+
+    // ── Per-environment env var tests ─────────────────────────────────────────
+
+    #[test]
+    fn live_prefixed_vars_resolve() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("LIVE_ALPACA_KEY", Some("live-key")),
+                    ("LIVE_ALPACA_SECRET", Some("live-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.key, "live-key");
+                    assert_eq!(creds.secret, "live-secret");
+                    assert!(matches!(creds.env, AlpacaEnv::Live));
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn paper_prefixed_vars_resolve() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("PAPER_ALPACA_KEY", Some("paper-key")),
+                    ("PAPER_ALPACA_SECRET", Some("paper-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Paper).unwrap();
+                    assert_eq!(creds.key, "paper-key");
+                    assert_eq!(creds.secret, "paper-secret");
+                    assert!(matches!(creds.env, AlpacaEnv::Paper));
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn unified_vars_take_priority_over_prefixed() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("unified-key")),
+                    ("ALPACA_API_SECRET", Some("unified-secret")),
+                    ("LIVE_ALPACA_KEY", Some("live-key")),
+                    ("LIVE_ALPACA_SECRET", Some("live-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.key, "unified-key");
+                    assert_eq!(creds.secret, "unified-secret");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn custom_endpoint_from_env_is_used() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("k")),
+                    ("ALPACA_API_SECRET", Some("s")),
+                    ("LIVE_ALPACA_ENDPOINT", Some("https://custom.example.com")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.endpoint, "https://custom.example.com");
+                },
+            );
+        });
+    }
+
+    // ── Empty value filtering ─────────────────────────────────────────────────
+
+    #[test]
+    fn empty_unified_key_falls_through_to_prefixed() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("")),
+                    ("ALPACA_API_SECRET", Some("secret")),
+                    ("LIVE_ALPACA_KEY", Some("live-key")),
+                    ("LIVE_ALPACA_SECRET", Some("live-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.key, "live-key");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn empty_unified_secret_falls_through_to_prefixed() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("ALPACA_API_KEY", Some("some-key")),
+                    ("ALPACA_API_SECRET", Some("")),
+                    ("LIVE_ALPACA_KEY", Some("live-key")),
+                    ("LIVE_ALPACA_SECRET", Some("live-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Live).unwrap();
+                    assert_eq!(creds.key, "live-key");
+                },
+            );
+        });
+    }
+
+    #[test]
+    fn live_prefixed_vars_not_used_for_paper() {
+        with_no_env_creds(|| {
+            temp_env::with_vars(
+                [
+                    ("LIVE_ALPACA_KEY", Some("live-key")),
+                    ("LIVE_ALPACA_SECRET", Some("live-secret")),
+                    ("PAPER_ALPACA_KEY", Some("paper-key")),
+                    ("PAPER_ALPACA_SECRET", Some("paper-secret")),
+                ],
+                || {
+                    let creds = resolve(AlpacaEnv::Paper).unwrap();
+                    assert_eq!(creds.key, "paper-key");
+                    assert_eq!(creds.secret, "paper-secret");
+                },
+            );
+        });
+    }
 }
