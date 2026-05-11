@@ -5,6 +5,20 @@ edition = "2021"
 rust-version = "1.88"
 authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
 license = "MIT OR Apache-2.0"
+description = "Alpaca Markets trading toolkit — async REST client library and interactive TUI trading terminal"
+repository = "https://github.com/arunkumar-mourougappane/alpaca-trader-rs"
+homepage = "https://github.com/arunkumar-mourougappane/alpaca-trader-rs"
+documentation = "https://docs.rs/alpaca-trader-rs"
+readme = "README.md"
+keywords = ["alpaca", "trading", "finance", "tui", "rest"]
+categories = ["finance", "command-line-utilities", "api-bindings", "asynchronous"]
+exclude = [
+    "docs/",
+    ".github/",
+    ".env.example",
+    "run.sh",
+    "tests/",
+]
 
 [[bin]]
 name = "alpaca-trader"
