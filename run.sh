@@ -8,39 +8,29 @@ cd "$SCRIPT_DIR"
 usage() {
     echo "Usage: $0 [--paper | --live]"
     echo ""
-    echo "  --paper   Run against the paper trading environment (default)"
-    echo "  --live    Run against the live trading environment (real money)"
+    echo "  --paper   Run against the paper trading environment (simulated funds)"
+    echo "  --live    Run against the live trading environment (real money — default)"
     exit 1
 }
 
-ENV_OVERRIDE=""
+PAPER_FLAG=""
 for arg in "$@"; do
     case "$arg" in
-        --paper) ENV_OVERRIDE="paper" ;;
-        --live)  ENV_OVERRIDE="live" ;;
+        --paper) PAPER_FLAG="--paper" ;;
+        --live)  ;;  # live is the default; accepted for backwards compatibility
         --help|-h) usage ;;
         *) echo "Unknown argument: $arg"; usage ;;
     esac
 done
 
-# Load credentials
+# Load credentials from .env if present (developer convenience)
 if [ -f .env ]; then
     set -a
     source .env
     set +a
-else
-    echo "Error: .env file not found."
-    echo "Copy .env.example to .env and fill in your Alpaca API credentials."
-    exit 1
 fi
 
-# CLI flag overrides .env value; fall back to paper if neither is set
-if [ -n "$ENV_OVERRIDE" ]; then
-    ALPACA_ENV="$ENV_OVERRIDE"
-else
-    ALPACA_ENV="${ALPACA_ENV:-paper}"
-fi
-export ALPACA_ENV
-
-echo "Starting alpaca-trader-rs [$ALPACA_ENV]…"
-cargo run --release --bin alpaca-trader
+ENV_LABEL="live"
+[ -n "$PAPER_FLAG" ] && ENV_LABEL="paper"
+echo "Starting alpaca-trader-rs [$ENV_LABEL]…"
+cargo run --release --bin alpaca-trader -- $PAPER_FLAG

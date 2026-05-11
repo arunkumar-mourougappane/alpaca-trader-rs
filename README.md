@@ -36,9 +36,9 @@ cp .env.example .env
 ### Run
 
 ```bash
-./run.sh           # paper trading (default)
-./run.sh --paper   # explicitly paper
-./run.sh --live    # live trading (real money)
+./run.sh           # live trading (real money — default)
+./run.sh --paper   # paper trading (simulated funds)
+./run.sh --live    # same as default; accepted for backwards compatibility
 ```
 
 The header badge shows **[PAPER]** in cyan or **[LIVE]** in red at all times.
@@ -191,17 +191,21 @@ alpaca-trader-rs/
 
 ## Environment Variables
 
-Stored in `.env` with `LIVE_` / `PAPER_` prefixes. The `--paper` / `--live` flag to `run.sh` (or `ALPACA_ENV` in `.env`) selects which set is active.
+Credentials are stored in `.env` using `LIVE_` / `PAPER_` prefixes. Only the
+variables for the active environment are read — the opposing set is ignored.
+The environment is chosen via the `--paper` CLI flag (default: live).
+
+> ⚠️ **Breaking change from v0.2.0**: the default environment is now **live**.
+> Users who previously relied on the paper default must pass `--paper` explicitly.
 
 | Variable | Description |
 |---|---|
-| `ALPACA_ENV` | `paper` (default) or `live` |
-| `PAPER_ALPACA_ENDPOINT` | `https://paper-api.alpaca.markets/v2` |
-| `PAPER_ALPACA_KEY` | Paper API key ID |
-| `PAPER_ALPACA_SECRET` | Paper API secret key |
-| `LIVE_ALPACA_ENDPOINT` | `https://api.alpaca.markets` |
-| `LIVE_ALPACA_KEY` | Live API key ID |
-| `LIVE_ALPACA_SECRET` | Live API secret key |
+| `PAPER_ALPACA_ENDPOINT` | `https://paper-api.alpaca.markets/v2` — required with `--paper` |
+| `PAPER_ALPACA_KEY` | Paper API key ID — required with `--paper` |
+| `PAPER_ALPACA_SECRET` | Paper API secret key — required with `--paper` |
+| `LIVE_ALPACA_ENDPOINT` | `https://api.alpaca.markets` — required by default |
+| `LIVE_ALPACA_KEY` | Live API key ID — required by default |
+| `LIVE_ALPACA_SECRET` | Live API secret key — required by default |
 
 ---
 

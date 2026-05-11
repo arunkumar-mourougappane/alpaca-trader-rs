@@ -59,29 +59,25 @@ Or use the `dotenvy` crate (add to `Cargo.toml`) to load it automatically at sta
 
 ### Selecting an Environment at Runtime
 
-The app reads an `ALPACA_ENV` variable (default: `paper`) to choose which prefix to use:
+The environment is selected via the `--paper` CLI flag. The binary defaults to **live** when the flag is absent. Only the credentials for the active environment are read — the opposing set is ignored entirely.
 
 ```bash
-ALPACA_ENV=paper cargo run    # uses PAPER_ALPACA_* vars (default)
-ALPACA_ENV=live   cargo run   # uses LIVE_ALPACA_* vars
+alpaca-trader           # live trading (real money — default)
+alpaca-trader --paper   # paper trading (simulated funds)
 ```
 
-In Rust, resolve the active credentials at startup:
+Using `run.sh`:
+
+```bash
+./run.sh           # live (default)
+./run.sh --paper   # paper
+```
+
+In Rust, the environment is resolved in `src/main.rs` and passed directly to `AlpacaConfig::from_env`:
 
 ```rust
-let env = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".into());
-let (key, secret, endpoint) = match env.as_str() {
-    "live" => (
-        std::env::var("LIVE_ALPACA_KEY")?,
-        std::env::var("LIVE_ALPACA_SECRET")?,
-        std::env::var("LIVE_ALPACA_ENDPOINT")?,
-    ),
-    _ => (
-        std::env::var("PAPER_ALPACA_KEY")?,
-        std::env::var("PAPER_ALPACA_SECRET")?,
-        std::env::var("PAPER_ALPACA_ENDPOINT")?,
-    ),
-};
+let env = if args.paper { AlpacaEnv::Paper } else { AlpacaEnv::Live };
+AlpacaConfig::from_env(env)?;
 ```
 
 ---
