@@ -172,14 +172,22 @@ pub fn reset(env: AlpacaEnv) {
     // ── Report env var sources ────────────────────────────────────────────────
     // dotenvy::dotenv() is called before reset() in main, so vars from .env
     // files are already in the environment at this point.
-    let has_unified = std::env::var("ALPACA_API_KEY").ok().filter(|s| !s.is_empty()).is_some()
-        && std::env::var("ALPACA_API_SECRET").ok().filter(|s| !s.is_empty()).is_some();
-    let has_prefixed =
-        std::env::var(format!("{env_prefix}_KEY")).ok().filter(|s| !s.is_empty()).is_some()
-            && std::env::var(format!("{env_prefix}_SECRET"))
-                .ok()
-                .filter(|s| !s.is_empty())
-                .is_some();
+    let has_unified = std::env::var("ALPACA_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .is_some()
+        && std::env::var("ALPACA_API_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some();
+    let has_prefixed = std::env::var(format!("{env_prefix}_KEY"))
+        .ok()
+        .filter(|s| !s.is_empty())
+        .is_some()
+        && std::env::var(format!("{env_prefix}_SECRET"))
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some();
 
     if has_unified {
         eprintln!(
@@ -232,7 +240,6 @@ pub fn reset(env: AlpacaEnv) {
         } else {
             eprintln!("✓ {env_label} credentials removed from keychain.");
         }
-        return;
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
