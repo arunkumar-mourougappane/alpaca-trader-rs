@@ -159,6 +159,63 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
     })
 }
 
+/// Delete stored keychain credentials for `env` and exit.
+///
+/// Prints a status message to stderr. On platforms without keychain support,
+/// prints an informational message and returns without error.
+pub fn reset(env: AlpacaEnv) {
+    let (kr_prefix, env_label) = match env {
+        AlpacaEnv::Live => ("live", "live"),
+        AlpacaEnv::Paper => ("paper", "paper"),
+    };
+
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        let key_user = format!("{kr_prefix}-api-key");
+        let secret_user = format!("{kr_prefix}-api-secret");
+        let mut removed = 0u8;
+        let mut any_error = false;
+
+        for user in [&key_user, &secret_user] {
+            match keyring::Entry::new(SERVICE, user) {
+                Ok(entry) => match entry.delete_credential() {
+                    Ok(()) => removed += 1,
+                    Err(keyring::Error::NoEntry) => {}
+                    Err(e) => {
+                        eprintln!("Warning: could not remove {user} from keychain: {e}");
+                        any_error = true;
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Warning: keychain init error for {user}: {e}");
+                    any_error = true;
+                }
+            }
+        }
+
+        if any_error {
+            eprintln!("Some entries could not be removed. You may need to remove them manually.");
+        } else if removed == 0 {
+            eprintln!("No {env_label} credentials found in keychain (nothing to remove).");
+        } else {
+            eprintln!("✓ {env_label} credentials removed from keychain.");
+        }
+        return;
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = kr_prefix;
+        eprintln!("Keychain storage is not supported on this platform — nothing to reset.");
+        eprintln!(
+            "To clear credentials, unset the {}_ALPACA_KEY / {}_ALPACA_SECRET \
+             environment variables.",
+            env_label.to_uppercase(),
+            env_label.to_uppercase()
+        );
+    }
+}
+
 // ── Keychain helpers (compiled only on supported platforms) ───────────────────
 
 /// Distinguishes between "entry not found" and a hard backend error.
