@@ -34,6 +34,11 @@ Introduces OS-native keychain credential storage with an interactive first-run p
 - **`--paper` CLI flag** replaces `ALPACA_ENV` env var for environment selection
   - `alpaca-trader` (no flag) → **live** account (real money, new default)
   - `alpaca-trader --paper` → paper account (simulated funds)
+- **Credential resolution order** (highest → lowest priority):
+  1. `ALPACA_API_KEY` + `ALPACA_API_SECRET` — unified pair; ideal for CI, Docker, systemd
+  2. `LIVE_ALPACA_KEY` + `LIVE_ALPACA_SECRET` (or `PAPER_*`) — per-environment; developer `.env` files
+  3. OS-native keychain — returning desktop users
+  4. Interactive TTY prompt — first-run desktop
 - **`AlpacaConfig::from_env(AlpacaEnv)`** — signature now takes the environment explicitly; `ALPACA_ENV` is no longer read
 - `src/main.rs` — calls `credentials::resolve(env)` before `enable_raw_mode()`, then `AlpacaConfig::from_credentials()`
 - `run.sh` — passes `--paper` to the binary instead of exporting `ALPACA_ENV`; `--live` kept as a no-op alias; `.env` loading is now optional
