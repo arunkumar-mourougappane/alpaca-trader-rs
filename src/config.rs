@@ -1,5 +1,5 @@
 //! Runtime configuration loaded from environment variables.
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 #[cfg(test)]
 mod tests {
@@ -7,7 +7,6 @@ mod tests {
 
     fn paper_vars(endpoint: &str) -> Vec<(&'static str, Option<String>)> {
         vec![
-            ("ALPACA_ENV", Some("paper".into())),
             ("PAPER_ALPACA_ENDPOINT", Some(endpoint.into())),
             ("PAPER_ALPACA_KEY", Some("PKTEST000".into())),
             ("PAPER_ALPACA_SECRET", Some("secret000".into())),
@@ -16,7 +15,6 @@ mod tests {
 
     fn live_vars(endpoint: &str) -> Vec<(&'static str, Option<String>)> {
         vec![
-            ("ALPACA_ENV", Some("live".into())),
             ("LIVE_ALPACA_ENDPOINT", Some(endpoint.into())),
             ("LIVE_ALPACA_KEY", Some("AKTEST000".into())),
             ("LIVE_ALPACA_SECRET", Some("secret000".into())),
@@ -48,7 +46,7 @@ mod tests {
     #[test]
     fn from_env_paper_selects_paper_vars() {
         temp_env::with_vars(paper_vars("https://paper-api.alpaca.markets/v2"), || {
-            let cfg = AlpacaConfig::from_env().unwrap();
+            let cfg = AlpacaConfig::from_env(AlpacaEnv::Paper).unwrap();
             assert_eq!(cfg.env, AlpacaEnv::Paper);
             assert_eq!(cfg.base_url, "https://paper-api.alpaca.markets/v2");
             assert_eq!(cfg.key, "PKTEST000");
@@ -59,7 +57,7 @@ mod tests {
     #[test]
     fn from_env_paper_trailing_slash_stripped() {
         temp_env::with_vars(paper_vars("https://paper-api.alpaca.markets/v2/"), || {
-            let cfg = AlpacaConfig::from_env().unwrap();
+            let cfg = AlpacaConfig::from_env(AlpacaEnv::Paper).unwrap();
             assert_eq!(cfg.base_url, "https://paper-api.alpaca.markets/v2");
         });
     }
@@ -67,7 +65,7 @@ mod tests {
     #[test]
     fn from_env_live_appends_v2() {
         temp_env::with_vars(live_vars("https://api.alpaca.markets"), || {
-            let cfg = AlpacaConfig::from_env().unwrap();
+            let cfg = AlpacaConfig::from_env(AlpacaEnv::Live).unwrap();
             assert_eq!(cfg.env, AlpacaEnv::Live);
             assert_eq!(cfg.base_url, "https://api.alpaca.markets/v2");
         });
@@ -76,25 +74,8 @@ mod tests {
     #[test]
     fn from_env_live_no_double_slash() {
         temp_env::with_vars(live_vars("https://api.alpaca.markets/"), || {
-            let cfg = AlpacaConfig::from_env().unwrap();
+            let cfg = AlpacaConfig::from_env(AlpacaEnv::Live).unwrap();
             assert_eq!(cfg.base_url, "https://api.alpaca.markets/v2");
-        });
-    }
-
-    #[test]
-    fn from_env_defaults_to_paper_when_unset() {
-        let mut vars = paper_vars("https://paper-api.alpaca.markets/v2");
-        vars[0] = ("ALPACA_ENV", None); // unset ALPACA_ENV
-        temp_env::with_vars(vars, || {
-            let cfg = AlpacaConfig::from_env().unwrap();
-            assert_eq!(cfg.env, AlpacaEnv::Paper);
-        });
-    }
-
-    #[test]
-    fn from_env_unknown_value_errors() {
-        temp_env::with_vars([("ALPACA_ENV", Some("staging".to_string()))], || {
-            assert!(AlpacaConfig::from_env().is_err());
         });
     }
 
@@ -102,7 +83,6 @@ mod tests {
     fn from_env_missing_paper_key_errors() {
         temp_env::with_vars(
             [
-                ("ALPACA_ENV", Some("paper".to_string())),
                 (
                     "PAPER_ALPACA_ENDPOINT",
                     Some("https://paper-api.alpaca.markets/v2".to_string()),
@@ -111,7 +91,24 @@ mod tests {
                 ("PAPER_ALPACA_SECRET", Some("secret".to_string())),
             ],
             || {
-                assert!(AlpacaConfig::from_env().is_err());
+                assert!(AlpacaConfig::from_env(AlpacaEnv::Paper).is_err());
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_missing_live_key_errors() {
+        temp_env::with_vars(
+            [
+                (
+                    "LIVE_ALPACA_ENDPOINT",
+                    Some("https://api.alpaca.markets".to_string()),
+                ),
+                ("LIVE_ALPACA_KEY", None),
+                ("LIVE_ALPACA_SECRET", Some("secret".to_string())),
+            ],
+            || {
+                assert!(AlpacaConfig::from_env(AlpacaEnv::Live).is_err());
             },
         );
     }
@@ -146,23 +143,22 @@ pub struct AlpacaConfig {
 }
 
 impl AlpacaConfig {
-    /// Load configuration from environment variables.
+    /// Load configuration from environment variables for the specified environment.
     ///
-    /// Reads `ALPACA_ENV` (defaults to `"paper"`) then picks the matching set
-    /// of variables:
+    /// Only the variables for the requested environment are read and validated —
+    /// the opposing set is ignored entirely. The environment is determined by the
+    /// `--paper` CLI flag: pass [`AlpacaEnv::Paper`] when `--paper` is supplied,
+    /// or [`AlpacaEnv::Live`] otherwise (the default).
     ///
     /// | Env | Variables required |
     /// |-----|--------------------|
-    /// | `paper` | `PAPER_ALPACA_ENDPOINT`, `PAPER_ALPACA_KEY`, `PAPER_ALPACA_SECRET` |
-    /// | `live`  | `LIVE_ALPACA_ENDPOINT`,  `LIVE_ALPACA_KEY`,  `LIVE_ALPACA_SECRET`  |
+    /// | [`AlpacaEnv::Paper`] | `PAPER_ALPACA_ENDPOINT`, `PAPER_ALPACA_KEY`, `PAPER_ALPACA_SECRET` |
+    /// | [`AlpacaEnv::Live`]  | `LIVE_ALPACA_ENDPOINT`,  `LIVE_ALPACA_KEY`,  `LIVE_ALPACA_SECRET`  |
     ///
-    /// Returns an error if any required variable is missing or if `ALPACA_ENV`
-    /// is set to an unrecognised value.
-    pub fn from_env() -> Result<Self> {
-        let env_label = std::env::var("ALPACA_ENV").unwrap_or_else(|_| "paper".into());
-
-        match env_label.to_lowercase().as_str() {
-            "live" => {
+    /// Returns an error if any required variable for the chosen environment is missing.
+    pub fn from_env(env: AlpacaEnv) -> Result<Self> {
+        match env {
+            AlpacaEnv::Live => {
                 let endpoint = std::env::var("LIVE_ALPACA_ENDPOINT")
                     .context("LIVE_ALPACA_ENDPOINT not set")?;
                 let key = std::env::var("LIVE_ALPACA_KEY").context("LIVE_ALPACA_KEY not set")?;
@@ -177,7 +173,7 @@ impl AlpacaConfig {
                     env: AlpacaEnv::Live,
                 })
             }
-            "paper" => {
+            AlpacaEnv::Paper => {
                 let endpoint = std::env::var("PAPER_ALPACA_ENDPOINT")
                     .context("PAPER_ALPACA_ENDPOINT not set")?;
                 let key = std::env::var("PAPER_ALPACA_KEY").context("PAPER_ALPACA_KEY not set")?;
@@ -192,10 +188,6 @@ impl AlpacaConfig {
                     env: AlpacaEnv::Paper,
                 })
             }
-            other => Err(anyhow!(
-                "Unknown ALPACA_ENV value: '{}'. Use 'paper' or 'live'.",
-                other
-            )),
         }
     }
 

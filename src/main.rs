@@ -2,6 +2,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use clap::Parser;
 use crossterm::{
     event::EnableMouseCapture,
     execute,
@@ -11,7 +12,24 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::{mpsc, watch, Notify};
 use tokio_util::sync::CancellationToken;
 
-use alpaca_trader_rs::{client::AlpacaClient, config::AlpacaConfig, events::Event};
+use alpaca_trader_rs::{
+    client::AlpacaClient,
+    config::{AlpacaConfig, AlpacaEnv},
+    events::Event,
+};
+
+/// Alpaca Markets TUI trading terminal.
+///
+/// Connects to the **live** account by default. Pass `--paper` to use the
+/// paper-trading environment (simulated funds, no real money at risk).
+#[derive(Parser)]
+#[command(version, about)]
+struct Args {
+    /// Connect to the paper-trading environment (simulated funds).
+    /// Omit to use the live account (real money — default).
+    #[arg(long)]
+    paper: bool,
+}
 
 // Bridge library modules into the binary crate so sub-modules can use `crate::config` etc.
 mod client {
@@ -42,6 +60,8 @@ use update::update;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
     dotenvy::dotenv().ok();
 
     // ── Logging — must come before enable_raw_mode() ───────────────────────────
@@ -52,10 +72,25 @@ async fn main() -> anyhow::Result<()> {
         nb
     });
 
-    let config = AlpacaConfig::from_env().map_err(|e| {
+    let env = if args.paper {
+        AlpacaEnv::Paper
+    } else {
+        AlpacaEnv::Live
+    };
+
+    let config = AlpacaConfig::from_env(env).map_err(|e| {
         tracing::error!(error = %e, "configuration error");
         eprintln!("Configuration error: {e}");
-        eprintln!("Copy .env.example to .env and fill in your Alpaca API credentials.");
+        if args.paper {
+            eprintln!(
+                "Set PAPER_ALPACA_ENDPOINT, PAPER_ALPACA_KEY and PAPER_ALPACA_SECRET in your environment or .env file."
+            );
+        } else {
+            eprintln!(
+                "Set LIVE_ALPACA_ENDPOINT, LIVE_ALPACA_KEY and LIVE_ALPACA_SECRET in your environment or .env file."
+            );
+            eprintln!("Use --paper to connect to the paper-trading environment instead.");
+        }
         e
     })?;
 

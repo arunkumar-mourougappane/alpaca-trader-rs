@@ -100,9 +100,7 @@ pub struct AlpacaConfig {
 }
 
 impl AlpacaConfig {
-    pub fn from_env() -> Result<Self, ConfigError>;  // reads ALPACA_ENV + prefixed vars
-    pub fn paper(key: &str, secret: &str) -> Self;
-    pub fn live(key: &str, secret: &str) -> Self;
+    pub fn from_env(env: AlpacaEnv) -> Result<Self>;  // reads LIVE_* or PAPER_* vars for the given env
 }
 ```
 
@@ -286,11 +284,11 @@ Pure read of `&App`, writes only to `Frame` — no side effects.
 
 ## Paper vs Live Trading
 
-Controlled entirely by `ALPACA_ENV`. The library resolves the active config at startup; all downstream code is identical between environments.
+Controlled by the `--paper` CLI flag. The binary defaults to **live**. All downstream code is identical between environments; only `AlpacaConfig` and the TUI badge differ.
 
-| Config point | Paper | Live |
+| Config point | Paper (`--paper`) | Live (default) |
 |---|---|---|
-| `ALPACA_ENV` | `paper` | `live` |
+| CLI flag | `--paper` | *(omit)* |
 | REST base URL | `https://paper-api.alpaca.markets/v2` | `https://api.alpaca.markets/v2` |
 | Account WebSocket | `wss://paper-api.alpaca.markets/stream` | `wss://api.alpaca.markets/stream` |
 | Market data WebSocket | `wss://stream.data.alpaca.markets/v2/iex` | Same (or `/v2/sip` with subscription) |
@@ -328,8 +326,7 @@ Terminal raw mode is restored via a `Drop` guard wrapping the `ratatui::Terminal
 
 ## Testing Against Paper Trading
 
-1. Set `ALPACA_ENV=paper` in `.env`.
-2. Run `cargo run --bin alpaca-trader`.
-3. The header shows **[PAPER]** — no real money at risk.
-4. Place orders through the UI; fills appear in the Orders panel via the account WebSocket stream within seconds.
-5. Paper positions reset daily at market open.
+1. Run `cargo run --bin alpaca-trader -- --paper`.
+2. The header shows **[PAPER]** — no real money at risk.
+3. Place orders through the UI; fills appear in the Orders panel via the account WebSocket stream within seconds.
+4. Paper positions reset daily at market open.

@@ -84,13 +84,12 @@ mod tests {
     fn from_env_paper() {
         temp_env::with_vars(
             [
-                ("ALPACA_ENV",            Some("paper")),
                 ("PAPER_ALPACA_ENDPOINT", Some("https://paper-api.alpaca.markets/v2")),
                 ("PAPER_ALPACA_KEY",      Some("PKTEST000")),
                 ("PAPER_ALPACA_SECRET",   Some("secret000")),
             ],
             || {
-                let cfg = AlpacaConfig::from_env().unwrap();
+                let cfg = AlpacaConfig::from_env(AlpacaEnv::Paper).unwrap();
                 assert_eq!(cfg.env, AlpacaEnv::Paper);
                 assert_eq!(cfg.base_url, "https://paper-api.alpaca.markets/v2");
                 assert_eq!(cfg.key, "PKTEST000");
@@ -238,16 +237,16 @@ async fn poll_once_emits_account_event() {
 | `order_notional_qty_null` | Order with `qty: null` deserializes without error; `qty` is `None` |
 | `watchlist_empty_assets_default` | `Watchlist` with no `assets` key deserializes to empty `Vec` |
 
-### `config.rs` — 7 tests (all using `temp-env`)
+### `config.rs` — 8 tests (all using `temp-env`)
 
 | Test | What it checks |
 |---|---|
-| `from_env_paper_selects_paper_vars` | Correct `base_url`, `key`, `secret`, `env == Paper` |
-| `from_env_live_appends_v2` | Live endpoint without `/v2` gets it appended; no double slash |
+| `from_env_paper_selects_paper_vars` | `from_env(Paper)` → correct `base_url`, `key`, `secret`, `env == Paper` |
+| `from_env_live_appends_v2` | `from_env(Live)` → live endpoint without `/v2` gets it appended; no double slash |
 | `from_env_paper_trailing_slash_stripped` | `https://paper-api.alpaca.markets/v2/` → no trailing slash |
-| `from_env_unknown_env_errors` | `ALPACA_ENV=staging` → `Err` |
-| `from_env_missing_key_errors` | `PAPER_ALPACA_KEY` unset → `Err` |
-| `from_env_defaults_to_paper` | `ALPACA_ENV` unset → selects paper vars |
+| `from_env_missing_paper_key_errors` | `PAPER_ALPACA_KEY` unset → `Err` |
+| `from_env_missing_live_key_errors` | `LIVE_ALPACA_KEY` unset → `Err` |
+| `from_env_live_no_double_slash` | Live endpoint with trailing slash → no double `/v2/` |
 | `env_label_paper` / `env_label_live` | `env_label()` returns correct static str |
 
 ### `client.rs` — 14 tests (all in `tests/client_tests.rs`)

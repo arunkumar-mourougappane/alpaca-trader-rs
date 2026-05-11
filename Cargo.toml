@@ -30,6 +30,7 @@ tokio-util        = { version = "0.7",  features = ["rt"] }
 # App
 ratatui    = "0.30"
 crossterm  = { version = "0.29", features = ["event-stream"] }
+clap       = { version = "4", features = ["derive"] }
 
 # Logging
 tracing            = "0.1"
