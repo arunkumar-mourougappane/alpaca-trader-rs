@@ -7,7 +7,7 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-05-10
 
 Introduces OS-native keychain credential storage with an interactive first-run provisioning flow, and replaces the `ALPACA_ENV` environment variable with a `--paper` CLI flag.
 

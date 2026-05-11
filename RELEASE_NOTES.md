@@ -1,6 +1,6 @@
 # Release Notes — v0.3.0
 
-**Release date:** unreleased
+**Release date:** 2026-05-10
 **MSRV:** Rust 1.88+
 **Previous release:** [v0.2.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.2.0)
 
