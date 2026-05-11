@@ -36,8 +36,8 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
         AlpacaEnv::Paper => "paper",
     };
 
-    let endpoint = std::env::var(format!("{prefix}_ENDPOINT"))
-        .unwrap_or_else(|_| default_ep.to_string());
+    let endpoint =
+        std::env::var(format!("{prefix}_ENDPOINT")).unwrap_or_else(|_| default_ep.to_string());
 
     // ── Step 1: environment variables ─────────────────────────────────────────
     let env_key = std::env::var(format!("{prefix}_KEY"))
@@ -48,8 +48,16 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
         .filter(|s| !s.is_empty());
 
     if let (Some(key), Some(secret)) = (env_key, env_secret) {
-        tracing::debug!(env = env_label, "credentials loaded from environment variables");
-        return Ok(ResolvedCredentials { endpoint, key, secret, env });
+        tracing::debug!(
+            env = env_label,
+            "credentials loaded from environment variables"
+        );
+        return Ok(ResolvedCredentials {
+            endpoint,
+            key,
+            secret,
+            env,
+        });
     }
 
     // ── Step 2: OS keychain ────────────────────────────────────────────────────
@@ -61,7 +69,12 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
     match try_keychain_load(kr_prefix) {
         Ok(Some((key, secret))) => {
             tracing::debug!(env = env_label, "credentials loaded from OS keychain");
-            return Ok(ResolvedCredentials { endpoint, key, secret, env });
+            return Ok(ResolvedCredentials {
+                endpoint,
+                key,
+                secret,
+                env,
+            });
         }
         Ok(None) => {
             // Not stored yet — fall through to interactive prompt.
@@ -96,14 +109,8 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
     eprintln!("Visit https://app.alpaca.markets to generate API credentials.");
     eprintln!();
 
-    let key_prompt = format!(
-        "{} API Key   (APCA-API-KEY-ID): ",
-        env_label.to_uppercase()
-    );
-    let secret_prompt = format!(
-        "{} API Secret:                  ",
-        env_label.to_uppercase()
-    );
+    let key_prompt = format!("{} API Key   (APCA-API-KEY-ID): ", env_label.to_uppercase());
+    let secret_prompt = format!("{} API Secret:                  ", env_label.to_uppercase());
 
     let key = rpassword::prompt_password(key_prompt)?;
     let secret = rpassword::prompt_password(secret_prompt)?;
@@ -119,7 +126,12 @@ pub fn resolve(env: AlpacaEnv) -> Result<ResolvedCredentials> {
     }
 
     eprintln!();
-    Ok(ResolvedCredentials { endpoint, key, secret, env })
+    Ok(ResolvedCredentials {
+        endpoint,
+        key,
+        secret,
+        env,
+    })
 }
 
 // ── Keychain helpers (compiled only on supported platforms) ───────────────────
@@ -161,7 +173,9 @@ fn load_one_entry(user: &str) -> Result<Option<String>, KeychainStatus> {
         Err(keyring::Error::NoStorageAccess(e) | keyring::Error::PlatformFailure(e)) => {
             Err(KeychainStatus::Unavailable(e.to_string()))
         }
-        Err(e) => Err(KeychainStatus::Hard(anyhow::anyhow!("keychain read error: {e}"))),
+        Err(e) => Err(KeychainStatus::Hard(anyhow::anyhow!(
+            "keychain read error: {e}"
+        ))),
     }
 }
 
