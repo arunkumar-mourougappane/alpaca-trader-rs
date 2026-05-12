@@ -411,6 +411,38 @@ mod integration {
         assert!(result.is_err(), "auth failure should return Err");
     }
 
+    /// Verifies that an unexpected first frame (not the "connected" welcome)
+    /// causes `run_once` to return an error rather than silently proceeding.
+    /// This pins the welcome-frame handshake introduced to fix the bug where
+    /// the stream never delivered quotes because "connected" was mistaken for
+    /// the auth response.
+    #[tokio::test]
+    async fn market_run_once_unexpected_welcome_returns_err() {
+        let (listener, url) = bind_local().await;
+
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(tcp).await.unwrap();
+            // Send something that is not "connected" as the first frame
+            ws.send(Message::Text(
+                r#"[{"T":"error","msg":"server error"}]"#.into(),
+            ))
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        });
+
+        let (tx, _rx) = mpsc::channel(16);
+        let cancel = CancellationToken::new();
+        let (_sym_tx, mut sym_rx) = watch::channel(vec!["AAPL".to_string()]);
+
+        let result = run_once(&tx, &cancel, &test_config(), &mut sym_rx, &url).await;
+        assert!(
+            result.is_err(),
+            "unexpected welcome frame should return Err"
+        );
+    }
+
     #[tokio::test]
     async fn market_run_once_exits_cleanly_on_cancellation() {
         let (listener, url) = bind_local().await;
