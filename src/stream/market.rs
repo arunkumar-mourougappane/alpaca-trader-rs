@@ -93,6 +93,16 @@ async fn run_once(
     let (ws, _) = connect_async(url).await?;
     let (mut write, mut read) = ws.split();
 
+    // Alpaca sends a "connected" welcome frame immediately on connect — consume
+    // it before sending auth, otherwise the auth response is never seen.
+    if let Some(Ok(msg)) = read.next().await {
+        let text = msg.into_text().unwrap_or_default();
+        debug!(msg = %text, "market stream welcome");
+        if !text.contains("connected") {
+            anyhow::bail!("market stream unexpected handshake: {text}");
+        }
+    }
+
     // Authenticate
     let auth = json!({
         "action": "auth",
@@ -321,6 +331,11 @@ mod integration {
         tokio::spawn(async move {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
             let _ = ws.next().await; // consume auth
             ws.send(Message::Text(
                 r#"[{"T":"success","msg":"authenticated"}]"#.into(),
@@ -374,7 +389,12 @@ mod integration {
         tokio::spawn(async move {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
-            let _ = ws.next().await;
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
+            let _ = ws.next().await; // consume auth
             ws.send(Message::Text(
                 r#"[{"T":"error","msg":"invalid credentials"}]"#.into(),
             ))
@@ -400,6 +420,11 @@ mod integration {
         tokio::spawn(async move {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
             let _ = ws.next().await;
             ws.send(Message::Text(
                 r#"[{"T":"success","msg":"authenticated"}]"#.into(),
@@ -439,6 +464,11 @@ mod integration {
             // First connection: authenticate then close
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
             let _ = ws.next().await;
             ws.send(Message::Text(
                 r#"[{"T":"success","msg":"authenticated"}]"#.into(),
@@ -451,6 +481,11 @@ mod integration {
             // Second connection: send a quote
             let (tcp2, _) = listener.accept().await.unwrap();
             let mut ws2 = accept_async(tcp2).await.unwrap();
+            ws2.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
             let _ = ws2.next().await;
             ws2.send(Message::Text(
                 r#"[{"T":"success","msg":"authenticated"}]"#.into(),
@@ -517,7 +552,12 @@ mod integration {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
 
-            // Consume auth
+            // Send connected welcome, then consume auth
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
             let _ = ws.next().await;
             ws.send(Message::Text(
                 r#"[{"T":"success","msg":"authenticated"}]"#.into(),
@@ -598,6 +638,11 @@ mod integration {
         tokio::spawn(async move {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
+            ws.send(Message::Text(
+                r#"[{"T":"success","msg":"connected"}]"#.into(),
+            ))
+            .await
+            .unwrap();
             let _ = ws.next().await;
             ws.send(Message::Text(
                 r#"[{"T":"success","msg":"authenticated"}]"#.into(),
