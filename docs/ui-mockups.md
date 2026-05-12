@@ -18,7 +18,7 @@ Every screen shares this outer chrome:
 │  (active panel — see sections below)                                        │
 │                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ ?:Help  q:Quit  Tab:Switch Panel  r:Refresh  o:Order                        │
+│ ?:Help  A:About  q:Quit  Tab:Switch Panel  r:Refresh  o:Order               │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -48,7 +48,8 @@ Every screen shares this outer chrome:
 │                                                                              │
 │  ── Today's Equity Curve ───────────────────────────────────────────────── │
 │                                                                              │
-│   ▁▂▃▄▄▅▄▅▆▆▅▄▃▄▅▆▇▇▆▅▄▃▂▃▄▅▆▆▇▇█▇▆▅▄▅▆▇▇▆▅▄▅▆                           │
+│   ⠀⠀⢀⡠⠤⠒⠒⠤⢄⡀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡠⠤⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡰⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀  │
+│   ⡠⠃⠀⠀⠀⠀⠀⠀⠀⠈⠑⠢⣀⣀⡠⠔⠉⠁⠀⠀⠀⠀⠈⠙⠒⠤⠤⣀⣀⡠⠔⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  │
 │   09:30                12:00                              16:00             │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -56,7 +57,7 @@ Every screen shares this outer chrome:
 
 - Fields sourced from `GET /v2/account`
 - Day P&L / Open P&L: green if positive, red if negative
-- Sparkline: intraday equity history, updated on each `Event::AccountUpdated`
+- Equity Curve: rendered as a **no-fill line chart** using `ratatui::widgets::Chart` with `GraphType::Line` and `Marker::Braille`; updated on each `Event::AccountUpdated`
 - No cursor/selection — display only
 
 ---
@@ -181,7 +182,8 @@ Triggered by `Enter` on a Watchlist or Positions row.
 ║  Low     $140.85    Volume  28.7M        ║
 ║                                          ║
 ║  ── Intraday ──────────────────────────  ║
-║  ▁▂▃▄▅▄▅▆▇▆▅▄▅▆▇█▇▆▅▄▃▄▅▆▇▆▅▄▅▆▇▆▅▄▅  ║
+║  ⠀⠀⠀⢀⣀⠤⠤⢄⡀⠀⠀⠀⣀⡠⠔⠒⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ║
+║  ⡠⠒⠉⠀⠀⠀⠀⠀⠈⠑⠒⠊⠀⠀⠀⠀⠀⠀⠀⠙⠒⠤⣀⣀⡠⠔⠉⠁⠀  ║
 ║  09:30                             16:00 ║
 ║                                          ║
 ║  Exchange    NASDAQ   Class    us_equity ║
@@ -195,6 +197,7 @@ Triggered by `Enter` on a Watchlist or Positions row.
 - Price and Change update live from WebSocket while modal is open
 - `w` adds/removes symbol from the watchlist (toggles)
 - Asset flags (`Tradable`, `Shortable`, `ETB`, `Fractionable`) sourced from watchlist asset data
+- Intraday chart: rendered as a **no-fill line chart** using `ratatui::widgets::Chart` with `GraphType::Line` and `Marker::Braille`; x-axis bounds = `[0.0, total_bars]`, y-axis auto-scaled to data min/max
 
 ---
 
@@ -225,10 +228,63 @@ Triggered by `?` from any context.
 ║  GLOBAL                                  ║
 ║  q / Ctrl-C   Quit                       ║
 ║  ?            This help screen           ║
+║  A            About this app             ║
 ║                                          ║
 ║             Press any key to close       ║
 ╚══════════════════════════════════════════╝
 ```
+
+---
+
+## Modal — About
+
+Triggered by `A` (uppercase) from any context. Displays app metadata, author info, and build details embedded at compile time via `env!` macros.
+
+```
+╔═ About alpaca-trader-rs ══════════════════╗
+║                                           ║
+║   alpaca-trader-rs  v0.3.0                ║
+║                                           ║
+║   Alpaca Markets TUI trading terminal     ║
+║   and async REST client library.          ║
+║                                           ║
+║  ── Author ─────────────────────────────  ║
+║   Arunkumar Mourougappane                 ║
+║   amouroug.dev@gmail.com                  ║
+║   github.com/arunkumar-mourougappane      ║
+║   anengineersrant.com                     ║
+║                                           ║
+║  ── Project ────────────────────────────  ║
+║   github.com/arunkumar-mourougappane/     ║
+║     alpaca-trader-rs                      ║
+║   docs.rs/alpaca-trader-rs                ║
+║                                           ║
+║  ── License ────────────────────────────  ║
+║   MIT OR Apache-2.0                       ║
+║                                           ║
+║              Press any key to close       ║
+╚═══════════════════════════════════════════╝
+```
+
+**Data sources (compile-time via `env!` macros):**
+
+| Field | Source |
+|-------|--------|
+| App name | `env!("CARGO_PKG_NAME")` |
+| Version | `env!("CARGO_PKG_VERSION")` |
+| Description | `env!("CARGO_PKG_DESCRIPTION")` |
+| Authors | `env!("CARGO_PKG_AUTHORS")` |
+| Repository | `env!("CARGO_PKG_REPOSITORY")` |
+| License | `env!("CARGO_PKG_LICENSE")` |
+| Homepage | `env!("CARGO_PKG_HOMEPAGE")` |
+
+All values are baked in at `cargo build` time — no runtime file I/O needed.
+
+**Behaviour:**
+- `A` (uppercase) is globally active and does not conflict with `a` (Add symbol, watchlist-only)
+- Any key press closes the modal (same pattern as Help)
+- `A` hint added to the Help overlay GLOBAL section
+- Status bar shows `A:About` in the global footer hint alongside `?:Help`
 
 ---
 
@@ -246,6 +302,7 @@ Triggered by `?` from any context.
 | `q` / `Ctrl-C` | Quit |
 | `r` | Force REST re-poll |
 | `?` | Toggle help overlay |
+| `A` | Open About modal |
 | `Esc` | Close any open modal |
 
 ### List Navigation (Watchlist, Positions, Orders)
@@ -316,7 +373,7 @@ Mouse support requires `crossterm` with the `event-stream` feature and `crosster
 | Header / status bar | `Paragraph` with `Line` and styled `Span`s |
 | Tab bar | `Tabs` widget |
 | Data tables | `Table` + `TableState` (carries selected row index) |
-| Sparklines (equity, intraday) | `Sparkline` |
+| Sparklines (equity, intraday) | `Chart` with `GraphType::Line` + `Marker::Braille` (no-fill line chart) |
 | Modal background overlay | `Clear` rendered over a centered `Rect` |
 | Modal container | `Block` with double border `BorderType::Double` |
 | Text input fields | `Paragraph` in edit mode; cursor rendered as `▌` |
