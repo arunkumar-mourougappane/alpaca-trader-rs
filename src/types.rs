@@ -61,6 +61,35 @@ mod tests {
         assert!(!acc.pattern_day_trader);
         assert_eq!(acc.currency, "USD");
         assert!(acc.portfolio_value.is_none());
+        // New fields default to empty string when absent
+        assert_eq!(acc.last_equity, "");
+        assert_eq!(acc.account_number, "");
+    }
+
+    #[test]
+    fn account_info_deserializes_pl_and_account_number() {
+        let json = r#"{
+            "status": "ACTIVE",
+            "equity": "125432.18",
+            "last_equity": "124588.96",
+            "buying_power": "48210.00",
+            "cash": "48210.00",
+            "long_market_value": "77222.18",
+            "daytrade_count": 1,
+            "pattern_day_trader": false,
+            "currency": "USD",
+            "account_number": "PA1234567"
+        }"#;
+        let acc: AccountInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(acc.last_equity, "124588.96");
+        assert_eq!(acc.account_number, "PA1234567");
+        let equity: f64 = acc.equity.parse().unwrap();
+        let last: f64 = acc.last_equity.parse().unwrap();
+        let day_pl = equity - last;
+        assert!(
+            (day_pl - 843.22).abs() < 0.01,
+            "Day P&L should be ~843.22, got {day_pl}"
+        );
     }
 
     #[test]
@@ -271,6 +300,10 @@ pub struct AccountInfo {
     pub status: String,
     /// Total account equity as a dollar string.
     pub equity: String,
+    /// Account equity at the close of the previous trading day, as a dollar string.
+    /// Used to compute Day P&L.
+    #[serde(default)]
+    pub last_equity: String,
     /// Buying power available for new orders, as a dollar string.
     pub buying_power: String,
     /// Cash balance, as a dollar string.
@@ -286,6 +319,9 @@ pub struct AccountInfo {
     /// Total portfolio value; may be absent on some account types.
     #[serde(default)]
     pub portfolio_value: Option<String>,
+    /// Unique account identifier (e.g. `"PA1234567"` for paper accounts).
+    #[serde(default)]
+    pub account_number: String,
 }
 
 /// A single open or closed position held in the account.
