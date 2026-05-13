@@ -19,6 +19,9 @@ pub(crate) fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEven
         }
         KeyCode::Enter => {
             if let Some(symbol) = app.selected_position_symbol() {
+                let _ = app
+                    .command_tx
+                    .try_send(crate::commands::Command::FetchIntradayBars(symbol.clone()));
                 app.modal = Some(Modal::SymbolDetail(symbol));
             }
         }

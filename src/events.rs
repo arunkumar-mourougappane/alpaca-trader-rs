@@ -47,6 +47,15 @@ pub enum Event {
     PortfolioHistoryLoaded(Vec<f64>),
     /// Latest market snapshots (daily bars + prev close) for watchlist symbols.
     SnapshotsUpdated(HashMap<String, Snapshot>),
+    /// Intraday 1-minute bar close prices (as cents) for a single symbol.
+    ///
+    /// Used to render the intraday sparkline inside the symbol-detail modal.
+    IntradayBarsReceived {
+        /// Ticker symbol these bars belong to.
+        symbol: String,
+        /// Close prices in integer cents, oldest first.
+        bars: Vec<u64>,
+    },
     /// Periodic tick to trigger UI refresh / REST polls.
     Tick,
     /// One-shot status message to display in the status bar.
