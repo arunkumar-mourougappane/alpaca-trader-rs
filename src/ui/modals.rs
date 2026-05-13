@@ -1065,7 +1065,7 @@ mod tests {
     fn render_about_shows_version() {
         let output = render_about_to_string();
         assert!(
-            output.contains("v0.3.0"),
+            output.contains("v0.4.0"),
             "About modal should display the version"
         );
     }
