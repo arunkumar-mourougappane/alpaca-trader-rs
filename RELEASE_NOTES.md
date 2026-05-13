@@ -1,157 +1,149 @@
-# Release Notes — v0.3.0
+# Release Notes — v0.4.0
 
-**Release date:** 2026-05-10
+**Release date:** 2026-05-12
 **MSRV:** Rust 1.88+
-**Previous release:** [v0.2.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.2.0)
+**Previous release:** [v0.3.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.3.0)
 
 ---
 
 ## Overview
 
-v0.3.0 overhauls credential management. The app no longer requires a `.env` file to run — on
-first launch it prompts for API keys via the terminal and offers to save them to the OS native
-keychain, so subsequent runs need no configuration at all. For CI, containers, and power users the
-existing env-var approach is preserved and extended with a new unified `ALPACA_API_KEY` /
-`ALPACA_API_SECRET` pair. The `ALPACA_ENV` env var is retired in favour of a `--paper` CLI flag,
-and a new `--reset` flag lets users clear stored keychain entries from the command line.
+v0.4.0 is a UX and information-density release. The Account panel gains Day P&L, Open P&L, and
+Account #. The Watchlist replaces Ask/Bid with Volume and Change%. The Symbol Detail modal adds
+full OHLCV data and an intraday sparkline. The header correctly identifies pre-market and
+after-hours trading sessions. Three new keyboard shortcuts round out the experience: `s` for
+SELL SHORT from the Positions panel, `↑`/`↓` for cycling dropdown values in Order Entry, and `A`
+for a new About modal. A longstanding bug that left the intraday sparkline permanently on
+"Loading…" is fixed.
 
-The test suite grows from **188 → 198 tests**.
+The test suite grows from **198 → 327 tests**.
 
 ---
 
 ## What's New
 
-### OS-Native Keychain Credential Storage
+### About Modal (`A`)
 
-Credentials are now stored and retrieved from the platform keychain — no extra software required,
-no C-library dependencies:
+A new global `A` key opens an About overlay that shows the app name, version, author contact
+details, project and documentation URLs, and license — all embedded at compile time via `env!`
+macros so no runtime I/O is needed. Any key press closes it.
 
-| Platform | Backend |
+```
+╔═ About alpaca-trader-rs ══════════════════╗
+║                                           ║
+║   alpaca-trader-rs  v0.4.0                ║
+║                                           ║
+║   Alpaca Markets TUI trading terminal     ║
+║   and async REST client library.          ║
+║                                           ║
+║  ── Author ─────────────────────────────  ║
+║   Arunkumar Mourougappane                 ║
+║   amouroug.dev@gmail.com                  ║
+║   github.com/arunkumar-mourougappane      ║
+║   anengineersrant.com                     ║
+║                                           ║
+║  ── Project ────────────────────────────  ║
+║   github.com/arunkumar-mourougappane/     ║
+║     alpaca-trader-rs                      ║
+║   docs.rs/alpaca-trader-rs                ║
+║                                           ║
+║  ── License ────────────────────────────  ║
+║   MIT OR Apache-2.0                       ║
+║                                           ║
+║              Press any key to close       ║
+╚═══════════════════════════════════════════╝
+```
+
+### Symbol Detail — OHLCV + Intraday Sparkline + Watchlist Toggle
+
+The Symbol Detail modal (`Enter` on a Watchlist or Positions row) now shows a full OHLCV snapshot
+(Open, High, Low, Volume) alongside the existing bid/ask, an intraday 1-minute price sparkline,
+and a `w` key to add or remove the symbol from the watchlist without leaving the modal.
+
+The longstanding bug that caused the sparkline to remain on "Loading…" indefinitely is fixed —
+intraday bars are now stored and rendered correctly.
+
+### Account Panel — Day P&L, Open P&L, Account #
+
+The Account panel displays two new P&L fields (green if positive, red if negative) and the
+account number pulled from the Alpaca account response:
+
+```
+Portfolio Value   $125,432.18     Day P&L   +$843.22  (+0.68%)
+Buying Power       $48,210.00     Open P&L  +$1,204.50
+Cash               $48,210.00     Account # PA1234567
+Long Market Value  $77,222.18     Status    ACTIVE
+```
+
+### Watchlist — Volume and Change%
+
+The Ask and Bid price columns have been replaced with Volume (shares traded) and Change%
+(day-over-day percentage change), giving a more actionable at-a-glance view:
+
+```
+Symbol   Name                     Price      Change      Volume
+INTC     Intel Corporation        $24.18    -0.42%      45.2M
+AMD      Advanced Micro Devices  $142.85    +1.24%      28.7M
+```
+
+Change% and Price are colour-coded green (positive) / red (negative).
+
+### Header — PRE-MARKET / AFTER-HOURS State
+
+The market clock in the header now correctly identifies and displays all four session states:
+
+| State | Display |
 |---|---|
-| macOS | Keychain Access (`apple-native`) |
-| Windows | Credential Store (`windows-native`) |
-| Linux | Kernel keyutils (`linux-native`) — cross-compiles cleanly, no `libdbus` |
+| Pre-market (04:00–09:30 ET) | `PRE-MARKET` |
+| Regular session (09:30–16:00 ET) | `OPEN` |
+| After-hours (16:00–20:00 ET) | `AFTER-HOURS` |
+| Overnight / weekend | `CLOSED` |
 
-Graceful degradation when the keychain is unavailable (locked, WSL, headless CI) — the app warns
-and continues with session-only credentials.
+### `s` Key — SELL SHORT from Positions Panel
 
-### Interactive First-Run Provisioning
+From the Positions panel, `s` opens the Order Entry modal pre-filled with the selected symbol and
+the SELL SHORT side (existing `o` continues to open SELL). This mirrors the symbol-detail modal
+which also offers `o` / `s`.
 
-When no credentials are found in the environment or keychain, `alpaca-trader` prompts for the API
-key and secret directly on the terminal (via `rpassword`, which opens `/dev/tty` directly and
-is unaffected by stdin redirection). After a successful entry the user is offered the option to
-save the credentials to the keychain (default: yes).
+### ↑ / ↓ Arrow Keys in Order Entry Dropdowns
 
-```
-alpaca-trader --paper
-  → Alpaca paper API key: ****
-  → Alpaca paper API secret: ****
-  → Save to keychain? [Y/n]: Y
-  ✓ Paper credentials saved.
-```
-
-On subsequent runs the keychain is queried automatically — no further input required.
-
-### `--paper` CLI Flag
-
-`ALPACA_ENV` is retired. The active trading environment is now selected on the command line:
-
-```bash
-alpaca-trader           # live account (real money — default)
-alpaca-trader --paper   # paper account (simulated funds)
-```
-
-`run.sh` accepts the same flags and passes them through to the binary.
-
-### `ALPACA_API_KEY` / `ALPACA_API_SECRET` Unified Env Vars
-
-A single credential pair now works for both environments. This is ideal for CI pipelines,
-Docker images, and systemd services where environment-switching happens at the process level:
-
-```bash
-export ALPACA_API_KEY=your-key-id
-export ALPACA_API_SECRET=your-secret-key
-alpaca-trader --paper   # or without --paper for live
-```
-
-**Full credential resolution order (highest priority first):**
-
-1. `ALPACA_API_KEY` + `ALPACA_API_SECRET` — unified pair
-2. `LIVE_ALPACA_KEY` / `LIVE_ALPACA_SECRET` or `PAPER_ALPACA_KEY` / `PAPER_ALPACA_SECRET` — per-environment (developer `.env` files)
-3. OS-native keychain — returning desktop users
-4. Interactive TTY prompt — first-run desktop
-
-### `--reset` Flag
-
-Clear stored keychain entries for a given environment without entering the TUI:
-
-```bash
-alpaca-trader --reset paper   # removes paper keychain entries
-alpaca-trader --reset live    # removes live keychain entries
-```
-
-If the credentials for that environment were loaded from a `.env` file or environment variable
-(rather than the keychain) the command prints the exact variable names to unset and suggests
-which file to edit.
-
-### New Public Library API
-
-| Item | Description |
-|---|---|
-| `ResolvedCredentials` | Public struct carrying resolved `endpoint`, `key`, `secret`, and `env` |
-| `AlpacaConfig::from_credentials(ResolvedCredentials)` | New constructor; applies the same URL normalisation as `from_env` |
+The Up and Down arrow keys now cycle through values in the Side, OrderType, and TimeInForce
+dropdown fields inside the Order Entry modal — mirroring the existing Left/Right behaviour for
+users who prefer vertical navigation.
 
 ---
 
-## ⚠️ Breaking Changes
+## Bug Fixes
 
-| Change | Migration |
+| Fix | Description |
 |---|---|
-| **Default environment is now live** (was paper) | Pass `--paper` explicitly if you relied on the old paper default |
-| **`ALPACA_ENV` is no longer read** | Remove it from `.env` / shell config; use `--paper` flag instead |
-| **`AlpacaConfig::from_env()` now requires an `AlpacaEnv` argument** | Update call sites: `AlpacaConfig::from_env(AlpacaEnv::Paper)` |
+| Intraday sparkline stuck on "Loading…" | `Event::IntradayBarsReceived` now correctly stores bars per symbol; Symbol Detail renders them on open |
 
 ---
 
 ## Tests
 
-**198 tests total** (up from 188 in v0.2.0):
+**327 tests total** (up from 198 in v0.3.0):
 
 | Scope | Count | Highlights |
 |---|---|---|
-| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 42 | Serde round-trips, env-var resolution, WebSocket integration tests |
-| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/credentials.rs`) | 137 | State logic, keyboard dispatch, credential resolution (11 new), `--reset` paths |
-| HTTP integration (`tests/client_tests.rs`) | 19 | All 11 `AlpacaClient` methods against a `wiremock` mock |
+| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 55 | Serde round-trips, env-var resolution, WebSocket integration |
+| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 249 | All new features + navigation + mouse modal handler |
+| HTTP integration (`tests/client_tests.rs`) | 23 | All `AlpacaClient` methods against a `wiremock` mock |
 
-New credential tests cover:
-
-- Unified `ALPACA_API_KEY`/`ALPACA_API_SECRET` for live and paper environments
-- Per-env prefixed vars (`LIVE_*`, `PAPER_*`)
-- Priority ordering (unified vars beat prefixed vars)
-- Custom endpoint override via `LIVE_ALPACA_ENDPOINT` / `PAPER_ALPACA_ENDPOINT`
-- Empty value filtering (empty string treated as absent)
-- Cross-env isolation (paper vars not visible when resolving live, and vice versa)
+New test coverage includes:
+- Orders, Positions, and Watchlist panel `j`/`k`/`g`/`G` navigation and edge cases
+- Mouse modal handler — submit button, Side thirds, OrderType halves, Confirm yes/no buttons
+- About and Symbol Detail render paths
+- Dashboard `render_status()` helper for all tab contexts
+- Search handler backspace, empty-backspace, and character-append selection reset
 
 ---
 
-## Dependencies Added
+## No Breaking Changes
 
-| Crate | Version | Role |
-|---|---|---|
-| `rpassword` | 7 | TTY password prompts (reads `/dev/tty` directly) |
-| `keyring` | 3 | OS-native keychain with platform-conditional native features |
-
----
-
-## Upgrade Guide from v0.2.0
-
-1. **Check your default environment.** If you ran `./run.sh` or `alpaca-trader` without flags and expected paper trading, add `--paper` to your command or script.
-
-2. **Remove `ALPACA_ENV`.** If it's in your `.env` file or shell profile, delete the line — it is silently ignored and may cause confusion.
-
-3. **Optionally migrate keys to the keychain.** Run `alpaca-trader --paper` (or without `--paper` for live). If keys are already in `.env` they'll be picked up; the app will not re-prompt. To trigger the save-to-keychain flow, unset the env vars and run again.
-
-4. **Library consumers**: update `AlpacaConfig::from_env()` calls to pass the environment: `AlpacaConfig::from_env(AlpacaEnv::Live)` or `AlpacaConfig::from_env(AlpacaEnv::Paper)`.
+v0.4.0 is fully backwards-compatible with v0.3.0. All credential resolution, CLI flags,
+environment variables, and library API are unchanged.
 
 ---
 
@@ -161,7 +153,7 @@ New credential tests cover:
 git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
 
-# First run — app will prompt for credentials and offer to save to keychain
+# First run — app prompts for credentials and offers to save to keychain
 ./run.sh --paper   # paper trading (simulated funds — recommended for first run)
 ./run.sh           # live trading  (real money — default)
 ```

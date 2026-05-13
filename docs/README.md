@@ -33,7 +33,7 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 
 ### Prerequisites
 
-- Rust 1.85+ (`rustup update stable`)
+- Rust 1.88+ (`rustup update stable`)
 - An Alpaca Markets account ([alpaca.markets](https://alpaca.markets)) — paper trading is free and works immediately
 
 ### 1. Clone and build
@@ -91,12 +91,14 @@ The TUI header will show **[PAPER]** to confirm you are in simulation mode.
 | `g` / `G` | Jump to first / last row |
 | `Enter` | Open symbol detail modal |
 | `o` | New order (pre-fills selected symbol) |
+| `s` | SELL SHORT order entry (Positions panel) |
 | `c` | Cancel selected order |
 | `a` | Add symbol to watchlist |
 | `d` | Remove symbol from watchlist |
 | `/` | Search / filter |
 | `r` | Force refresh |
 | `?` | Show help overlay |
+| `A` | About overlay |
 | `Esc` | Close modal |
 | `q` / `Ctrl-C` | Quit |
 
