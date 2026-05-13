@@ -1627,4 +1627,447 @@ mod tests {
             "expected sell_short side in SubmitOrder"
         );
     }
+
+    // ── Orders navigation (j/k/g/G) ──────────────────────────────────────────
+
+    #[test]
+    fn orders_j_moves_down() {
+        let mut app = orders_app();
+        update(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.orders_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn orders_j_clamps_at_end() {
+        let mut app = orders_app();
+        app.orders_state.select(Some(1)); // last item
+        update(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.orders_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn orders_k_moves_up() {
+        let mut app = orders_app();
+        app.orders_state.select(Some(1));
+        update(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn orders_k_clamps_at_zero() {
+        let mut app = orders_app();
+        update(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn orders_g_jumps_to_top() {
+        let mut app = orders_app();
+        app.orders_state.select(Some(1));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn orders_G_jumps_to_bottom() {
+        let mut app = orders_app();
+        update(&mut app, key(KeyCode::Char('G')));
+        assert_eq!(app.orders_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn orders_down_arrow_moves_down() {
+        let mut app = orders_app();
+        update(&mut app, key(KeyCode::Down));
+        assert_eq!(app.orders_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn orders_up_arrow_moves_up() {
+        let mut app = orders_app();
+        app.orders_state.select(Some(1));
+        update(&mut app, key(KeyCode::Up));
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn orders_c_with_no_selection_does_nothing() {
+        let mut app = orders_app();
+        app.orders_state.select(None);
+        update(&mut app, key(KeyCode::Char('c')));
+        assert!(
+            app.modal.is_none(),
+            "c with no selection should not open confirm"
+        );
+    }
+
+    // ── Positions navigation (j/k/g/G) ───────────────────────────────────────
+
+    #[test]
+    fn positions_j_moves_down() {
+        let (mut app, _rx) = positions_app();
+        // Add a second position so j can move
+        app.positions.push(crate::types::Position {
+            symbol: "TSLA".into(),
+            qty: "5".into(),
+            avg_entry_price: "200.00".into(),
+            current_price: "210.00".into(),
+            market_value: "1050.00".into(),
+            unrealized_pl: "50.00".into(),
+            unrealized_plpc: "0.05".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        });
+        update(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.positions_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn positions_j_clamps_at_end() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.positions_state.selected(), Some(0)); // only 1 item, stays at 0
+    }
+
+    #[test]
+    fn positions_k_clamps_at_zero() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.positions_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn positions_g_jumps_to_top() {
+        let (mut app, _rx) = positions_app();
+        app.positions_state.select(Some(0));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(app.positions_state.selected(), Some(0));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn positions_G_jumps_to_bottom() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('G')));
+        assert_eq!(app.positions_state.selected(), Some(0)); // 1 item, bottom = 0
+    }
+
+    #[test]
+    fn positions_down_arrow_moves_down() {
+        let (mut app, _rx) = positions_app();
+        // one item; down clamps at 0
+        update(&mut app, key(KeyCode::Down));
+        assert_eq!(app.positions_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn positions_up_arrow_clamps_at_zero() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Up));
+        assert_eq!(app.positions_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn positions_j_with_no_positions_is_noop() {
+        let (mut app, _rx) = app_with_rx();
+        app.active_tab = Tab::Positions;
+        update(&mut app, key(KeyCode::Char('j')));
+        assert_eq!(app.positions_state.selected(), None);
+    }
+
+    // ── Watchlist edge cases ──────────────────────────────────────────────────
+
+    #[test]
+    fn watchlist_d_with_no_selection_does_nothing() {
+        let mut app = watchlist_app();
+        app.watchlist_state.select(None);
+        update(&mut app, key(KeyCode::Char('d')));
+        assert!(
+            app.modal.is_none(),
+            "d with no selection should not open confirm"
+        );
+    }
+
+    #[test]
+    fn watchlist_enter_with_no_selection_does_nothing() {
+        let mut app = watchlist_app();
+        app.watchlist_state.select(None);
+        update(&mut app, key(KeyCode::Enter));
+        assert!(
+            app.modal.is_none(),
+            "enter with no selection should not open modal"
+        );
+    }
+
+    #[test]
+    fn watchlist_a_without_watchlist_does_nothing() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = None;
+        update(&mut app, key(KeyCode::Char('a')));
+        assert!(
+            app.modal.is_none(),
+            "a with no watchlist should not open AddSymbol"
+        );
+    }
+
+    #[test]
+    fn watchlist_d_without_watchlist_does_nothing() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = None;
+        update(&mut app, key(KeyCode::Char('d')));
+        assert!(app.modal.is_none());
+    }
+
+    // ── Mouse modal handler ───────────────────────────────────────────────────
+
+    #[test]
+    fn mouse_click_modal_submit_button_submits_order() {
+        use crate::app::OrderEntryState;
+        use crate::types::AccountInfo;
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.qty_input = "10".into();
+        state.price_input = "150.00".into();
+        app.modal = Some(Modal::OrderEntry(state));
+        // Place submit button at (10, 20) with size 10x1
+        app.hit_areas.modal_submit = Some(rect(10, 20, 10, 1));
+
+        update(&mut app, mouse_click(12, 20));
+
+        assert!(
+            app.modal.is_none(),
+            "modal should close after clicking submit"
+        );
+        let cmd = cmd_rx
+            .try_recv()
+            .expect("SubmitOrder command should be dispatched");
+        assert!(matches!(cmd, Command::SubmitOrder { .. }));
+    }
+
+    #[test]
+    fn mouse_click_modal_field_side_left_third_selects_buy() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        // Side field at x=10, width=30; left third = x < 10+10=20
+        app.hit_areas.modal_fields = vec![(OrderField::Side, rect(10, 5, 30, 1))];
+
+        update(&mut app, mouse_click(10, 5)); // left third
+
+        assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
+                if s.side == OrderSide::Buy && s.focused_field == OrderField::Side));
+    }
+
+    #[test]
+    fn mouse_click_modal_field_side_middle_third_selects_sell() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        // Side field at x=10, width=30; middle third = x in [20, 30)
+        app.hit_areas.modal_fields = vec![(OrderField::Side, rect(10, 5, 30, 1))];
+
+        update(&mut app, mouse_click(22, 5)); // middle third
+
+        assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
+                if s.side == OrderSide::Sell && s.focused_field == OrderField::Side));
+    }
+
+    #[test]
+    fn mouse_click_modal_field_side_right_third_selects_sell_short() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        // Side field at x=10, width=30; right third starts at x >= 10+20=30
+        app.hit_areas.modal_fields = vec![(OrderField::Side, rect(10, 5, 30, 1))];
+
+        update(&mut app, mouse_click(32, 5)); // right third
+
+        assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
+                if s.side == OrderSide::SellShort && s.focused_field == OrderField::Side));
+    }
+
+    #[test]
+    fn mouse_click_modal_field_order_type_left_half_selects_limit() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        // OrderType at x=10, width=20; left half = x < 20
+        app.hit_areas.modal_fields = vec![(OrderField::OrderType, rect(10, 6, 20, 1))];
+
+        update(&mut app, mouse_click(12, 6)); // left half
+
+        assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
+                if !s.market_order && s.focused_field == OrderField::OrderType));
+    }
+
+    #[test]
+    fn mouse_click_modal_field_order_type_right_half_selects_market() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        // OrderType at x=10, width=20; right half = x >= 20
+        app.hit_areas.modal_fields = vec![(OrderField::OrderType, rect(10, 6, 20, 1))];
+
+        update(&mut app, mouse_click(22, 6)); // right half
+
+        assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
+                if s.market_order && s.focused_field == OrderField::OrderType));
+    }
+
+    #[test]
+    fn mouse_click_modal_field_other_focuses_field() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        app.hit_areas.modal_fields = vec![(OrderField::Qty, rect(10, 7, 20, 1))];
+
+        update(&mut app, mouse_click(15, 7));
+
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.focused_field == OrderField::Qty)
+        );
+    }
+
+    #[test]
+    fn mouse_click_confirm_yes_button_accepts() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        app.watchlist_state.select(Some(0));
+        // Open a Confirm modal first
+        update(&mut app, key(KeyCode::Char('d')));
+        assert!(matches!(&app.modal, Some(Modal::Confirm { .. })));
+        // Place confirm buttons at x=10, width=20; left half = Yes
+        app.hit_areas.modal_confirm_buttons = Some(rect(10, 10, 20, 1));
+
+        update(&mut app, mouse_click(12, 10)); // left half → Yes
+
+        // Confirm 'y' should close modal and dispatch remove command
+        assert!(app.modal.is_none(), "yes click should close confirm modal");
+    }
+
+    #[test]
+    fn mouse_click_confirm_no_button_cancels() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        app.watchlist_state.select(Some(0));
+        // Open a Confirm modal first
+        update(&mut app, key(KeyCode::Char('d')));
+        assert!(matches!(&app.modal, Some(Modal::Confirm { .. })));
+        // Place confirm buttons at x=10, width=20; right half = No
+        app.hit_areas.modal_confirm_buttons = Some(rect(10, 10, 20, 1));
+
+        update(&mut app, mouse_click(22, 10)); // right half → No
+
+        assert!(app.modal.is_none(), "no click should close confirm modal");
+    }
+
+    #[test]
+    fn mouse_click_outside_modal_does_not_close_it() {
+        use crate::app::OrderEntryState;
+        let (mut app, _rx) = app_with_rx();
+        let state = OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        // No hit_areas set; click at (0, 0) hits nothing
+        update(&mut app, mouse_click(0, 0));
+        assert!(
+            app.modal.is_some(),
+            "click outside modal regions should leave modal open"
+        );
+    }
+
+    // ── List row clicks for Positions and Orders tabs ─────────────────────────
+
+    #[test]
+    fn mouse_click_list_row_selects_positions_item() {
+        let (mut app, _rx) = positions_app();
+        app.positions.push(crate::types::Position {
+            symbol: "TSLA".into(),
+            qty: "5".into(),
+            avg_entry_price: "200.00".into(),
+            current_price: "210.00".into(),
+            market_value: "1050.00".into(),
+            unrealized_pl: "50.00".into(),
+            unrealized_plpc: "0.05".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        });
+        app.active_tab = Tab::Positions;
+        app.hit_areas.list_data_start_y = 10;
+
+        update(&mut app, mouse_click(5, 11)); // row 11 → data_row 1 → idx 1
+        assert_eq!(app.positions_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn mouse_click_list_row_selects_orders_item() {
+        let mut app = orders_app();
+        app.hit_areas.list_data_start_y = 10;
+
+        update(&mut app, mouse_click(5, 11)); // row 11 → data_row 1 → idx 1
+        assert_eq!(app.orders_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn mouse_click_list_row_account_tab_is_noop() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        app.hit_areas.list_data_start_y = 10;
+        // Should not panic and nothing should change
+        update(&mut app, mouse_click(5, 11));
+        // no assertion needed; just verifying no panic
+    }
+
+    #[test]
+    fn mouse_click_list_row_out_of_bounds_does_not_panic() {
+        let mut app = watchlist_app();
+        app.hit_areas.list_data_start_y = 10;
+        // Click on row 99 — no data item there
+        update(&mut app, mouse_click(5, 99));
+        // Selection should remain at 0 (not moved to invalid index)
+        assert_eq!(app.watchlist_state.selected(), Some(0));
+    }
+
+    // ── Search handler edge cases ─────────────────────────────────────────────
+
+    #[test]
+    fn search_backspace_pops_char() {
+        let mut app = make_test_app();
+        app.searching = true;
+        app.search_query = "AB".into();
+        update(&mut app, key(KeyCode::Backspace));
+        assert_eq!(app.search_query, "A");
+    }
+
+    #[test]
+    fn search_backspace_on_empty_is_noop() {
+        let mut app = make_test_app();
+        app.searching = true;
+        app.search_query = String::new();
+        update(&mut app, key(KeyCode::Backspace));
+        assert!(app.search_query.is_empty());
+    }
+
+    #[test]
+    fn search_char_resets_watchlist_selection() {
+        let mut app = watchlist_app();
+        app.searching = true;
+        app.watchlist_state.select(Some(2));
+        update(&mut app, key(KeyCode::Char('A')));
+        assert_eq!(app.watchlist_state.selected(), Some(0));
+    }
 }
