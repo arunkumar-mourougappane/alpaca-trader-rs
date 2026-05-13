@@ -4,6 +4,7 @@
 [![Release](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/release.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/release.yml)
 [![Security audit](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml/badge.svg)](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/actions/workflows/security.yml)
 [![codecov](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs)
+[![Crates.io](https://img.shields.io/crates/v/alpaca-trader-rs.svg)](https://crates.io/crates/alpaca-trader-rs)
 ![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
@@ -14,21 +15,32 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 
 ---
 
-## Running the App
+## Installing the App
 
-### Prerequisites
+### From crates.io (recommended)
 
-- Rust 1.88+ (`rustup update stable`)
-- An Alpaca Markets account — paper trading is free at [alpaca.markets](https://alpaca.markets)
+```bash
+cargo install alpaca-trader-rs
+```
 
-### Installation
+This compiles and installs the `alpaca-trader` binary to `~/.cargo/bin/`. Requires Rust 1.88+.
+
+### Pre-compiled binaries
+
+Download the latest binary for your platform from the [Releases page](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases).
+
+### From source
 
 ```bash
 git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
+cargo build --release
+# binary at: target/release/alpaca-trader
 ```
 
-### Credential Setup
+---
+
+## Credential Setup
 
 The app resolves credentials in priority order (highest wins):
 
@@ -45,8 +57,8 @@ Just run the app. If no credentials are found, it prompts for your API key and s
 offers to save them to the OS keychain (macOS Keychain, Windows Credential Store, or Linux keyutils).
 
 ```bash
-./run.sh --paper   # prompted for paper keys on first run
-./run.sh           # prompted for live keys on first run
+alpaca-trader --paper   # prompted for paper keys on first run
+alpaca-trader           # prompted for live keys on first run
 ```
 
 **Option B — `.env` file (recommended for development):**
@@ -61,34 +73,34 @@ cp .env.example .env
 ```bash
 export ALPACA_API_KEY=your-key-id
 export ALPACA_API_SECRET=your-secret-key
-./run.sh --paper
+alpaca-trader --paper
 ```
 
 > See [docs/credentials-setup.md](docs/credentials-setup.md) for obtaining keys from the Alpaca dashboard.
 
-### Run
+---
+
+## Running
 
 ```bash
-./run.sh           # live trading (real money — default)
-./run.sh --paper   # paper trading (simulated funds)
-./run.sh --live    # same as default; accepted for backwards compatibility
+alpaca-trader           # live trading (real money — default)
+alpaca-trader --paper   # paper trading (simulated funds)
 ```
 
 The header badge shows **[PAPER]** in cyan or **[LIVE]** in red at all times.
 
-### Managing Stored Credentials
+> If you installed from source, use `./run.sh --paper` / `./run.sh` instead of `alpaca-trader`.
 
-To clear credentials saved in the OS keychain:
+### Managing Stored Credentials
 
 ```bash
 alpaca-trader --reset paper   # remove paper keychain entries
 alpaca-trader --reset live    # remove live keychain entries
 ```
 
-If credentials were loaded from a `.env` file or environment variable instead, the command
-prints the variable names to unset and the file to edit.
+---
 
-### Key Bindings
+## Key Bindings
 
 | Key | Action |
 |-----|--------|
@@ -116,13 +128,12 @@ Full interaction spec (including mouse): [docs/ui-mockups.md](docs/ui-mockups.md
 
 ## Library Usage
 
-Add to your `Cargo.toml` (requires a Collaboration Agreement — see [Licensing](#licensing)):
+Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-alpaca-trader-rs = { git = "https://github.com/arunkumar-mourougappane/alpaca-trader-rs" }
+alpaca-trader-rs = "0.4"
 tokio = { version = "1", features = ["full"] }
-dotenvy = "0.15"
 ```
 
 ### Fetch account info
@@ -185,8 +196,7 @@ client.remove_from_watchlist(&wl.id, "TLRY").await?;
 | `client` | `AlpacaClient` — `get_account()`, `get_positions()`, `get_orders()`, `submit_order()`, `cancel_order()`, `get_clock()`, `list_watchlists()`, `get_watchlist()`, `add_to_watchlist()`, `remove_from_watchlist()` |
 | `types` | `AccountInfo`, `Position`, `Order`, `OrderRequest`, `OrderSide`, `OrderType`, `TimeInForce`, `Quote`, `MarketClock`, `Watchlist`, `WatchlistSummary`, `Asset` |
 | `events` | `Event` — unified event enum consumed by the TUI app |
-
-> `stream::MarketStream` and `stream::AccountStream` (WebSocket live data) are Phase 2.
+| `stream` | `MarketStream`, `AccountStream` — WebSocket live data |
 
 ---
 
@@ -197,31 +207,31 @@ alpaca-trader-rs/
 ├── src/
 │   ├── lib.rs              # Library root — public API
 │   ├── main.rs             # Binary entry point — TUI app
-│   ├── credentials.rs      # Credential resolution: env vars → keychain → TTY prompt  [app-only]
+│   ├── credentials.rs      # Credential resolution: env vars → keychain → TTY prompt
 │   ├── config.rs           # AlpacaConfig: env resolution, paper/live selection
 │   ├── client.rs           # AlpacaClient: all REST methods
 │   ├── types.rs            # Shared domain types (serde-deserializable)
 │   ├── events.rs           # Event enum
-│   ├── app.rs              # App state — TEA Model          [app-only]
-│   ├── update.rs           # update(state, event) + key routing  [app-only]
-│   ├── input/              # Per-panel keyboard input handlers    [app-only]
-│   │   ├── mod.rs          # send_command() + pub re-exports
-│   │   ├── watchlist.rs    # handle_watchlist_key()
-│   │   ├── positions.rs    # handle_positions_key()
-│   │   ├── orders.rs       # handle_orders_key()
-│   │   ├── modal.rs        # handle_modal_key()
-│   │   └── search.rs       # handle_search_key()
+│   ├── app.rs              # App state — TEA Model
+│   ├── update.rs           # update(state, event) + key routing
+│   ├── input/              # Per-panel keyboard input handlers
+│   │   ├── mod.rs
+│   │   ├── watchlist.rs
+│   │   ├── positions.rs
+│   │   ├── orders.rs
+│   │   ├── modal.rs
+│   │   └── search.rs
 │   ├── handlers/
-│   │   ├── input.rs        # crossterm EventStream → Event  [app-only]
-│   │   └── rest.rs         # Periodic REST polling task     [app-only]
-│   └── ui/                 #                                [app-only]
+│   │   ├── input.rs        # crossterm EventStream → Event
+│   │   └── rest.rs         # Periodic REST polling task
+│   └── ui/
 │       ├── mod.rs          # render(frame, app) + popup_area()
 │       ├── dashboard.rs    # Header, tab bar, status bar
 │       ├── account.rs      # Account panel + sparkline
 │       ├── watchlist.rs    # Watchlist table + search
 │       ├── positions.rs    # Positions table + totals
 │       ├── orders.rs       # Orders table + sub-tabs
-│       ├── modals.rs       # Order entry, detail, help, confirm modals
+│       ├── modals.rs       # Order entry, detail, help, about, confirm modals
 │       └── theme.rs        # Colours and styles
 ├── tests/
 │   └── client_tests.rs     # AlpacaClient integration tests (wiremock)
@@ -229,7 +239,6 @@ alpaca-trader-rs/
 ├── .env.example            # Credential template
 ├── run.sh                  # Run script (--paper / --live)
 ├── Cargo.toml
-├── LICENSE.md
 ├── LICENSE-MIT
 ├── LICENSE-APACHE
 └── README.md
@@ -241,10 +250,6 @@ alpaca-trader-rs/
 
 Credentials are loaded from the environment (or a `.env` file via `dotenvy`). Only the
 variables for the active environment are used — the opposing set is ignored.
-
-> ⚠️ **Breaking change from v0.2.0**: the default environment is now **live**.
-> Users who previously relied on the paper default must pass `--paper` explicitly.
-> `ALPACA_ENV` is no longer read.
 
 ### Unified pair (highest priority)
 
@@ -266,49 +271,29 @@ variables for the active environment are used — the opposing set is ignored.
 
 ---
 
-## Status
+## Features
 
 | Feature | Status |
 |---|---|
-| REST client (`AlpacaClient`) | Done |
-| TUI shell — header, tabs, status bar | Done |
-| Account panel + equity sparkline | Done |
-| Watchlist panel + live search | Done |
-| Positions panel + totals footer | Done |
-| Orders panel + Open/Filled/Cancelled sub-tabs | Done |
-| Order Entry modal | Done |
-| Symbol Detail modal | Done |
-| Help overlay | Done |
-| Paper / Live switching (`run.sh --paper/--live`) | Done |
-| Clippy clean | Done |
-| Test strategy documented | Done |
-| Unit + integration tests (327 tests) | Done |
-| Orders panel 1/2/3 sub-tab key fix | Done |
-| GitHub Actions CI + security audit | Done |
-| Code coverage with cargo-llvm-cov + Codecov | Done |
-| WebSocket integration tests (auth, cancel, reconnect) | Done |
-| Release workflow — pre-compiled binaries on tag push | Done |
-| Status message auto-dismiss (3 s TTL) | Done |
-| WebSocket stream connection status in header | Done |
-| Order Entry: Time-in-Force (DAY/GTC) selection | Done |
-| Order Entry: market-closed warning + DAY order block | Done |
-| Equity sparkline pre-populated from portfolio history API | Done |
-| WebSocket market data streaming | Done |
-| WebSocket account/trade stream | Done |
-| Live order submission | Done |
-| Watchlist add/remove (wired to REST) | Done |
-| OS-native keychain credential storage (macOS / Windows / Linux) | Done |
-| Interactive first-run credential prompt with keychain save offer | Done |
-| `ALPACA_API_KEY` / `ALPACA_API_SECRET` unified env vars | Done |
-| `--reset <paper\|live>` CLI flag to clear stored keychain credentials | Done |
-| Account panel Day P&L, Open P&L, Account # | Done |
-| Watchlist Volume + Change% columns (replacing Ask/Bid) | Done |
-| Header PRE-MARKET / AFTER-HOURS state detection | Done |
-| Symbol Detail OHLCV + intraday sparkline + watchlist toggle (`w`) | Done |
-| Fix: intraday sparkline stuck on "Loading…" | Done |
-| `s` key SELL SHORT from Positions panel | Done |
-| ↑/↓ arrow keys in Order Entry dropdowns | Done |
-| About modal (`A` key) | Done |
+| Typed async REST client (`AlpacaClient`) | ✅ |
+| TUI — header, tabs, status bar, sparkline | ✅ |
+| Account panel with Day P&L, Open P&L, Account # | ✅ |
+| Watchlist panel — Volume, Change%, live search | ✅ |
+| Positions panel with totals footer | ✅ |
+| Orders panel — Open / Filled / Cancelled sub-tabs | ✅ |
+| Order Entry modal with Side, Type, TIF dropdowns (↑/↓) | ✅ |
+| Symbol Detail modal — OHLCV, intraday sparkline, watchlist toggle | ✅ |
+| Help and About overlays | ✅ |
+| Paper / Live switching (`--paper` / `--live`) | ✅ |
+| SELL SHORT from Positions panel (`s` key) | ✅ |
+| Header market-session state (PRE-MARKET / OPEN / AFTER-HOURS / CLOSED) | ✅ |
+| WebSocket market data + account/trade streaming | ✅ |
+| Live order submission and cancellation | ✅ |
+| Watchlist add / remove (wired to REST) | ✅ |
+| OS-native keychain credential storage | ✅ |
+| Interactive first-run credential prompt | ✅ |
+| GitHub Actions CI, security audit, Codecov, release builds | ✅ |
+| 327 tests (unit + integration) | ✅ |
 
 ---
 
