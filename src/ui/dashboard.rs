@@ -95,12 +95,12 @@ pub fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
 
 pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
     let panel_hints = match app.active_tab {
-        Tab::Account => " r:Refresh  ?:Help  q:Quit",
+        Tab::Account => " r:Refresh  A:About  ?:Help  q:Quit",
         Tab::Watchlist => {
-            " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  /:Search  ?:Help  q:Quit"
+            " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  /:Search  A:About  ?:Help  q:Quit"
         }
-        Tab::Positions => " j/k:Navigate  Enter:Detail  o:Close  s:Short  ?:Help  q:Quit",
-        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  ?:Help  q:Quit",
+        Tab::Positions => " j/k:Navigate  Enter:Detail  o:Close  s:Short  A:About  ?:Help  q:Quit",
+        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  A:About  ?:Help  q:Quit",
     };
 
     let status = if app.status_msg.is_empty() {

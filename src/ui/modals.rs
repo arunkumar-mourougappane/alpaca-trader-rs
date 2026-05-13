@@ -12,6 +12,7 @@ use crate::ui::{popup_area, theme};
 pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
     match modal {
         Modal::Help => render_help(frame, area),
+        Modal::About => render_about(frame, area),
         Modal::OrderEntry(state) => render_order_entry(frame, area, state, app),
         Modal::SymbolDetail(symbol) => render_symbol_detail(frame, area, symbol, app),
         Modal::Confirm {
@@ -55,6 +56,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ("GLOBAL", ""),
         ("q / Ctrl-C", "Quit"),
         ("?", "This help screen"),
+        ("A", "About this app"),
     ];
 
     let header = Row::new(vec![
@@ -89,6 +91,108 @@ fn render_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(table, inner);
 
     // Footer hint
+    let footer_area = Rect {
+        x: inner.x,
+        y: inner.y + inner.height.saturating_sub(1),
+        width: inner.width,
+        height: 1,
+    };
+    let footer = Paragraph::new("  Press any key to close")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(theme::DIM));
+    frame.render_widget(footer, footer_area);
+}
+
+fn render_about(frame: &mut Frame, area: Rect) {
+    let popup = popup_area(area, 50, 60);
+    frame.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" About alpaca-trader-rs ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(theme::BRAND_CYAN));
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "  alpaca-trader-rs",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  v{}", env!("CARGO_PKG_VERSION")),
+                Style::default().fg(theme::BRAND_CYAN),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Alpaca Markets TUI trading terminal",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(Span::styled(
+            "  and async REST client library.",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  ── Author ─────────────────────────────",
+            Style::default().fg(theme::BRAND_CYAN),
+        )),
+        Line::from("  Arunkumar Mourougappane"),
+        Line::from(Span::styled(
+            "  amouroug.dev@gmail.com",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(Span::styled(
+            "  github.com/arunkumar-mourougappane",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(Span::styled(
+            "  anengineersrant.com",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  ── Project ────────────────────────────",
+            Style::default().fg(theme::BRAND_CYAN),
+        )),
+        Line::from(Span::styled(
+            "  github.com/arunkumar-mourougappane/",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(Span::styled(
+            "    alpaca-trader-rs",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(Span::styled(
+            "  docs.rs/alpaca-trader-rs",
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  ── License ────────────────────────────",
+            Style::default().fg(theme::BRAND_CYAN),
+        )),
+        Line::from(Span::styled(
+            format!("  {}", env!("CARGO_PKG_LICENSE")),
+            Style::default().fg(theme::DIM),
+        )),
+        Line::from(""),
+    ];
+
+    let content_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
+    };
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, content_area);
+
     let footer_area = Rect {
         x: inner.x,
         y: inner.y + inner.height.saturating_sub(1),
@@ -915,6 +1019,81 @@ mod tests {
         assert!(
             output.contains("SELL SHORT"),
             "order entry with SellShort should display SELL SHORT option"
+        );
+    }
+
+    fn render_about_to_string() -> String {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_about(frame, area);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_about_shows_app_name() {
+        let output = render_about_to_string();
+        assert!(
+            output.contains("alpaca-trader-rs"),
+            "About modal should display the app name"
+        );
+    }
+
+    #[test]
+    fn render_about_shows_version() {
+        let output = render_about_to_string();
+        assert!(
+            output.contains("v0.3.0"),
+            "About modal should display the version"
+        );
+    }
+
+    #[test]
+    fn render_about_shows_author() {
+        let output = render_about_to_string();
+        assert!(
+            output.contains("Arunkumar"),
+            "About modal should display the author name"
+        );
+    }
+
+    #[test]
+    fn render_about_shows_license() {
+        let output = render_about_to_string();
+        assert!(
+            output.contains("MIT"),
+            "About modal should display the license"
+        );
+    }
+
+    #[test]
+    fn render_about_shows_close_hint() {
+        let output = render_about_to_string();
+        assert!(
+            output.contains("Press any key to close"),
+            "About modal should display close hint"
         );
     }
 }

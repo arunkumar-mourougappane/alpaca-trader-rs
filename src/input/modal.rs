@@ -27,6 +27,8 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
         }
 
+        Modal::About => None,
+
         Modal::OrderEntry(mut state) => {
             match key.code {
                 KeyCode::Tab => state.focused_field = state.focused_field.next(),

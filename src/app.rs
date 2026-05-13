@@ -301,6 +301,7 @@ pub enum ConfirmAction {
 #[derive(Debug, Clone)]
 pub enum Modal {
     Help,
+    About,
     OrderEntry(OrderEntryState),
     SymbolDetail(String),
     Confirm {
