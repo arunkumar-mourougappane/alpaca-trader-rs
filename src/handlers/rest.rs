@@ -472,7 +472,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_once_portfolio_history_all_null_does_not_emit_event() {        let server = MockServer::start().await;
+    async fn poll_once_portfolio_history_all_null_does_not_emit_event() {
+        let server = MockServer::start().await;
 
         // Minimal mocks so poll_all doesn't fail loudly
         Mock::given(method("GET"))
@@ -588,7 +589,9 @@ mod tests {
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
 
         assert!(
-            events.iter().any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
             "must emit WatchlistUpdated"
         );
         let snap_event = events
