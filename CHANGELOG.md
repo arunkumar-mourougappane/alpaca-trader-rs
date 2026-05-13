@@ -7,6 +7,59 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.4.0] — 2026-05-12
+
+Adds the About modal, SELL SHORT from positions, up/down arrow navigation in Order Entry dropdowns,
+OHLCV and intraday sparkline in Symbol Detail, Day/Open P&L fields in the Account panel, Volume
+and Change% columns in the Watchlist, and PRE-MARKET / AFTER-HOURS state detection in the header.
+Fixes the intraday sparkline stuck on "Loading…". Test count grows from **198 → 327**.
+
+### Added
+
+#### Modals
+- **About modal** (`A` key — global): displays app name, version (from `CARGO_PKG_VERSION`),
+  author info, project URLs, and license (`CARGO_PKG_LICENSE`); any key press closes it.
+  `A → About this app` added to the Help overlay GLOBAL section and `A:About` to all status bars.
+- **Symbol Detail modal** — OHLCV fields (Open, High, Low, Volume), intraday 1-minute price
+  sparkline, and `w` key to toggle watchlist membership for the displayed symbol.
+
+#### Panels
+- **Account panel** — Day P&L and Open P&L fields with colour coding (green = positive,
+  red = negative); Account number displayed alongside account status.
+- **Watchlist panel** — Volume and Change% columns replace the previous Ask/Bid columns.
+- **Header** — Market clock now correctly identifies and displays PRE-MARKET and AFTER-HOURS
+  states in addition to OPEN and CLOSED.
+
+#### Keyboard
+- **`s` key** (Positions panel) — opens Order Entry pre-filled with the selected symbol and
+  SELL SHORT side.
+- **↑ / ↓ arrow keys** (Order Entry modal) — cycle through values in the Side, OrderType, and
+  TimeInForce dropdown fields, mirroring the existing `←` / `→` behaviour.
+
+### Fixed
+
+- **Intraday sparkline stuck on "Loading…"** (`src/update.rs`) — `Event::IntradayBarsReceived`
+  now correctly stores bars keyed by symbol and the Symbol Detail modal renders them immediately.
+
+### Tests
+
+**327 tests total** (up from 198 in v0.3.0):
+
+| Scope | Count |
+|---|---|
+| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 55 |
+| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 249 |
+| HTTP integration (`tests/client_tests.rs`) | 23 |
+
+Coverage additions include:
+- Orders / Positions / Watchlist panel navigation (`j`/`k`/`g`/`G` and arrow keys)
+- Mouse modal handler (`handle_modal_mouse`) — submit button, Side/OrderType radio clicks, Confirm yes/no
+- Symbol Detail and About modal render paths
+- Search handler `Backspace` and character-append edge cases
+- Dashboard `render_status()` helper for all four tab contexts
+
+---
+
 ## [0.3.0] — 2026-05-10
 
 Introduces OS-native keychain credential storage with an interactive first-run provisioning flow, and replaces the `ALPACA_ENV` environment variable with a `--paper` CLI flag.
@@ -195,6 +248,7 @@ First release. Ships as both an integratable Rust library and a standalone TUI t
 
 ---
 
+[0.4.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.1.0

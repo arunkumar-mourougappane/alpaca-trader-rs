@@ -99,12 +99,14 @@ prints the variable names to unset and the file to edit.
 | `g` / `G` | Jump to first / last row |
 | `Enter` | Open symbol detail |
 | `o` | New order (pre-fills selected symbol) |
+| `s` | SELL SHORT order (Positions panel) |
 | `c` | Cancel selected order |
 | `a` | Add symbol to watchlist |
 | `d` | Remove symbol from watchlist |
 | `/` | Search / filter watchlist |
 | `r` | Force refresh |
 | `?` | Help overlay |
+| `A` | About overlay |
 | `Esc` | Close modal |
 | `q` / `Ctrl-C` | Quit |
 
@@ -280,7 +282,7 @@ variables for the active environment are used — the opposing set is ignored.
 | Paper / Live switching (`run.sh --paper/--live`) | Done |
 | Clippy clean | Done |
 | Test strategy documented | Done |
-| Unit + integration tests (198 tests) | Done |
+| Unit + integration tests (327 tests) | Done |
 | Orders panel 1/2/3 sub-tab key fix | Done |
 | GitHub Actions CI + security audit | Done |
 | Code coverage with cargo-llvm-cov + Codecov | Done |
@@ -299,6 +301,14 @@ variables for the active environment are used — the opposing set is ignored.
 | Interactive first-run credential prompt with keychain save offer | Done |
 | `ALPACA_API_KEY` / `ALPACA_API_SECRET` unified env vars | Done |
 | `--reset <paper\|live>` CLI flag to clear stored keychain credentials | Done |
+| Account panel Day P&L, Open P&L, Account # | Done |
+| Watchlist Volume + Change% columns (replacing Ask/Bid) | Done |
+| Header PRE-MARKET / AFTER-HOURS state detection | Done |
+| Symbol Detail OHLCV + intraday sparkline + watchlist toggle (`w`) | Done |
+| Fix: intraday sparkline stuck on "Loading…" | Done |
+| `s` key SELL SHORT from Positions panel | Done |
+| ↑/↓ arrow keys in Order Entry dropdowns | Done |
+| About modal (`A` key) | Done |
 
 ---
 

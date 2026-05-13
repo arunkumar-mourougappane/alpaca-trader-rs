@@ -243,7 +243,7 @@ Triggered by `A` (uppercase) from any context. Displays app metadata, author inf
 ```
 ╔═ About alpaca-trader-rs ══════════════════╗
 ║                                           ║
-║   alpaca-trader-rs  v0.3.0                ║
+║   alpaca-trader-rs  v0.4.0                ║
 ║                                           ║
 ║   Alpaca Markets TUI trading terminal     ║
 ║   and async REST client library.          ║
