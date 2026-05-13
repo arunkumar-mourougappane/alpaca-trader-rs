@@ -1,10 +1,12 @@
 //! Async HTTP client wrapping the Alpaca Markets REST API.
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::config::AlpacaConfig;
 use crate::types::{
-    AccountInfo, MarketClock, Order, OrderRequest, PortfolioHistory, Position, Watchlist,
+    AccountInfo, MarketClock, Order, OrderRequest, PortfolioHistory, Position, Snapshot, Watchlist,
     WatchlistSummary,
 };
 
@@ -44,6 +46,19 @@ impl AlpacaClient {
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.config.base_url, path)
+    }
+
+    /// Build a URL against the Alpaca market-data API (`data.alpaca.markets`).
+    ///
+    /// In production the data API lives on a separate host from the broker API.
+    /// For local tests (base URL is not `alpaca.markets`) we fall back to the
+    /// configured base URL so wiremock mocks work without a second server.
+    fn data_url(&self, path: &str) -> String {
+        if self.config.base_url.contains("alpaca.markets") {
+            format!("https://data.alpaca.markets/v2{}", path)
+        } else {
+            format!("{}{}", self.config.base_url, path)
+        }
     }
 
     /// Fetch the current account snapshot (`GET /account`).
@@ -207,5 +222,34 @@ impl AlpacaClient {
             .json::<PortfolioHistory>()
             .await
             .context("GET /account/portfolio/history parse failed")
+    }
+
+    /// Fetch latest market snapshots for multiple symbols from the data API
+    /// (`GET /v2/stocks/snapshots?symbols=...&feed=iex`).
+    ///
+    /// Returns a map of symbol → [`Snapshot`] with daily bar data (volume) and
+    /// the previous day's bar (previous close for Change% computation).
+    /// Returns an empty map if `symbols` is empty.
+    pub async fn get_snapshots(
+        &self,
+        symbols: &[String],
+    ) -> Result<HashMap<String, Snapshot>> {
+        if symbols.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let symbols_param = symbols.join(",");
+        self.http
+            .get(self.data_url("/stocks/snapshots"))
+            .query(&[
+                ("symbols", symbols_param.as_str()),
+                ("feed", "iex"),
+            ])
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .context("GET /stocks/snapshots request failed")?
+            .json::<HashMap<String, Snapshot>>()
+            .await
+            .context("GET /stocks/snapshots parse failed")
     }
 }
