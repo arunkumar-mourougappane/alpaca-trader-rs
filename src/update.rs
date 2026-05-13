@@ -68,6 +68,9 @@ pub fn update(app: &mut App, event: Event) {
         Event::SnapshotsUpdated(snapshots) => {
             app.snapshots = snapshots;
         }
+        Event::IntradayBarsReceived { symbol, bars } => {
+            app.intraday_bars.insert(symbol, bars);
+        }
         Event::Tick => {
             if let Some(exp) = app.status_msg.expires_at {
                 if exp <= Instant::now() {
@@ -1192,5 +1195,135 @@ mod tests {
 
         assert!(app.modal.is_none(), "modal should close on valid submit");
         cmd_rx.try_recv().expect("command should be sent");
+    }
+
+    // ── IntradayBarsReceived ──────────────────────────────────────────────────
+
+    #[test]
+    fn intraday_bars_received_stores_bars() {
+        let (mut app, _rx) = app_with_rx();
+        update(
+            &mut app,
+            Event::IntradayBarsReceived {
+                symbol: "AAPL".into(),
+                bars: vec![14200, 14215, 14198],
+            },
+        );
+        assert_eq!(
+            app.intraday_bars.get("AAPL"),
+            Some(&vec![14200u64, 14215, 14198])
+        );
+    }
+
+    #[test]
+    fn intraday_bars_received_overwrites_existing_bars() {
+        let (mut app, _rx) = app_with_rx();
+        app.intraday_bars.insert("AAPL".into(), vec![100, 200]);
+        update(
+            &mut app,
+            Event::IntradayBarsReceived {
+                symbol: "AAPL".into(),
+                bars: vec![300, 400, 500],
+            },
+        );
+        assert_eq!(app.intraday_bars.get("AAPL"), Some(&vec![300u64, 400, 500]));
+    }
+
+    // ── SymbolDetail modal key handling ───────────────────────────────────────
+
+    #[test]
+    fn symbol_detail_o_opens_order_entry() {
+        let (mut app, _rx) = app_with_rx();
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        update(&mut app, key(KeyCode::Char('o')));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL" && s.side_buy),
+            "o key should open buy order entry for symbol"
+        );
+    }
+
+    #[test]
+    fn symbol_detail_s_opens_sell_order_entry() {
+        let (mut app, _rx) = app_with_rx();
+        app.modal = Some(Modal::SymbolDetail("NVDA".into()));
+        update(&mut app, key(KeyCode::Char('s')));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "NVDA" && !s.side_buy),
+            "s key should open sell order entry for symbol"
+        );
+    }
+
+    #[test]
+    fn symbol_detail_w_sends_add_watchlist_command() {
+        use crate::types::Watchlist;
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.watchlist = Some(Watchlist {
+            id: "wl-1".into(),
+            name: "Primary".into(),
+            assets: vec![],
+        });
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        update(&mut app, key(KeyCode::Char('w')));
+        // Modal stays open
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
+            "w key should keep symbol detail modal open"
+        );
+        // Command dispatched
+        let cmd = cmd_rx.try_recv().expect("AddToWatchlist command expected");
+        assert!(
+            matches!(cmd, Command::AddToWatchlist { watchlist_id, symbol }
+                if watchlist_id == "wl-1" && symbol == "AAPL")
+        );
+    }
+
+    #[test]
+    fn symbol_detail_w_sends_remove_watchlist_command_when_in_watchlist() {
+        use crate::types::{Asset, Watchlist};
+        let (mut app, mut cmd_rx) = app_with_rx();
+        let asset = Asset {
+            id: "asset-1".into(),
+            symbol: "AAPL".into(),
+            name: "Apple Inc.".into(),
+            exchange: "NASDAQ".into(),
+            asset_class: "us_equity".into(),
+            tradable: true,
+            shortable: true,
+            fractionable: true,
+            easy_to_borrow: true,
+        };
+        app.watchlist = Some(Watchlist {
+            id: "wl-1".into(),
+            name: "Primary".into(),
+            assets: vec![asset],
+        });
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        update(&mut app, key(KeyCode::Char('w')));
+        let cmd = cmd_rx
+            .try_recv()
+            .expect("RemoveFromWatchlist command expected");
+        assert!(
+            matches!(cmd, Command::RemoveFromWatchlist { watchlist_id, symbol }
+                if watchlist_id == "wl-1" && symbol == "AAPL")
+        );
+    }
+
+    #[test]
+    fn symbol_detail_other_key_keeps_modal_open() {
+        let (mut app, _rx) = app_with_rx();
+        app.modal = Some(Modal::SymbolDetail("TSLA".into()));
+        update(&mut app, key(KeyCode::Char('j')));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "TSLA"),
+            "unknown key should keep symbol detail modal open"
+        );
+    }
+
+    #[test]
+    fn symbol_detail_esc_closes_modal() {
+        let (mut app, _rx) = app_with_rx();
+        app.modal = Some(Modal::SymbolDetail("TSLA".into()));
+        update(&mut app, key(KeyCode::Esc));
+        assert!(app.modal.is_none(), "Esc should close the modal");
     }
 }

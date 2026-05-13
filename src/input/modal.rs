@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 
 use super::send_command;
-use crate::app::{App, ConfirmAction, Modal, OrderField, StatusMessage};
+use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField, StatusMessage};
 use crate::commands::Command;
 
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
@@ -114,7 +114,51 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             Some(Modal::OrderEntry(state))
         }
 
-        Modal::SymbolDetail(_) => None,
+        Modal::SymbolDetail(symbol) => match key.code {
+            KeyCode::Char('o') => {
+                app.modal = Some(Modal::OrderEntry(OrderEntryState::new(symbol.clone())));
+                return;
+            }
+            KeyCode::Char('s') => {
+                let mut state = OrderEntryState::new(symbol.clone());
+                state.side_buy = false;
+                app.modal = Some(Modal::OrderEntry(state));
+                return;
+            }
+            KeyCode::Char('w') => {
+                let in_watchlist = app
+                    .watchlist
+                    .as_ref()
+                    .map(|w| w.assets.iter().any(|a| a.symbol == symbol))
+                    .unwrap_or(false);
+                let wl_info = app
+                    .watchlist
+                    .as_ref()
+                    .map(|wl| (wl.id.clone(), in_watchlist));
+                if let Some((wl_id, remove)) = wl_info {
+                    let (cmd, msg) = if remove {
+                        (
+                            Command::RemoveFromWatchlist {
+                                watchlist_id: wl_id,
+                                symbol: symbol.clone(),
+                            },
+                            format!("Removing {}…", symbol),
+                        )
+                    } else {
+                        (
+                            Command::AddToWatchlist {
+                                watchlist_id: wl_id,
+                                symbol: symbol.clone(),
+                            },
+                            format!("Adding {}…", symbol),
+                        )
+                    };
+                    send_command(app, cmd, msg);
+                }
+                Some(Modal::SymbolDetail(symbol))
+            }
+            _ => Some(Modal::SymbolDetail(symbol)),
+        },
 
         Modal::Confirm {
             message,

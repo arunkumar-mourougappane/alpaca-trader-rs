@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Table},
+    widgets::{Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Sparkline, Table},
     Frame,
 };
 
@@ -310,15 +310,21 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
 }
 
 fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
-    let popup = popup_area(area, 42, 55);
+    let popup = popup_area(area, 55, 88);
     frame.render_widget(Clear, popup);
 
-    let name = app
+    let asset = app
         .watchlist
         .as_ref()
-        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol))
-        .map(|a| a.name.as_str())
-        .unwrap_or(symbol);
+        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol));
+
+    let name = asset.map(|a| a.name.as_str()).unwrap_or(symbol);
+
+    let in_watchlist = app
+        .watchlist
+        .as_ref()
+        .map(|w| w.assets.iter().any(|a| a.symbol == symbol))
+        .unwrap_or(false);
 
     let block = Block::default()
         .title(format!(" {} — {} ", symbol, name))
@@ -329,33 +335,145 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
 
+    // ── Data ─────────────────────────────────────────────────────────────────
     let quote = app.quotes.get(symbol);
-    let ask = quote
-        .and_then(|q| q.ap)
+    let snapshot = app.snapshots.get(symbol);
+    let daily = snapshot.and_then(|s| s.daily_bar.as_ref());
+    let prev = snapshot.and_then(|s| s.prev_daily_bar.as_ref());
+
+    let price: Option<f64> = quote
+        .and_then(|q| match (q.ap, q.bp) {
+            (Some(a), Some(b)) => Some((a + b) / 2.0),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            _ => None,
+        })
+        .or_else(|| daily.map(|b| b.c));
+
+    let change_pct: Option<f64> = price.zip(prev.map(|b| b.c)).map(|(p, pc)| {
+        if pc != 0.0 {
+            (p - pc) / pc * 100.0
+        } else {
+            0.0
+        }
+    });
+
+    let price_str = price
         .map(|p| format!("${:.2}", p))
         .unwrap_or_else(|| "—".into());
-    let bid = quote
-        .and_then(|q| q.bp)
-        .map(|p| format!("${:.2}", p))
+    let change_str = change_pct
+        .map(|c| format!("{:+.2}%", c))
+        .unwrap_or_else(|| "—".into());
+    let value_style = change_pct
+        .map(|c| {
+            if c >= 0.0 {
+                Style::default().fg(theme::GREEN)
+            } else {
+                Style::default().fg(theme::RED)
+            }
+        })
+        .unwrap_or_else(theme::style_bold);
+
+    let open_str = daily
+        .map(|b| format!("${:.2}", b.o))
+        .unwrap_or_else(|| "—".into());
+    let high_str = daily
+        .map(|b| format!("${:.2}", b.h))
+        .unwrap_or_else(|| "—".into());
+    let low_str = daily
+        .map(|b| format!("${:.2}", b.l))
+        .unwrap_or_else(|| "—".into());
+    let vol_str = daily
+        .map(|b| crate::ui::watchlist::format_volume(b.v))
         .unwrap_or_else(|| "—".into());
 
-    let asset = app
-        .watchlist
-        .as_ref()
-        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol));
+    let wl_label = if in_watchlist {
+        "w:− Watchlist"
+    } else {
+        "w:+ Watchlist"
+    };
 
-    let lines = vec![
-        Line::from(vec![
-            Span::styled("  Ask Price  ", Style::default().fg(theme::DIM)),
-            Span::styled(ask, theme::style_bold()),
-        ]),
-        Line::from(vec![
-            Span::styled("  Bid Price  ", Style::default().fg(theme::DIM)),
-            Span::styled(bid, theme::style_bold()),
-        ]),
-        Line::from(vec![]),
-        Line::from(vec![
-            Span::styled("  Exchange   ", Style::default().fg(theme::DIM)),
+    // ── Layout ───────────────────────────────────────────────────────────────
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // price + change%
+            Constraint::Length(1), // open + high
+            Constraint::Length(1), // low + volume
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // "── Intraday ──" label
+            Constraint::Length(3), // sparkline
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // exchange + class
+            Constraint::Length(1), // tradable + shortable
+            Constraint::Length(1), // fractional + etb
+            Constraint::Min(0),    // filler
+            Constraint::Length(1), // footer
+        ])
+        .split(inner);
+
+    // ── OHLCV rows ───────────────────────────────────────────────────────────
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  Price    ", Style::default().fg(theme::DIM)),
+            Span::styled(price_str, value_style),
+            Span::raw("   "),
+            Span::styled("Change    ", Style::default().fg(theme::DIM)),
+            Span::styled(change_str, value_style),
+        ])),
+        chunks[1],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  Open     ", Style::default().fg(theme::DIM)),
+            Span::styled(open_str, theme::style_bold()),
+            Span::raw("   "),
+            Span::styled("High      ", Style::default().fg(theme::DIM)),
+            Span::styled(high_str, Style::default().fg(theme::GREEN)),
+        ])),
+        chunks[2],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  Low      ", Style::default().fg(theme::DIM)),
+            Span::styled(low_str, Style::default().fg(theme::RED)),
+            Span::raw("   "),
+            Span::styled("Volume    ", Style::default().fg(theme::DIM)),
+            Span::styled(vol_str, theme::style_bold()),
+        ])),
+        chunks[3],
+    );
+
+    // ── Intraday sparkline ────────────────────────────────────────────────────
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(
+            "  ── Intraday ──",
+            Style::default().fg(theme::DIM),
+        )])),
+        chunks[5],
+    );
+
+    let empty_bars: Vec<u64> = Vec::new();
+    let bars = app.intraday_bars.get(symbol).unwrap_or(&empty_bars);
+    if bars.is_empty() {
+        frame.render_widget(
+            Paragraph::new("  Loading…").style(Style::default().fg(theme::DIM)),
+            chunks[6],
+        );
+    } else {
+        frame.render_widget(
+            Sparkline::default()
+                .data(bars)
+                .style(Style::default().fg(theme::BRAND_CYAN)),
+            chunks[6],
+        );
+    }
+
+    // ── Asset flags ──────────────────────────────────────────────────────────
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  Exchange ", Style::default().fg(theme::DIM)),
             Span::styled(
                 asset
                     .map(|a| a.exchange.as_str())
@@ -363,9 +481,8 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                     .to_string(),
                 theme::style_bold(),
             ),
-        ]),
-        Line::from(vec![
-            Span::styled("  Class      ", Style::default().fg(theme::DIM)),
+            Span::raw("   "),
+            Span::styled("Class     ", Style::default().fg(theme::DIM)),
             Span::styled(
                 asset
                     .map(|a| a.asset_class.as_str())
@@ -373,39 +490,50 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                     .to_string(),
                 theme::style_bold(),
             ),
-        ]),
-        Line::from(vec![
-            Span::styled("  Tradable   ", Style::default().fg(theme::DIM)),
+        ])),
+        chunks[8],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("  Tradable ", Style::default().fg(theme::DIM)),
             Span::styled(
                 flag(asset.map(|a| a.tradable).unwrap_or(false)),
                 Style::default().fg(theme::GREEN),
             ),
-            Span::styled("  Shortable  ", Style::default().fg(theme::DIM)),
+            Span::raw("   "),
+            Span::styled("Shortable ", Style::default().fg(theme::DIM)),
             Span::styled(
                 flag(asset.map(|a| a.shortable).unwrap_or(false)),
                 Style::default().fg(theme::GREEN),
             ),
-        ]),
-        Line::from(vec![
+        ])),
+        chunks[9],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
             Span::styled("  Fractional ", Style::default().fg(theme::DIM)),
             Span::styled(
                 flag(asset.map(|a| a.fractionable).unwrap_or(false)),
                 Style::default().fg(theme::GREEN),
             ),
-            Span::styled("  ETB        ", Style::default().fg(theme::DIM)),
+            Span::raw(" "),
+            Span::styled("ETB       ", Style::default().fg(theme::DIM)),
             Span::styled(
                 flag(asset.map(|a| a.easy_to_borrow).unwrap_or(false)),
                 Style::default().fg(theme::GREEN),
             ),
-        ]),
-        Line::from(vec![]),
-        Line::from(vec![Span::styled(
-            "  o:Buy  s:Sell  Esc:Close",
-            Style::default().fg(theme::DIM),
-        )]),
-    ];
+        ])),
+        chunks[10],
+    );
 
-    frame.render_widget(Paragraph::new(lines), inner);
+    // ── Footer ───────────────────────────────────────────────────────────────
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(
+            format!("  o:Buy  s:Sell  {}  Esc:Close", wl_label),
+            Style::default().fg(theme::DIM),
+        )])),
+        chunks[12],
+    );
 }
 
 fn render_confirm(

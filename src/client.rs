@@ -6,8 +6,8 @@ use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::config::AlpacaConfig;
 use crate::types::{
-    AccountInfo, MarketClock, Order, OrderRequest, PortfolioHistory, Position, Snapshot, Watchlist,
-    WatchlistSummary,
+    AccountInfo, BarsResponse, MarketClock, MinuteBar, Order, OrderRequest, PortfolioHistory,
+    Position, Snapshot, Watchlist, WatchlistSummary,
 };
 
 /// Async HTTP client for the Alpaca Markets REST API.
@@ -245,5 +245,31 @@ impl AlpacaClient {
             .json::<HashMap<String, Snapshot>>()
             .await
             .context("GET /stocks/snapshots parse failed")
+    }
+
+    /// Fetch intraday 1-minute bars for a single symbol from the data API.
+    ///
+    /// Returns bars for the current UTC calendar date, IEX feed, oldest first.
+    /// The caller converts the raw bars to sparkline-ready `u64` cent values.
+    pub async fn get_intraday_bars(&self, symbol: &str) -> Result<Vec<MinuteBar>> {
+        use chrono::Utc;
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        Ok(self
+            .http
+            .get(self.data_url(&format!("/stocks/{symbol}/bars")))
+            .query(&[
+                ("timeframe", "1Min"),
+                ("start", today.as_str()),
+                ("feed", "iex"),
+                ("limit", "400"),
+            ])
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .context("GET /stocks/{symbol}/bars request failed")?
+            .json::<BarsResponse>()
+            .await
+            .context("GET /stocks/{symbol}/bars parse failed")?
+            .bars)
     }
 }

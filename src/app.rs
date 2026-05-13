@@ -311,6 +311,8 @@ pub struct App {
     pub snapshots: HashMap<String, Snapshot>,
     pub clock: Option<MarketClock>,
     pub equity_history: Vec<u64>,
+    /// Intraday 1-minute close prices in cents, keyed by ticker symbol.
+    pub intraday_bars: HashMap<String, Vec<u64>>,
 
     pub active_tab: Tab,
     pub watchlist_state: TableState,
@@ -354,6 +356,7 @@ impl App {
             snapshots: HashMap::new(),
             clock: None,
             equity_history: Vec::new(),
+            intraday_bars: HashMap::new(),
             active_tab: Tab::Account,
             watchlist_state: TableState::default(),
             positions_state: TableState::default(),

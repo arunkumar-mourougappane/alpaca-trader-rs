@@ -132,6 +132,24 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
                 }
             }
         }
+
+        Command::FetchIntradayBars(symbol) => {
+            info!(symbol = %symbol, "fetching intraday bars");
+            match client.get_intraday_bars(&symbol).await {
+                Ok(bars) => {
+                    let cents: Vec<u64> = bars.iter().map(|b| (b.c * 100.0) as u64).collect();
+                    let _ = tx
+                        .send(Event::IntradayBarsReceived {
+                            symbol,
+                            bars: cents,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    warn!(error = %e, symbol = %symbol, "intraday bars fetch failed");
+                }
+            }
+        }
     }
 }
 
@@ -349,6 +367,76 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, Event::WatchlistUpdated(_))),
             "expected WatchlistUpdated event"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_intraday_bars_emits_intraday_bars_received() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/AMD/bars"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [
+                    {"t": "2026-05-12T13:30:00Z", "o": 141.10, "h": 143.20, "l": 140.85, "c": 142.85, "v": 1000000},
+                    {"t": "2026-05-12T13:31:00Z", "o": 142.85, "h": 144.00, "l": 142.50, "c": 143.50, "v": 500000}
+                ],
+                "symbol": "AMD",
+                "next_page_token": null
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(test_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::FetchIntradayBars("AMD".into()),
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        let received = events
+            .iter()
+            .find(|e| matches!(e, Event::IntradayBarsReceived { symbol, .. } if symbol == "AMD"));
+        assert!(received.is_some(), "expected IntradayBarsReceived for AMD");
+        if let Some(Event::IntradayBarsReceived { bars, .. }) = received {
+            assert_eq!(bars.len(), 2);
+            assert_eq!(bars[0], 14285); // $142.85 → 14285 cents
+            assert_eq!(bars[1], 14350); // $143.50 → 14350 cents
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_intraday_bars_api_error_does_not_emit_event() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/ERR/bars"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(test_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::FetchIntradayBars("ERR".into()),
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::IntradayBarsReceived { .. })),
+            "error response should not emit IntradayBarsReceived"
         );
     }
 }

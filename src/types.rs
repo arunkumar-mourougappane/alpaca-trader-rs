@@ -610,10 +610,35 @@ pub struct Asset {
 /// A single OHLCV bar returned inside a [`Snapshot`].
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SnapshotBar {
+    /// Opening price for this bar.
+    #[serde(default)]
+    pub o: f64,
+    /// High price for this bar.
+    #[serde(default)]
+    pub h: f64,
+    /// Low price for this bar.
+    #[serde(default)]
+    pub l: f64,
     /// Closing price for this bar.
     pub c: f64,
     /// Volume traded during this bar.
     pub v: f64,
+}
+
+/// A single 1-minute OHLCV bar from `GET /v2/stocks/{symbol}/bars`.
+///
+/// Only the close price is stored for use in the intraday sparkline.
+#[derive(Debug, Clone, Deserialize)]
+pub struct MinuteBar {
+    /// Closing price for this 1-minute bar.
+    pub c: f64,
+}
+
+/// Response wrapper for `GET /v2/stocks/{symbol}/bars`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BarsResponse {
+    /// Ordered list of 1-minute bars for the requested symbol and date range.
+    pub bars: Vec<MinuteBar>,
 }
 
 /// Latest market snapshot for a symbol from `GET /v2/stocks/snapshots`.

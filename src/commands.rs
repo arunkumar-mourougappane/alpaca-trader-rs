@@ -36,4 +36,6 @@ pub enum Command {
         /// Ticker symbol to remove.
         symbol: String,
     },
+    /// Fetch intraday (1-minute) bars for the given ticker to populate the sparkline.
+    FetchIntradayBars(String),
 }

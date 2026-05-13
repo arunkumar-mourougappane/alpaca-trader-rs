@@ -492,3 +492,45 @@ async fn get_snapshots_empty_symbols_returns_empty_map() {
     let result = client.get_snapshots(&[]).await.unwrap();
     assert!(result.is_empty());
 }
+
+#[tokio::test]
+async fn get_intraday_bars_returns_close_prices() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/stocks/AMD/bars"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "bars": [
+                {"t": "2026-05-12T13:30:00Z", "o": 141.10, "h": 143.20, "l": 140.85, "c": 142.85, "v": 28700000},
+                {"t": "2026-05-12T13:31:00Z", "o": 142.85, "h": 144.00, "l": 142.50, "c": 143.50, "v": 15000000}
+            ],
+            "symbol": "AMD",
+            "next_page_token": null
+        })))
+        .mount(&server)
+        .await;
+
+    let client = AlpacaClient::new(test_config(server.uri()));
+    let bars = client.get_intraday_bars("AMD").await.unwrap();
+
+    assert_eq!(bars.len(), 2);
+    assert!((bars[0].c - 142.85).abs() < 0.01);
+    assert!((bars[1].c - 143.50).abs() < 0.01);
+}
+
+#[tokio::test]
+async fn get_intraday_bars_empty_returns_empty_vec() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/stocks/UNKNOWN/bars"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "bars": [],
+            "symbol": "UNKNOWN",
+            "next_page_token": null
+        })))
+        .mount(&server)
+        .await;
+
+    let client = AlpacaClient::new(test_config(server.uri()));
+    let bars = client.get_intraday_bars("UNKNOWN").await.unwrap();
+    assert!(bars.is_empty());
+}
