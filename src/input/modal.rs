@@ -1,7 +1,9 @@
 use crossterm::event::KeyCode;
 
 use super::send_command;
-use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField, StatusMessage};
+use crate::app::{
+    App, ConfirmAction, Modal, OrderEntryState, OrderField, OrderSide, StatusMessage,
+};
 use crate::commands::Command;
 
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
@@ -30,7 +32,13 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 KeyCode::Tab => state.focused_field = state.focused_field.next(),
                 KeyCode::BackTab => state.focused_field = state.focused_field.prev(),
                 KeyCode::Left | KeyCode::Right => match state.focused_field {
-                    OrderField::Side => state.side_buy = !state.side_buy,
+                    OrderField::Side => {
+                        state.side = if key.code == KeyCode::Left {
+                            state.side.cycle_prev()
+                        } else {
+                            state.side.cycle_next()
+                        };
+                    }
                     OrderField::OrderType => state.market_order = !state.market_order,
                     OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
                     _ => {}
@@ -45,9 +53,9 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     }
                     OrderField::Side => {
                         if c == 'b' || c == 'B' {
-                            state.side_buy = true;
+                            state.side = OrderSide::Buy;
                         } else if c == 's' || c == 'S' {
-                            state.side_buy = false;
+                            state.side = OrderSide::Sell;
                         }
                     }
                     _ => {}
@@ -82,7 +90,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             app,
                             Command::SubmitOrder {
                                 symbol: state.symbol.clone(),
-                                side: if state.side_buy { "buy" } else { "sell" }.into(),
+                                side: state.side.as_str().into(),
                                 order_type: if state.market_order {
                                     "market"
                                 } else {
@@ -121,7 +129,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
             KeyCode::Char('s') => {
                 let mut state = OrderEntryState::new(symbol.clone());
-                state.side_buy = false;
+                state.side = OrderSide::Sell;
                 app.modal = Some(Modal::OrderEntry(state));
                 return;
             }

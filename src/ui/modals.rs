@@ -180,9 +180,11 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     // Side
     let side_line = Line::from(vec![
         Span::styled("  Side    ", Style::default().fg(theme::DIM)),
-        radio(state.side_buy, "BUY"),
+        radio(state.side == crate::app::OrderSide::Buy, "BUY"),
         Span::raw("  "),
-        radio(!state.side_buy, "SELL"),
+        radio(state.side == crate::app::OrderSide::Sell, "SELL"),
+        Span::raw("  "),
+        radio(state.side == crate::app::OrderSide::SellShort, "SELL SHORT"),
     ]);
     frame.render_widget(Paragraph::new(side_line), chunks[2]);
 
@@ -851,6 +853,68 @@ mod tests {
         assert!(
             output.contains("185.45"),
             "should display midpoint price from quote"
+        );
+    }
+
+    fn render_order_entry_to_string(app: &mut App, state: crate::app::OrderEntryState) -> String {
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let modal = Modal::OrderEntry(state);
+                render(frame, area, &modal, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_order_entry_buy_shows_buy_selected() {
+        use crate::app::{OrderEntryState, OrderSide};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.side = OrderSide::Buy;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(output.contains("BUY"), "order entry should show BUY option");
+        assert!(
+            output.contains("SELL"),
+            "order entry should show SELL option"
+        );
+        assert!(
+            output.contains("SELL SHORT"),
+            "order entry should show SELL SHORT option"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_sell_short_shows_sell_short_selected() {
+        use crate::app::{OrderEntryState, OrderSide};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("TSLA".into());
+        state.side = OrderSide::SellShort;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("SELL SHORT"),
+            "order entry with SellShort should display SELL SHORT option"
         );
     }
 }
