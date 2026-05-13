@@ -104,12 +104,28 @@ async fn poll_watchlist(client: &AlpacaClient, tx: &Sender<Event>) {
     }
     match client.get_watchlist(&summaries[0].id).await {
         Ok(w) => {
+            let symbols: Vec<String> = w.assets.iter().map(|a| a.symbol.clone()).collect();
             let _ = tx.send(Event::WatchlistUpdated(w)).await;
+            poll_snapshots(client, tx, &symbols).await;
         }
         Err(e) => {
             let _ = tx
                 .send(Event::StatusMsg(format!("Watchlist error: {}", e)))
                 .await;
+        }
+    }
+}
+
+async fn poll_snapshots(client: &AlpacaClient, tx: &Sender<Event>, symbols: &[String]) {
+    if symbols.is_empty() {
+        return;
+    }
+    match client.get_snapshots(symbols).await {
+        Ok(snapshots) => {
+            let _ = tx.send(Event::SnapshotsUpdated(snapshots)).await;
+        }
+        Err(e) => {
+            tracing::warn!("Snapshots unavailable: {}", e);
         }
     }
 }
@@ -196,6 +212,12 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "id": "wl-id-1", "name": "Primary", "assets": []
             })))
+            .mount(server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/stocks/snapshots"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
             .mount(server)
             .await;
 
@@ -450,8 +472,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_once_portfolio_history_all_null_does_not_emit_event() {
-        let server = MockServer::start().await;
+    async fn poll_once_portfolio_history_all_null_does_not_emit_event() {        let server = MockServer::start().await;
 
         // Minimal mocks so poll_all doesn't fail loudly
         Mock::given(method("GET"))
@@ -510,5 +531,81 @@ mod tests {
                 .any(|e| matches!(e, Event::PortfolioHistoryLoaded(_))),
             "all-null equity must not emit PortfolioHistoryLoaded"
         );
+    }
+
+    #[tokio::test]
+    async fn poll_watchlist_with_symbols_emits_snapshots_updated() {
+        use wiremock::matchers::query_param;
+
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"id": "wl-snap-1", "name": "Snap Test"}
+            ])))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/watchlists/wl-snap-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-snap-1",
+                "name": "Snap Test",
+                "assets": [
+                    {
+                        "id": "asset-aapl",
+                        "symbol": "AAPL",
+                        "name": "Apple Inc",
+                        "exchange": "NASDAQ",
+                        "class": "us_equity",
+                        "tradable": true,
+                        "shortable": true,
+                        "fractionable": true,
+                        "easy_to_borrow": true
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/stocks/snapshots"))
+            .and(query_param("symbols", "AAPL"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "AAPL": {
+                    "dailyBar": { "c": 175.5, "v": 1234567.0 },
+                    "prevDailyBar": { "c": 170.0, "v": 987654.0 }
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_watchlist(&client, &tx).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+
+        assert!(
+            events.iter().any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            "must emit WatchlistUpdated"
+        );
+        let snap_event = events
+            .iter()
+            .find_map(|e| {
+                if let Event::SnapshotsUpdated(s) = e {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .expect("must emit SnapshotsUpdated");
+
+        let aapl = snap_event.get("AAPL").expect("AAPL snapshot expected");
+        let daily = aapl.daily_bar.as_ref().expect("dailyBar expected");
+        assert!((daily.v - 1_234_567.0).abs() < 1.0);
+        let prev = aapl.prev_daily_bar.as_ref().expect("prevDailyBar expected");
+        assert!((prev.c - 170.0).abs() < 0.01);
     }
 }

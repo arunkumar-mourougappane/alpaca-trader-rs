@@ -65,6 +65,9 @@ pub fn update(app: &mut App, event: Event) {
             // Keep all samples; ongoing push_equity() calls will append new ones.
             app.equity_history = data.into_iter().map(|v| (v * 100.0) as u64).collect();
         }
+        Event::SnapshotsUpdated(snapshots) => {
+            app.snapshots = snapshots;
+        }
         Event::Tick => {
             if let Some(exp) = app.status_msg.expires_at {
                 if exp <= Instant::now() {

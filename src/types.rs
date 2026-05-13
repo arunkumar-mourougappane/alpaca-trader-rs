@@ -134,6 +134,46 @@ mod tests {
             "notional should be present: {json}"
         );
     }
+
+    // ── Snapshot serde ────────────────────────────────────────────────────────
+
+    #[test]
+    fn snapshot_deserializes_full() {
+        let json = r#"{
+            "dailyBar":     { "c": 175.5, "v": 1234567.0 },
+            "prevDailyBar": { "c": 170.0, "v":  987654.0 }
+        }"#;
+        let snap: Snapshot = serde_json::from_str(json).unwrap();
+        let daily = snap.daily_bar.expect("dailyBar expected");
+        assert!((daily.c - 175.5).abs() < 0.01);
+        assert!((daily.v - 1_234_567.0).abs() < 1.0);
+        let prev = snap.prev_daily_bar.expect("prevDailyBar expected");
+        assert!((prev.c - 170.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn snapshot_deserializes_missing_bars() {
+        let json = r#"{}"#;
+        let snap: Snapshot = serde_json::from_str(json).unwrap();
+        assert!(snap.daily_bar.is_none());
+        assert!(snap.prev_daily_bar.is_none());
+    }
+
+    #[test]
+    fn snapshot_map_deserializes() {
+        use std::collections::HashMap;
+        let json = r#"{
+            "AAPL": {
+                "dailyBar":     { "c": 200.0, "v": 5000000.0 },
+                "prevDailyBar": { "c": 195.0, "v": 4500000.0 }
+            },
+            "TSLA": {}
+        }"#;
+        let map: HashMap<String, Snapshot> = serde_json::from_str(json).unwrap();
+        assert_eq!(map.len(), 2);
+        assert!(map["AAPL"].daily_bar.is_some());
+        assert!(map["TSLA"].daily_bar.is_none());
+    }
 }
 
 /// Snapshot of account balances and status from `GET /account`.
@@ -380,6 +420,29 @@ pub struct Asset {
     /// Whether the asset is easy to borrow for shorting.
     #[serde(default)]
     pub easy_to_borrow: bool,
+}
+
+/// A single OHLCV bar returned inside a [`Snapshot`].
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SnapshotBar {
+    /// Closing price for this bar.
+    pub c: f64,
+    /// Volume traded during this bar.
+    pub v: f64,
+}
+
+/// Latest market snapshot for a symbol from `GET /v2/stocks/snapshots`.
+///
+/// Contains today's daily bar (for volume) and the previous day's bar
+/// (for computing Change%).
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct Snapshot {
+    /// Today's daily bar (aggregated from market open to the latest bar).
+    #[serde(rename = "dailyBar", default)]
+    pub daily_bar: Option<SnapshotBar>,
+    /// Previous trading day's closing bar.
+    #[serde(rename = "prevDailyBar", default)]
+    pub prev_daily_bar: Option<SnapshotBar>,
 }
 
 /// Response from `GET /v2/account/portfolio/history`.

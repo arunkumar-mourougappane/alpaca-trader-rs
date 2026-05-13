@@ -1,5 +1,7 @@
 //! Application event types that flow through the central event channel.
-use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Watchlist};
+use std::collections::HashMap;
+
+use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Snapshot, Watchlist};
 use crossterm::event::{KeyEvent, MouseEvent};
 
 /// Identifies which WebSocket stream a connection-status event concerns.
@@ -43,6 +45,8 @@ pub enum Event {
     StreamDisconnected(StreamKind),
     /// Portfolio equity history loaded at startup for the sparkline.
     PortfolioHistoryLoaded(Vec<f64>),
+    /// Latest market snapshots (daily bars + prev close) for watchlist symbols.
+    SnapshotsUpdated(HashMap<String, Snapshot>),
     /// Periodic tick to trigger UI refresh / REST polls.
     Tick,
     /// One-shot status message to display in the status bar.
