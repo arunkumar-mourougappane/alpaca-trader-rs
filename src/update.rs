@@ -1237,7 +1237,7 @@ mod tests {
         app.modal = Some(Modal::SymbolDetail("AAPL".into()));
         update(&mut app, key(KeyCode::Char('o')));
         assert!(
-            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL" && s.side_buy),
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL" && s.side == crate::app::OrderSide::Buy),
             "o key should open buy order entry for symbol"
         );
     }
@@ -1248,7 +1248,7 @@ mod tests {
         app.modal = Some(Modal::SymbolDetail("NVDA".into()));
         update(&mut app, key(KeyCode::Char('s')));
         assert!(
-            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "NVDA" && !s.side_buy),
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "NVDA" && s.side == crate::app::OrderSide::Sell),
             "s key should open sell order entry for symbol"
         );
     }
@@ -1391,6 +1391,106 @@ mod tests {
         assert!(
             app.modal.is_none(),
             "Enter with no selection should not open a modal"
+        );
+    }
+
+    #[test]
+    fn positions_o_opens_sell_order_entry() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('o')));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL" && s.side == crate::app::OrderSide::Sell),
+            "o key in positions should open SELL order entry for selected symbol"
+        );
+    }
+
+    #[test]
+    fn positions_s_opens_sell_short_order_entry() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('s')));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL" && s.side == crate::app::OrderSide::SellShort),
+            "s key in positions should open SELL SHORT order entry for selected symbol"
+        );
+    }
+
+    #[test]
+    fn order_side_cycle_next_wraps() {
+        use crate::app::OrderSide;
+        assert_eq!(OrderSide::Buy.cycle_next(), OrderSide::Sell);
+        assert_eq!(OrderSide::Sell.cycle_next(), OrderSide::SellShort);
+        assert_eq!(OrderSide::SellShort.cycle_next(), OrderSide::Buy);
+    }
+
+    #[test]
+    fn order_side_cycle_prev_wraps() {
+        use crate::app::OrderSide;
+        assert_eq!(OrderSide::Buy.cycle_prev(), OrderSide::SellShort);
+        assert_eq!(OrderSide::Sell.cycle_prev(), OrderSide::Buy);
+        assert_eq!(OrderSide::SellShort.cycle_prev(), OrderSide::Sell);
+    }
+
+    #[test]
+    fn order_side_as_str() {
+        use crate::app::OrderSide;
+        assert_eq!(OrderSide::Buy.as_str(), "buy");
+        assert_eq!(OrderSide::Sell.as_str(), "sell");
+        assert_eq!(OrderSide::SellShort.as_str(), "sell_short");
+    }
+
+    #[test]
+    fn modal_side_right_arrow_cycles_forward() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Side;
+        state.side = OrderSide::Buy;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Right));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.side == OrderSide::Sell),
+            "right arrow should cycle Buy → Sell"
+        );
+    }
+
+    #[test]
+    fn modal_side_left_arrow_cycles_backward() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Side;
+        state.side = OrderSide::Sell;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Left));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.side == OrderSide::Buy),
+            "left arrow should cycle Sell → Buy"
+        );
+    }
+
+    #[test]
+    fn order_entry_submit_sell_short_sends_correct_side() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        use crate::types::AccountInfo;
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.account = Some(AccountInfo {
+            buying_power: "100000".into(),
+            ..Default::default()
+        });
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.side = OrderSide::SellShort;
+        state.focused_field = OrderField::Submit;
+        state.qty_input = "5".into();
+        state.price_input = "180.00".into();
+        app.modal = Some(Modal::OrderEntry(state));
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_none(), "modal should close after submit");
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::SubmitOrder { side, .. } if side == "sell_short"),
+            "expected sell_short side in SubmitOrder"
         );
     }
 }

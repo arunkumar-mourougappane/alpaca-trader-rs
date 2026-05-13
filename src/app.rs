@@ -189,6 +189,43 @@ pub enum OrdersSubTab {
     Cancelled,
 }
 
+/// The side of an order: buy, sell (close long), or sell short (open short).
+#[derive(Debug, Clone, PartialEq)]
+pub enum OrderSide {
+    Buy,
+    Sell,
+    SellShort,
+}
+
+impl OrderSide {
+    /// Returns the next side in the cycle (used by left/right toggle in the order form).
+    pub fn cycle_next(&self) -> Self {
+        match self {
+            OrderSide::Buy => OrderSide::Sell,
+            OrderSide::Sell => OrderSide::SellShort,
+            OrderSide::SellShort => OrderSide::Buy,
+        }
+    }
+
+    /// Returns the previous side in the cycle.
+    pub fn cycle_prev(&self) -> Self {
+        match self {
+            OrderSide::Buy => OrderSide::SellShort,
+            OrderSide::Sell => OrderSide::Buy,
+            OrderSide::SellShort => OrderSide::Sell,
+        }
+    }
+
+    /// The wire value sent to the Alpaca API.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OrderSide::Buy => "buy",
+            OrderSide::Sell => "sell",
+            OrderSide::SellShort => "sell_short",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderField {
     Symbol,
@@ -229,7 +266,7 @@ impl OrderField {
 #[derive(Debug, Clone)]
 pub struct OrderEntryState {
     pub symbol: String,
-    pub side_buy: bool,     // true = BUY, false = SELL
+    pub side: OrderSide,
     pub market_order: bool, // true = MARKET, false = LIMIT
     pub gtc_order: bool,    // true = GTC, false = DAY
     pub qty_input: String,
@@ -241,7 +278,7 @@ impl OrderEntryState {
     pub fn new(symbol: String) -> Self {
         Self {
             symbol,
-            side_buy: true,
+            side: OrderSide::Buy,
             market_order: false,
             gtc_order: false,
             qty_input: String::new(),

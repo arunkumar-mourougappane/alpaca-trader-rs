@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::app::{App, Modal, OrderEntryState};
+use crate::app::{App, Modal, OrderEntryState, OrderSide};
 
 pub(crate) fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = app.positions.len();
@@ -28,7 +28,13 @@ pub(crate) fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEven
         KeyCode::Char('o') => {
             let symbol = app.selected_position_symbol().unwrap_or_default();
             let mut state = OrderEntryState::new(symbol);
-            state.side_buy = false;
+            state.side = OrderSide::Sell;
+            app.modal = Some(Modal::OrderEntry(state));
+        }
+        KeyCode::Char('s') => {
+            let symbol = app.selected_position_symbol().unwrap_or_default();
+            let mut state = OrderEntryState::new(symbol);
+            state.side = OrderSide::SellShort;
             app.modal = Some(Modal::OrderEntry(state));
         }
         _ => {}

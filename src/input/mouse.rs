@@ -133,8 +133,15 @@ fn handle_modal_mouse(app: &mut App, col: u16, row: u16) {
             OrderField::Side => {
                 if let Some(Modal::OrderEntry(ref mut state)) = app.modal {
                     state.focused_field = OrderField::Side;
-                    // Left half of the row → BUY, right half → SELL.
-                    state.side_buy = col < rect.x + rect.width / 2;
+                    // Left third → BUY, middle third → SELL, right third → SELL SHORT.
+                    let third = rect.width / 3;
+                    state.side = if col < rect.x + third {
+                        crate::app::OrderSide::Buy
+                    } else if col < rect.x + 2 * third {
+                        crate::app::OrderSide::Sell
+                    } else {
+                        crate::app::OrderSide::SellShort
+                    };
                 }
             }
             OrderField::OrderType => {

@@ -99,7 +99,7 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Watchlist => {
             " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  /:Search  ?:Help  q:Quit"
         }
-        Tab::Positions => " j/k:Navigate  Enter:Detail  o:Close  ?:Help  q:Quit",
+        Tab::Positions => " j/k:Navigate  Enter:Detail  o:Close  s:Short  ?:Help  q:Quit",
         Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  ?:Help  q:Quit",
     };
 
