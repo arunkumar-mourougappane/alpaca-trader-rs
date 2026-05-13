@@ -1326,4 +1326,71 @@ mod tests {
         update(&mut app, key(KeyCode::Esc));
         assert!(app.modal.is_none(), "Esc should close the modal");
     }
+
+    #[test]
+    fn symbol_detail_w_with_no_watchlist_keeps_modal_open() {
+        // When there is no watchlist, pressing 'w' should keep the modal open
+        // without dispatching any command (covers the wl_info == None branch).
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.watchlist = None;
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        update(&mut app, key(KeyCode::Char('w')));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
+            "modal should remain open when no watchlist is set"
+        );
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no command should be dispatched without a watchlist"
+        );
+    }
+
+    // ── Positions panel key handling ─────────────────────────────────────────
+
+    fn positions_app() -> (App, tokio::sync::mpsc::Receiver<Command>) {
+        let (mut app, rx) = app_with_rx();
+        app.active_tab = Tab::Positions;
+        app.positions = vec![crate::types::Position {
+            symbol: "AAPL".into(),
+            qty: "10".into(),
+            avg_entry_price: "150.00".into(),
+            current_price: "155.00".into(),
+            market_value: "1550.00".into(),
+            unrealized_pl: "50.00".into(),
+            unrealized_plpc: "0.033".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }];
+        app.positions_state.select(Some(0));
+        (app, rx)
+    }
+
+    #[test]
+    fn positions_enter_opens_symbol_detail_and_dispatches_fetch() {
+        let (mut app, mut cmd_rx) = positions_app();
+        update(&mut app, key(KeyCode::Enter));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
+            "Enter on a position should open SymbolDetail for that symbol"
+        );
+        let cmd = cmd_rx
+            .try_recv()
+            .expect("FetchIntradayBars should be dispatched");
+        assert!(
+            matches!(cmd, Command::FetchIntradayBars(s) if s == "AAPL"),
+            "expected FetchIntradayBars for AAPL"
+        );
+    }
+
+    #[test]
+    fn positions_enter_with_no_selection_does_nothing() {
+        let (mut app, _rx) = app_with_rx();
+        app.active_tab = Tab::Positions;
+        app.positions_state.select(None);
+        update(&mut app, key(KeyCode::Enter));
+        assert!(
+            app.modal.is_none(),
+            "Enter with no selection should not open a modal"
+        );
+    }
 }
