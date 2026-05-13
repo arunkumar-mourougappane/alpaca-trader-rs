@@ -230,20 +230,14 @@ impl AlpacaClient {
     /// Returns a map of symbol → [`Snapshot`] with daily bar data (volume) and
     /// the previous day's bar (previous close for Change% computation).
     /// Returns an empty map if `symbols` is empty.
-    pub async fn get_snapshots(
-        &self,
-        symbols: &[String],
-    ) -> Result<HashMap<String, Snapshot>> {
+    pub async fn get_snapshots(&self, symbols: &[String]) -> Result<HashMap<String, Snapshot>> {
         if symbols.is_empty() {
             return Ok(HashMap::new());
         }
         let symbols_param = symbols.join(",");
         self.http
             .get(self.data_url("/stocks/snapshots"))
-            .query(&[
-                ("symbols", symbols_param.as_str()),
-                ("feed", "iex"),
-            ])
+            .query(&[("symbols", symbols_param.as_str()), ("feed", "iex")])
             .headers(self.auth_headers()?)
             .send()
             .await

@@ -1,7 +1,7 @@
 use alpaca_trader_rs::{
     client::AlpacaClient,
     config::{AlpacaConfig, AlpacaEnv},
-    types::{OrderRequest, Snapshot},
+    types::OrderRequest,
 };
 use serde_json::json;
 use wiremock::{
@@ -473,7 +473,10 @@ async fn get_snapshots_returns_snapshot_map() {
     let daily = aapl.daily_bar.as_ref().expect("AAPL dailyBar expected");
     assert!((daily.c - 175.5).abs() < 0.01);
     assert!((daily.v - 1_234_567.0).abs() < 1.0);
-    let prev = aapl.prev_daily_bar.as_ref().expect("AAPL prevDailyBar expected");
+    let prev = aapl
+        .prev_daily_bar
+        .as_ref()
+        .expect("AAPL prevDailyBar expected");
     assert!((prev.c - 170.0).abs() < 0.01);
 
     let tsla = &snapshots["TSLA"];
