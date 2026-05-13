@@ -43,6 +43,18 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
                     _ => {}
                 },
+                KeyCode::Up | KeyCode::Down => match state.focused_field {
+                    OrderField::Side => {
+                        state.side = if key.code == KeyCode::Up {
+                            state.side.cycle_prev()
+                        } else {
+                            state.side.cycle_next()
+                        };
+                    }
+                    OrderField::OrderType => state.market_order = !state.market_order,
+                    OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
+                    _ => {}
+                },
                 KeyCode::Char(c) => match state.focused_field {
                     OrderField::Symbol => state.symbol.push(c),
                     OrderField::Qty if c.is_ascii_digit() || c == '.' => {

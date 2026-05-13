@@ -1469,6 +1469,116 @@ mod tests {
     }
 
     #[test]
+    fn modal_side_down_arrow_cycles_forward() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Side;
+        state.side = OrderSide::Buy;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Down));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.side == OrderSide::Sell),
+            "down arrow should cycle Buy → Sell"
+        );
+    }
+
+    #[test]
+    fn modal_side_up_arrow_cycles_backward() {
+        use crate::app::{OrderEntryState, OrderField, OrderSide};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Side;
+        state.side = OrderSide::Sell;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Up));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.side == OrderSide::Buy),
+            "up arrow should cycle Sell → Buy"
+        );
+    }
+
+    #[test]
+    fn modal_order_type_down_arrow_toggles() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::OrderType;
+        state.market_order = false;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Down));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.market_order),
+            "down arrow on OrderType should toggle to market"
+        );
+    }
+
+    #[test]
+    fn modal_order_type_up_arrow_toggles() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::OrderType;
+        state.market_order = true;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Up));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if !s.market_order),
+            "up arrow on OrderType should toggle to limit"
+        );
+    }
+
+    #[test]
+    fn modal_tif_down_arrow_toggles() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::TimeInForce;
+        state.gtc_order = false;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Down));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.gtc_order),
+            "down arrow on TIF should toggle to GTC"
+        );
+    }
+
+    #[test]
+    fn modal_tif_up_arrow_toggles() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::TimeInForce;
+        state.gtc_order = true;
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Up));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if !s.gtc_order),
+            "up arrow on TIF should toggle to DAY"
+        );
+    }
+
+    #[test]
+    fn modal_up_down_on_text_field_is_noop() {
+        use crate::app::{OrderEntryState, OrderField};
+        let (mut app, _rx) = app_with_rx();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = OrderField::Qty;
+        state.qty_input = "10".into();
+        app.modal = Some(Modal::OrderEntry(state));
+        update(&mut app, key(KeyCode::Down));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.qty_input == "10"),
+            "down arrow on text field should not modify input"
+        );
+        update(&mut app, key(KeyCode::Up));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.qty_input == "10"),
+            "up arrow on text field should not modify input"
+        );
+    }
+
+    #[test]
     fn order_entry_submit_sell_short_sends_correct_side() {
         use crate::app::{OrderEntryState, OrderField, OrderSide};
         use crate::types::AccountInfo;
