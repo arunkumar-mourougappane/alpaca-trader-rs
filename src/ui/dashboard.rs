@@ -8,6 +8,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Tab};
+use crate::types::MarketState;
 use crate::ui::theme;
 
 pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
@@ -18,11 +19,20 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         theme::BRAND_RED
     };
 
-    let market_status = app
+    let (market_status, market_color) = app
         .clock
         .as_ref()
-        .map(|c| if c.is_open { "OPEN" } else { "CLOSED" })
-        .unwrap_or("—");
+        .map(|c| {
+            let state = c.market_state();
+            let color = match &state {
+                MarketState::Open => theme::GREEN,
+                MarketState::PreMarket => theme::YELLOW,
+                MarketState::AfterHours => Color::Magenta,
+                MarketState::Closed => theme::DIM,
+            };
+            (state.as_str(), color)
+        })
+        .unwrap_or(("—", theme::DIM));
 
     let now = Local::now().format("%H:%M:%S ET  %Y-%m-%d").to_string();
 
@@ -36,10 +46,14 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
+        Span::styled("Market: ", Style::default().fg(theme::DIM)),
         Span::styled(
-            format!("Market: {}   {}", market_status, now),
-            Style::default().fg(theme::DIM),
+            market_status,
+            Style::default()
+                .fg(market_color)
+                .add_modifier(Modifier::BOLD),
         ),
+        Span::styled(format!("   {}", now), Style::default().fg(theme::DIM)),
     ];
 
     if !app.market_stream_ok || !app.account_stream_ok {

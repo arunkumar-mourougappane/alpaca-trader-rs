@@ -1,4 +1,5 @@
 //! Domain types used throughout the library and the binary crate.
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
@@ -133,6 +134,93 @@ mod tests {
             json.contains("\"notional\""),
             "notional should be present: {json}"
         );
+    }
+
+    // ── MarketClock::market_state ─────────────────────────────────────────────
+
+    fn make_clock(
+        is_open: bool,
+        timestamp: &str,
+        next_open: &str,
+        next_close: &str,
+    ) -> MarketClock {
+        MarketClock {
+            is_open,
+            timestamp: timestamp.into(),
+            next_open: next_open.into(),
+            next_close: next_close.into(),
+        }
+    }
+
+    #[test]
+    fn market_state_open() {
+        // is_open=true always returns Open regardless of timestamps
+        let clock = make_clock(
+            true,
+            "2026-05-12T15:00:00Z",
+            "2026-05-13T13:30:00Z",
+            "2026-05-12T20:00:00Z",
+        );
+        assert_eq!(clock.market_state(), MarketState::Open);
+    }
+
+    #[test]
+    fn market_state_pre_market() {
+        // 2 hours before next open → PRE-MARKET
+        let next_open = "2026-05-13T13:30:00Z"; // 9:30 AM ET
+        let now = "2026-05-13T11:30:00Z"; // 7:30 AM ET, 2h before open
+        let clock = make_clock(false, now, next_open, "2026-05-13T20:00:00Z");
+        assert_eq!(clock.market_state(), MarketState::PreMarket);
+    }
+
+    #[test]
+    fn market_state_pre_market_boundary() {
+        // Exactly 4 hours before next open → still PRE-MARKET
+        let next_open = "2026-05-13T13:30:00Z";
+        let now = "2026-05-13T09:30:00Z"; // exactly 4h before
+        let clock = make_clock(false, now, next_open, "2026-05-13T20:00:00Z");
+        assert_eq!(clock.market_state(), MarketState::PreMarket);
+    }
+
+    #[test]
+    fn market_state_after_hours() {
+        // 5 hours after close (4 PM → 9 PM), ~16.5h before next open
+        let next_open = "2026-05-13T13:30:00Z"; // next morning 9:30 AM ET
+        let now = "2026-05-12T21:00:00Z"; // 5 PM ET (17:00 UTC−4 = 21:00 UTC)
+        let clock = make_clock(false, now, next_open, "2026-05-13T20:00:00Z");
+        assert_eq!(clock.market_state(), MarketState::AfterHours);
+    }
+
+    #[test]
+    fn market_state_closed_weekend() {
+        // Friday close to Monday open: ~65.5 hours → CLOSED
+        let next_open = "2026-05-18T13:30:00Z"; // Monday 9:30 AM ET
+        let now = "2026-05-16T00:00:00Z"; // Saturday midnight UTC
+        let clock = make_clock(false, now, next_open, "2026-05-18T20:00:00Z");
+        assert_eq!(clock.market_state(), MarketState::Closed);
+    }
+
+    #[test]
+    fn market_state_closed_overnight() {
+        // ~22h before open (e.g. 11 PM ET before next 9:30 AM) → CLOSED
+        let next_open = "2026-05-13T13:30:00Z";
+        let now = "2026-05-12T15:30:00Z"; // ~22h before
+        let clock = make_clock(false, now, next_open, "2026-05-13T20:00:00Z");
+        assert_eq!(clock.market_state(), MarketState::Closed);
+    }
+
+    #[test]
+    fn market_state_invalid_timestamp_falls_back_to_closed() {
+        let clock = make_clock(false, "not-a-date", "also-bad", "2026-05-13T20:00:00Z");
+        assert_eq!(clock.market_state(), MarketState::Closed);
+    }
+
+    #[test]
+    fn market_state_as_str_values() {
+        assert_eq!(MarketState::Open.as_str(), "OPEN");
+        assert_eq!(MarketState::PreMarket.as_str(), "PRE-MARKET");
+        assert_eq!(MarketState::AfterHours.as_str(), "AFTER-HOURS");
+        assert_eq!(MarketState::Closed.as_str(), "CLOSED");
     }
 }
 
@@ -311,6 +399,67 @@ pub struct MarketClock {
     pub next_close: String,
     /// Current server timestamp in ISO 8601 format.
     pub timestamp: String,
+}
+
+/// The current trading session state derived from [`MarketClock`] fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MarketState {
+    /// Primary session — 9:30 AM – 4:00 PM ET.
+    Open,
+    /// Pre-market session — up to 4 hours before the next open.
+    PreMarket,
+    /// After-hours session — between close and ~20 hours before next open.
+    AfterHours,
+    /// Market is closed (overnight / weekend).
+    Closed,
+}
+
+impl MarketState {
+    /// Display string shown in the header.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MarketState::Open => "OPEN",
+            MarketState::PreMarket => "PRE-MARKET",
+            MarketState::AfterHours => "AFTER-HOURS",
+            MarketState::Closed => "CLOSED",
+        }
+    }
+}
+
+impl MarketClock {
+    /// Derive the current [`MarketState`] from the clock's fields.
+    ///
+    /// Decision tree:
+    /// 1. `is_open == true` → [`MarketState::Open`]
+    /// 2. Parse `timestamp` (current ET time) and `next_open` (next session open).
+    /// 3. `time_to_open ≤ 4 h` → [`MarketState::PreMarket`]  (pre-market starts ~4 AM)
+    /// 4. `4 h < time_to_open ≤ 20 h` → [`MarketState::AfterHours`]  (same trading day, ~4–8 PM ET)
+    /// 5. Otherwise → [`MarketState::Closed`]  (overnight / weekend gap > 20 h)
+    ///
+    /// Falls back to [`MarketState::Closed`] when the timestamp strings cannot be parsed.
+    pub fn market_state(&self) -> MarketState {
+        if self.is_open {
+            return MarketState::Open;
+        }
+        let now = DateTime::parse_from_rfc3339(&self.timestamp).ok();
+        let next_open = DateTime::parse_from_rfc3339(&self.next_open).ok();
+        match (now, next_open) {
+            (Some(now), Some(open)) => {
+                let secs = (open - now).num_seconds();
+                if secs <= 0 {
+                    // next_open is in the past — shouldn't happen normally
+                    MarketState::Closed
+                } else if secs <= 4 * 3600 {
+                    MarketState::PreMarket
+                } else if secs <= 20 * 3600 {
+                    MarketState::AfterHours
+                } else {
+                    MarketState::Closed
+                }
+            }
+            _ => MarketState::Closed,
+        }
+    }
 }
 
 /// Latest NBBO quote for a symbol from the market data stream.
