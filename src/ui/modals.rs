@@ -684,3 +684,173 @@ fn estimate_total(state: &OrderEntryState) -> String {
         "—".into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use super::*;
+    use crate::app::test_helpers::{make_test_app, make_watchlist};
+
+    fn render_symbol_detail_to_string(app: &mut App, symbol: &str) -> String {
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_symbol_detail(frame, area, symbol, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_loading_when_no_bars_key() {
+        let mut app = make_test_app();
+        // No entry in intraday_bars → "Loading…"
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Loading"),
+            "should show Loading when intraday_bars has no entry for symbol"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_no_data_when_bars_empty() {
+        let mut app = make_test_app();
+        app.intraday_bars.insert("AAPL".into(), vec![]);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("No intraday data"),
+            "should show 'No intraday data available' when bars vec is empty"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_renders_sparkline_with_bars() {
+        let mut app = make_test_app();
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15050, 15100, 15080, 15120]);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        // The sparkline renders something other than "Loading" or "No intraday data"
+        assert!(
+            !output.contains("Loading"),
+            "should not show Loading when bars are present"
+        );
+        assert!(
+            !output.contains("No intraday data"),
+            "should not show no-data message when bars are present"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_ohlcv_labels() {
+        let mut app = make_test_app();
+        let output = render_symbol_detail_to_string(&mut app, "TSLA");
+        assert!(output.contains("Price"), "should show Price label");
+        assert!(output.contains("Open"), "should show Open label");
+        assert!(output.contains("High"), "should show High label");
+        assert!(output.contains("Low"), "should show Low label");
+        assert!(output.contains("Volume"), "should show Volume label");
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_footer_actions() {
+        let mut app = make_test_app();
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(output.contains("o:Buy"), "footer should contain buy action");
+        assert!(
+            output.contains("s:Sell"),
+            "footer should contain sell action"
+        );
+        assert!(
+            output.contains("Esc:Close"),
+            "footer should contain close hint"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_watchlist_label_not_in_watchlist() {
+        let mut app = make_test_app();
+        // AAPL is not in watchlist
+        app.watchlist = Some(make_watchlist(&["TSLA"]));
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("w:+"),
+            "footer should show 'w:+ Watchlist' when symbol not in watchlist"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_watchlist_label_in_watchlist() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL", "TSLA"]));
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("w:\u{2212}") || output.contains("w:-"),
+            "footer should show 'w:− Watchlist' when symbol is in watchlist"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_uses_asset_name_in_title() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        // The watchlist asset name is "AAPL Corp" per make_asset
+        assert!(
+            output.contains("AAPL Corp"),
+            "title should include asset name from watchlist"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_falls_back_to_symbol_as_name() {
+        let mut app = make_test_app();
+        // No watchlist entry → symbol is used as name
+        let output = render_symbol_detail_to_string(&mut app, "NVDA");
+        assert!(
+            output.contains("NVDA"),
+            "title should contain symbol when no asset info available"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_with_quote_shows_price() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.quotes.insert(
+            "AAPL".into(),
+            Quote {
+                symbol: "AAPL".into(),
+                ap: Some(185.50),
+                bp: Some(185.40),
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        // Midpoint of 185.50 + 185.40 = 185.45
+        assert!(
+            output.contains("185.45"),
+            "should display midpoint price from quote"
+        );
+    }
+}
