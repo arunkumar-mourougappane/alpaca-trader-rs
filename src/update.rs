@@ -102,6 +102,7 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             app.should_quit = true
         }
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
+        KeyCode::Char('A') => app.modal = Some(Modal::About),
         // '1'/'2'/'3' switch panels globally, but yield to the Orders panel so those
         // keys can switch sub-tabs (Open / Filled / Cancelled) when Orders is active.
         KeyCode::Char('1') if app.active_tab != Tab::Orders => app.active_tab = Tab::Account,
@@ -476,6 +477,29 @@ mod tests {
         let mut app = make_test_app();
         update(&mut app, key(KeyCode::Char('?')));
         assert!(matches!(app.modal, Some(Modal::Help)));
+    }
+
+    #[test]
+    fn key_uppercase_a_opens_about() {
+        let mut app = make_test_app();
+        update(&mut app, key(KeyCode::Char('A')));
+        assert!(matches!(app.modal, Some(Modal::About)));
+    }
+
+    #[test]
+    fn about_modal_any_key_closes() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::About);
+        update(&mut app, key(KeyCode::Enter));
+        assert!(app.modal.is_none(), "any key should close About modal");
+    }
+
+    #[test]
+    fn about_modal_space_closes() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::About);
+        update(&mut app, key(KeyCode::Char(' ')));
+        assert!(app.modal.is_none());
     }
 
     #[test]
