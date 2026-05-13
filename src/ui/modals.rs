@@ -454,20 +454,30 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
         chunks[5],
     );
 
-    let empty_bars: Vec<u64> = Vec::new();
-    let bars = app.intraday_bars.get(symbol).unwrap_or(&empty_bars);
-    if bars.is_empty() {
-        frame.render_widget(
-            Paragraph::new("  Loading…").style(Style::default().fg(theme::DIM)),
-            chunks[6],
-        );
-    } else {
-        frame.render_widget(
-            Sparkline::default()
-                .data(bars)
-                .style(Style::default().fg(theme::BRAND_CYAN)),
-            chunks[6],
-        );
+    match app.intraday_bars.get(symbol) {
+        None => {
+            // Command dispatched but response not yet received
+            frame.render_widget(
+                Paragraph::new("  Loading…").style(Style::default().fg(theme::DIM)),
+                chunks[6],
+            );
+        }
+        Some(bars) if bars.is_empty() => {
+            // Fetched but no bars (market closed, pre-market, or error)
+            frame.render_widget(
+                Paragraph::new("  No intraday data available")
+                    .style(Style::default().fg(theme::DIM)),
+                chunks[6],
+            );
+        }
+        Some(bars) => {
+            frame.render_widget(
+                Sparkline::default()
+                    .data(bars)
+                    .style(Style::default().fg(theme::BRAND_CYAN)),
+                chunks[6],
+            );
+        }
     }
 
     // ── Asset flags ──────────────────────────────────────────────────────────
