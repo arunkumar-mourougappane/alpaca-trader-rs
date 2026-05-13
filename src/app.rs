@@ -144,7 +144,7 @@ use tokio::sync::{mpsc, watch, Notify};
 
 use crate::commands::Command;
 use crate::config::AlpacaConfig;
-use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Watchlist};
+use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Snapshot, Watchlist};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tab {
@@ -308,6 +308,7 @@ pub struct App {
     pub orders: Vec<Order>,
     pub quotes: HashMap<String, Quote>,
     pub watchlist: Option<Watchlist>,
+    pub snapshots: HashMap<String, Snapshot>,
     pub clock: Option<MarketClock>,
     pub equity_history: Vec<u64>,
 
@@ -350,6 +351,7 @@ impl App {
             orders: Vec::new(),
             quotes: HashMap::new(),
             watchlist: None,
+            snapshots: HashMap::new(),
             clock: None,
             equity_history: Vec::new(),
             active_tab: Tab::Account,

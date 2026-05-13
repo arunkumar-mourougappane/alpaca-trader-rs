@@ -439,3 +439,56 @@ async fn remove_from_watchlist_deletes_correct_path() {
     let wl = client.remove_from_watchlist("wl-1", "AAPL").await.unwrap();
     assert!(wl.assets.is_empty());
 }
+
+// ── get_snapshots ─────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn get_snapshots_returns_snapshot_map() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/stocks/snapshots"))
+        .and(query_param("symbols", "AAPL,TSLA"))
+        .and(query_param("feed", "iex"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "AAPL": {
+                "dailyBar":     { "c": 175.5, "v": 1234567.0 },
+                "prevDailyBar": { "c": 170.0, "v":  987654.0 }
+            },
+            "TSLA": {
+                "dailyBar":     { "c": 250.0, "v": 9876543.0 },
+                "prevDailyBar": { "c": 245.0, "v": 8765432.0 }
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = AlpacaClient::new(test_config(server.uri()));
+    let symbols = vec!["AAPL".to_string(), "TSLA".to_string()];
+    let snapshots = client.get_snapshots(&symbols).await.unwrap();
+
+    assert_eq!(snapshots.len(), 2);
+
+    let aapl = &snapshots["AAPL"];
+    let daily = aapl.daily_bar.as_ref().expect("AAPL dailyBar expected");
+    assert!((daily.c - 175.5).abs() < 0.01);
+    assert!((daily.v - 1_234_567.0).abs() < 1.0);
+    let prev = aapl
+        .prev_daily_bar
+        .as_ref()
+        .expect("AAPL prevDailyBar expected");
+    assert!((prev.c - 170.0).abs() < 0.01);
+
+    let tsla = &snapshots["TSLA"];
+    let tsla_daily = tsla.daily_bar.as_ref().expect("TSLA dailyBar expected");
+    assert!((tsla_daily.c - 250.0).abs() < 0.01);
+}
+
+#[tokio::test]
+async fn get_snapshots_empty_symbols_returns_empty_map() {
+    // No HTTP calls should be made when symbols slice is empty
+    let server = MockServer::start().await;
+    let client = AlpacaClient::new(test_config(server.uri()));
+    let result = client.get_snapshots(&[]).await.unwrap();
+    assert!(result.is_empty());
+}
