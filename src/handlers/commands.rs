@@ -147,6 +147,14 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
                 }
                 Err(e) => {
                     warn!(error = %e, symbol = %symbol, "intraday bars fetch failed");
+                    // Emit an empty result so the UI transitions from "Loading…"
+                    // to "No data" rather than spinning forever.
+                    let _ = tx
+                        .send(Event::IntradayBarsReceived {
+                            symbol,
+                            bars: vec![],
+                        })
+                        .await;
                 }
             }
         }
@@ -411,7 +419,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_intraday_bars_api_error_does_not_emit_event() {
+    async fn fetch_intraday_bars_api_error_emits_empty_event() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/stocks/ERR/bars"))
@@ -432,11 +440,17 @@ mod tests {
         .await;
 
         let events = collect_events(&mut rx).await;
+        // On error an empty IntradayBarsReceived is emitted so the UI
+        // transitions from "Loading…" to "No intraday data available".
+        let received = events
+            .iter()
+            .find(|e| matches!(e, Event::IntradayBarsReceived { symbol, .. } if symbol == "ERR"));
         assert!(
-            !events
-                .iter()
-                .any(|e| matches!(e, Event::IntradayBarsReceived { .. })),
-            "error response should not emit IntradayBarsReceived"
+            received.is_some(),
+            "expected empty IntradayBarsReceived on error"
         );
+        if let Some(Event::IntradayBarsReceived { bars, .. }) = received {
+            assert!(bars.is_empty(), "error path should emit empty bars");
+        }
     }
 }
