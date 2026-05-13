@@ -1096,4 +1096,39 @@ mod tests {
             "About modal should display close hint"
         );
     }
+
+    #[test]
+    fn render_dispatch_about_modal() {
+        // Exercises the `Modal::About => render_about(frame, area)` arm in `render()`
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(frame, area, &Modal::About, &mut app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("alpaca-trader-rs"),
+            "render() with Modal::About should display app name"
+        );
+    }
 }

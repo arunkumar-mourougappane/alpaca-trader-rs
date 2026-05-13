@@ -112,3 +112,77 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
     let para = Paragraph::new(status).style(Style::default().fg(theme::DIM));
     frame.render_widget(para, area);
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use super::*;
+    use crate::app::test_helpers::make_test_app;
+
+    fn render_status_to_string(app: &App) -> String {
+        let backend = TestBackend::new(120, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_status(frame, frame.area(), app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area().width as usize)
+            .map(|col| {
+                buffer
+                    .cell(ratatui::layout::Position {
+                        x: col as u16,
+                        y: 0,
+                    })
+                    .map(|c| c.symbol().to_string())
+                    .unwrap_or_default()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn status_bar_account_tab_shows_about_hint() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        let output = render_status_to_string(&app);
+        assert!(
+            output.contains("A:About"),
+            "Account status bar should show A:About"
+        );
+    }
+
+    #[test]
+    fn status_bar_watchlist_tab_shows_about_hint() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        let output = render_status_to_string(&app);
+        assert!(
+            output.contains("A:About"),
+            "Watchlist status bar should show A:About"
+        );
+    }
+
+    #[test]
+    fn status_bar_positions_tab_shows_about_hint() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Positions;
+        let output = render_status_to_string(&app);
+        assert!(
+            output.contains("A:About"),
+            "Positions status bar should show A:About"
+        );
+    }
+
+    #[test]
+    fn status_bar_orders_tab_shows_about_hint() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Orders;
+        let output = render_status_to_string(&app);
+        assert!(
+            output.contains("A:About"),
+            "Orders status bar should show A:About"
+        );
+    }
+}
