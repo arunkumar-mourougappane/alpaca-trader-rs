@@ -207,6 +207,53 @@ mod tests {
         assert_eq!(format_pl_amount(0.0), "+$0.00");
     }
 
+    // ── format_day_pl ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_day_pl_positive() {
+        assert_eq!(format_day_pl(843.22, 0.68), "+$843.22 (+0.68%)");
+    }
+
+    #[test]
+    fn format_day_pl_negative() {
+        assert_eq!(format_day_pl(-500.0, -1.0), "-$500.00 (-1.00%)");
+    }
+
+    // ── format_dollars ────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_dollars_valid_float() {
+        assert_eq!(format_dollars("1000.5"), "1000.50");
+        assert_eq!(format_dollars("0"), "0.00");
+        assert_eq!(format_dollars("125432.18"), "125432.18");
+    }
+
+    #[test]
+    fn format_dollars_non_numeric_passthrough() {
+        assert_eq!(format_dollars("N/A"), "N/A");
+        assert_eq!(format_dollars(""), "");
+    }
+
+    // ── span helpers ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn label_span_contains_text() {
+        let span = label("  Portfolio Value  ");
+        assert_eq!(span.content, "  Portfolio Value  ");
+    }
+
+    #[test]
+    fn value_span_contains_text() {
+        let span = value("$1,000.00");
+        assert_eq!(span.content, "$1,000.00");
+    }
+
+    #[test]
+    fn spacer_span_is_three_spaces() {
+        let span = spacer();
+        assert_eq!(span.content, "   ");
+    }
+
     // ── compute_day_pl ────────────────────────────────────────────────────────
 
     #[test]
