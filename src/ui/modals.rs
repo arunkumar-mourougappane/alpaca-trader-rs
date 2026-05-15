@@ -1,13 +1,17 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
+    symbols,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Cell, Clear, Paragraph, Row, Sparkline, Table},
+    widgets::{
+        Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, Paragraph, Row,
+        Table,
+    },
     Frame,
 };
 
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField};
-use crate::ui::{popup_area, theme};
+use crate::ui::{charts, popup_area, theme};
 
 pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
     match modal {
@@ -509,7 +513,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             Constraint::Length(1), // low + volume
             Constraint::Length(1), // blank
             Constraint::Length(1), // "── Intraday ──" label
-            Constraint::Length(3), // sparkline
+            Constraint::Length(5), // line chart
             Constraint::Length(1), // blank
             Constraint::Length(1), // exchange + class
             Constraint::Length(1), // tradable + shortable
@@ -551,7 +555,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
         chunks[3],
     );
 
-    // ── Intraday sparkline ────────────────────────────────────────────────────
+    // ── Intraday line chart ───────────────────────────────────────────────────
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
             "  ── Intraday ──",
@@ -577,12 +581,26 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             );
         }
         Some(bars) => {
-            frame.render_widget(
-                Sparkline::default()
-                    .data(bars)
-                    .style(Style::default().fg(theme::BRAND_CYAN)),
-                chunks[6],
-            );
+            let data_points = charts::price_points(bars);
+            let n = data_points.len() as f64;
+            let [y_min, y_max] = charts::y_bounds(&data_points);
+            let line_color = charts::trend_color(&data_points);
+
+            let dataset = Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(line_color))
+                .data(&data_points);
+
+            let chart = Chart::new(vec![dataset])
+                .x_axis(
+                    Axis::default()
+                        .bounds([0.0, (n - 1.0).max(0.0)])
+                        .labels(["09:30", "16:00"]),
+                )
+                .y_axis(Axis::default().bounds([y_min, y_max]));
+
+            frame.render_widget(chart, chunks[6]);
         }
     }
 
@@ -851,12 +869,12 @@ mod tests {
     }
 
     #[test]
-    fn render_symbol_detail_renders_sparkline_with_bars() {
+    fn render_symbol_detail_renders_line_chart_with_bars() {
         let mut app = make_test_app();
         app.intraday_bars
             .insert("AAPL".into(), vec![15000, 15050, 15100, 15080, 15120]);
         let output = render_symbol_detail_to_string(&mut app, "AAPL");
-        // The sparkline renders something other than "Loading" or "No intraday data"
+        // The line chart renders something other than "Loading" or "No intraday data"
         assert!(
             !output.contains("Loading"),
             "should not show Loading when bars are present"
