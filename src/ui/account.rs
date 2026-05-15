@@ -321,4 +321,73 @@ mod tests {
         let result = compute_open_pl(&positions);
         assert!((result - 100.0).abs() < 0.01);
     }
+
+    // ── render_equity_chart ───────────────────────────────────────────────────
+
+    fn render_equity_chart_to_string(equity_history: Vec<u64>) -> String {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = equity_history;
+        terminal
+            .draw(|frame| {
+                render_equity_chart(frame, frame.area(), &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_equity_chart_empty_shows_collecting() {
+        let output = render_equity_chart_to_string(vec![]);
+        assert!(
+            output.contains("Collecting data"),
+            "should show collecting message when history is empty"
+        );
+    }
+
+    #[test]
+    fn render_equity_chart_with_data_contains_braille_chars() {
+        // Simulate 20 data points with visible variation ($125,000 → $125,200)
+        let history: Vec<u64> = (0..20).map(|i| 12_500_000u64 + i * 1_000).collect();
+        let output = render_equity_chart_to_string(history);
+        let has_braille = output
+            .chars()
+            .any(|c| ('\u{2800}'..='\u{28FF}').contains(&c));
+        assert!(
+            has_braille,
+            "expected braille characters in line chart output, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_equity_chart_shows_time_labels() {
+        let history: Vec<u64> = (0..10).map(|i| 10_000_000u64 + i * 500).collect();
+        let output = render_equity_chart_to_string(history);
+        assert!(
+            output.contains("09:30") && output.contains("16:00"),
+            "should show time labels on x-axis, got:\n{}",
+            output
+        );
+    }
 }
