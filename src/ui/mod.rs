@@ -1,4 +1,5 @@
 pub mod account;
+pub mod charts;
 pub mod dashboard;
 pub mod modals;
 pub mod orders;

@@ -1,14 +1,15 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
+    symbols,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Sparkline},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
     Frame,
 };
 
 use crate::app::App;
 use crate::types::Position;
-use crate::ui::theme;
+use crate::ui::{charts, theme};
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
@@ -17,7 +18,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     render_summary(frame, chunks[0], app);
-    render_sparkline(frame, chunks[1], app);
+    render_equity_chart(frame, chunks[1], app);
 }
 
 fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
@@ -93,7 +94,7 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-fn render_sparkline(frame: &mut Frame, area: Rect, app: &App) {
+fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .title(" Today's Equity Curve ")
         .borders(Borders::ALL)
@@ -107,12 +108,27 @@ fn render_sparkline(frame: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let sparkline = Sparkline::default()
-        .block(block)
-        .data(&app.equity_history)
-        .style(Style::default().fg(theme::BRAND_CYAN));
+    let data_points = charts::price_points(&app.equity_history);
+    let n = data_points.len() as f64;
+    let [y_min, y_max] = charts::y_bounds(&data_points);
+    let line_color = charts::trend_color(&data_points);
 
-    frame.render_widget(sparkline, area);
+    let dataset = Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(line_color))
+        .data(&data_points);
+
+    let chart = Chart::new(vec![dataset])
+        .block(block)
+        .x_axis(
+            Axis::default()
+                .bounds([0.0, (n - 1.0).max(0.0)])
+                .labels(["09:30", "16:00"]),
+        )
+        .y_axis(Axis::default().bounds([y_min, y_max]));
+
+    frame.render_widget(chart, area);
 }
 
 /// Compute Day P&L from equity and last_equity strings.
