@@ -357,6 +357,15 @@ mod tests {
     }
 
     #[test]
+    fn render_equity_chart_single_data_point_does_not_panic() {
+        // n=1 → x-axis bound = (1-1).max(0) = 0; must not panic or produce garbage
+        let output = render_equity_chart_to_string(vec![12_500_000u64]);
+        // With one point there is nothing to draw as a line, but the chart
+        // frame and axes should still render without crashing.
+        assert!(!output.is_empty());
+    }
+
+    #[test]
     fn render_equity_chart_empty_shows_collecting() {
         let output = render_equity_chart_to_string(vec![]);
         assert!(
