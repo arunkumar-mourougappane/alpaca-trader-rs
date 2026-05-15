@@ -257,10 +257,17 @@ mod tests {
     #[test]
     fn snapshot_deserializes_full() {
         let json = r#"{
+            "latestTrade": { "p": 176.0 },
+            "latestQuote": { "ap": 176.1, "bp": 175.9 },
             "dailyBar":     { "c": 175.5, "v": 1234567.0 },
             "prevDailyBar": { "c": 170.0, "v":  987654.0 }
         }"#;
         let snap: Snapshot = serde_json::from_str(json).unwrap();
+        let lt = snap.latest_trade.expect("latestTrade expected");
+        assert!((lt.p - 176.0).abs() < 0.01);
+        let lq = snap.latest_quote.expect("latestQuote expected");
+        assert_eq!(lq.ap, Some(176.1));
+        assert_eq!(lq.bp, Some(175.9));
         let daily = snap.daily_bar.expect("dailyBar expected");
         assert!((daily.c - 175.5).abs() < 0.01);
         assert!((daily.v - 1_234_567.0).abs() < 1.0);
@@ -272,8 +279,20 @@ mod tests {
     fn snapshot_deserializes_missing_bars() {
         let json = r#"{}"#;
         let snap: Snapshot = serde_json::from_str(json).unwrap();
+        assert!(snap.latest_trade.is_none());
+        assert!(snap.latest_quote.is_none());
         assert!(snap.daily_bar.is_none());
         assert!(snap.prev_daily_bar.is_none());
+    }
+
+    #[test]
+    fn snapshot_deserializes_trade_only_no_quote() {
+        // Regression: snapshot with latestTrade but no latestQuote
+        let json = r#"{ "latestTrade": { "p": 150.25 } }"#;
+        let snap: Snapshot = serde_json::from_str(json).unwrap();
+        let lt = snap.latest_trade.expect("latestTrade expected");
+        assert!((lt.p - 150.25).abs() < 0.001);
+        assert!(snap.latest_quote.is_none());
     }
 
     #[test]
@@ -281,6 +300,8 @@ mod tests {
         use std::collections::HashMap;
         let json = r#"{
             "AAPL": {
+                "latestTrade":  { "p": 201.0 },
+                "latestQuote":  { "ap": 201.1, "bp": 200.9 },
                 "dailyBar":     { "c": 200.0, "v": 5000000.0 },
                 "prevDailyBar": { "c": 195.0, "v": 4500000.0 }
             },
@@ -288,7 +309,9 @@ mod tests {
         }"#;
         let map: HashMap<String, Snapshot> = serde_json::from_str(json).unwrap();
         assert_eq!(map.len(), 2);
+        assert!(map["AAPL"].latest_trade.is_some());
         assert!(map["AAPL"].daily_bar.is_some());
+        assert!(map["TSLA"].latest_trade.is_none());
         assert!(map["TSLA"].daily_bar.is_none());
     }
 }
@@ -641,12 +664,38 @@ pub struct BarsResponse {
     pub bars: Vec<MinuteBar>,
 }
 
+/// Latest trade returned inside a [`Snapshot`].
+#[derive(Debug, Clone, Deserialize)]
+pub struct SnapshotTrade {
+    /// Price of the most recent trade.
+    pub p: f64,
+}
+
+/// Latest quote returned inside a [`Snapshot`].
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SnapshotQuote {
+    /// Best ask price, if available.
+    #[serde(default)]
+    pub ap: Option<f64>,
+    /// Best bid price, if available.
+    #[serde(default)]
+    pub bp: Option<f64>,
+}
+
 /// Latest market snapshot for a symbol from `GET /v2/stocks/snapshots`.
 ///
-/// Contains today's daily bar (for volume) and the previous day's bar
-/// (for computing Change%).
+/// Contains the latest trade/quote (for current price), today's daily bar
+/// (for volume), and the previous day's bar (for computing Change%).
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Snapshot {
+    /// Most recent trade.  Present in all snapshot responses; used as the
+    /// price source when no real-time WebSocket quote is available.
+    #[serde(rename = "latestTrade", default)]
+    pub latest_trade: Option<SnapshotTrade>,
+    /// Most recent quote (ask/bid).  Preferred over `latest_trade` when
+    /// both are present because it reflects the current spread.
+    #[serde(rename = "latestQuote", default)]
+    pub latest_quote: Option<SnapshotQuote>,
     /// Today's daily bar (aggregated from market open to the latest bar).
     #[serde(rename = "dailyBar", default)]
     pub daily_bar: Option<SnapshotBar>,
