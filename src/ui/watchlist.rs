@@ -25,6 +25,29 @@ pub fn format_volume(v: f64) -> String {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    if app.watchlist_unavailable {
+        let text = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Watchlists are not available in paper trading mode.",
+                Style::default().fg(theme::DIM),
+            )),
+            Line::from(Span::styled(
+                "  The Alpaca paper API does not support the /v2/watchlists endpoint.",
+                Style::default().fg(theme::DIM),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  To use watchlists, run without the --paper flag.",
+                Style::default().fg(theme::DIM),
+            )),
+        ];
+        let para =
+            Paragraph::new(text).block(Block::default().title(" Watchlist ").borders(Borders::ALL));
+        frame.render_widget(para, area);
+        return;
+    }
+
     let wl = match app.watchlist.clone() {
         Some(w) => w,
         None => {
@@ -235,6 +258,32 @@ mod tests {
         // No quotes, no snapshots — price and change% must show "—"
         let output = render_watchlist_to_string(&mut app);
         assert!(output.contains('—'), "expected em-dash when no price data");
+    }
+
+    #[test]
+    fn watchlist_unavailable_renders_paper_mode_message() {
+        let mut app = make_test_app();
+        app.watchlist_unavailable = true;
+        let output = render_watchlist_to_string(&mut app);
+        assert!(
+            output.contains("not available in paper trading mode"),
+            "expected paper mode message, got: {output}"
+        );
+        assert!(
+            output.contains("--paper"),
+            "expected hint about --paper flag, got: {output}"
+        );
+    }
+
+    #[test]
+    fn watchlist_unavailable_does_not_show_loading_message() {
+        let mut app = make_test_app();
+        app.watchlist_unavailable = true;
+        let output = render_watchlist_to_string(&mut app);
+        assert!(
+            !output.contains("Loading watchlist"),
+            "should not show loading message when unavailable"
+        );
     }
 
     #[test]
