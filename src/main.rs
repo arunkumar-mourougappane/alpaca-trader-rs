@@ -30,6 +30,14 @@ struct Args {
     #[arg(long)]
     paper: bool,
 
+    /// Simulate order submissions without sending them to Alpaca.
+    ///
+    /// All read-only operations (account info, positions, watchlist …) still
+    /// use the configured environment. Only order submissions are intercepted
+    /// and displayed as `[DRY-RUN]` in the UI without being transmitted.
+    #[arg(long)]
+    dry_run: bool,
+
     /// Delete stored keychain credentials for the given environment and exit.
     ///
     /// Example: `alpaca-trader --reset paper` or `alpaca-trader --reset live`
@@ -103,11 +111,13 @@ async fn main() -> anyhow::Result<()> {
         e
     })?;
 
-    let config = AlpacaConfig::from_credentials(creds).map_err(|e| {
-        tracing::error!(error = %e, "configuration error");
-        eprintln!("Configuration error: {e}");
-        e
-    })?;
+    let config = AlpacaConfig::from_credentials(creds)
+        .map_err(|e| {
+            tracing::error!(error = %e, "configuration error");
+            eprintln!("Configuration error: {e}");
+            e
+        })?
+        .with_dry_run(args.dry_run);
 
     tracing::info!(env = config.env_label(), "alpaca-trader starting");
 

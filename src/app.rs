@@ -92,6 +92,7 @@ pub(crate) mod test_helpers {
                 key: "k".into(),
                 secret: "s".into(),
                 env: AlpacaEnv::Paper,
+                dry_run: false,
             },
             Arc::new(tokio::sync::Notify::new()),
             command_tx,

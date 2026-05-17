@@ -56,6 +56,18 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled(format!("   {}", now), Style::default().fg(theme::DIM)),
     ];
 
+    if app.config.dry_run {
+        spans.insert(
+            1,
+            Span::styled(
+                " [DRY-RUN]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        );
+    }
+
     if !app.market_stream_ok || !app.account_stream_ok {
         let which = match (app.market_stream_ok, app.account_stream_ok) {
             (false, false) => " ⚠ STREAM",
@@ -142,6 +154,33 @@ mod tests {
             .collect()
     }
 
+    fn render_header_to_string(app: &App) -> String {
+        let backend = TestBackend::new(120, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                render_header(frame, frame.area(), app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        let mut out = String::with_capacity(width * height);
+        for row in 0..height {
+            for col in 0..width {
+                let sym = buffer
+                    .cell(ratatui::layout::Position {
+                        x: col as u16,
+                        y: row as u16,
+                    })
+                    .map(|c| c.symbol().to_string())
+                    .unwrap_or_default();
+                out.push_str(&sym);
+            }
+        }
+        out
+    }
+
     #[test]
     fn status_bar_account_tab_shows_about_hint() {
         let mut app = make_test_app();
@@ -183,6 +222,27 @@ mod tests {
         assert!(
             output.contains("A:About"),
             "Orders status bar should show A:About"
+        );
+    }
+
+    #[test]
+    fn header_shows_dry_run_badge_when_enabled() {
+        let mut app = make_test_app();
+        app.config.dry_run = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("[DRY-RUN]"),
+            "header should show [DRY-RUN] badge when dry_run is true; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_hides_dry_run_badge_when_disabled() {
+        let app = make_test_app(); // dry_run: false by default
+        let output = render_header_to_string(&app);
+        assert!(
+            !output.contains("[DRY-RUN]"),
+            "header must not show [DRY-RUN] badge when dry_run is false"
         );
     }
 }

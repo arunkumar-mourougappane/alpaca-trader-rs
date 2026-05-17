@@ -49,6 +49,19 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
             price,
             time_in_force,
         } => {
+            if client.is_dry_run() {
+                let price_display = price
+                    .as_deref()
+                    .map(|p| format!(" @ limit ${p}"))
+                    .unwrap_or_default();
+                let qty_display = qty.as_deref().unwrap_or("?");
+                let msg = format!(
+                    "[DRY-RUN] Order NOT sent: {symbol} {side} {qty_display}{price_display}"
+                );
+                info!(symbol = %symbol, side = %side, "dry-run: skipping order submission");
+                let _ = tx.send(Event::StatusMsg(msg)).await;
+                return;
+            }
             let tif = match time_in_force.as_str() {
                 "gtc" => TimeInForce::Gtc,
                 _ => TimeInForce::Day,
@@ -179,6 +192,17 @@ mod tests {
             key: "PKTEST".into(),
             secret: "secret".into(),
             env: AlpacaEnv::Paper,
+            dry_run: false,
+        }
+    }
+
+    fn dry_run_config(base_url: String) -> AlpacaConfig {
+        AlpacaConfig {
+            base_url,
+            key: "PKTEST".into(),
+            secret: "secret".into(),
+            env: AlpacaEnv::Paper,
+            dry_run: true,
         }
     }
 
@@ -452,5 +476,96 @@ mod tests {
         if let Some(Event::IntradayBarsReceived { bars, .. }) = received {
             assert!(bars.is_empty(), "error path should emit empty bars");
         }
+    }
+
+    /// In dry-run mode, `SubmitOrder` must emit a `[DRY-RUN]` status message
+    /// and never contact the Alpaca API (the mock server would panic on an
+    /// unexpected request if it did).
+    #[tokio::test]
+    async fn submit_order_dry_run_does_not_call_api() {
+        let server = MockServer::start().await;
+        // No mock registered — any HTTP call would cause the mock server to
+        // return 404 or panic, surfacing the bug.
+
+        let client = AlpacaClient::new(dry_run_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::SubmitOrder {
+                symbol: "AAPL".into(),
+                side: "buy".into(),
+                order_type: "limit".into(),
+                qty: Some("10".into()),
+                price: Some("185.00".into()),
+                time_in_force: "day".into(),
+            },
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                Event::StatusMsg(m) if m.contains("[DRY-RUN]") && m.contains("AAPL")
+            )),
+            "expected [DRY-RUN] status message; got: {events:?}"
+        );
+        // Verify no real order-submitted message was emitted.
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m == "Order submitted")),
+            "dry-run must not emit 'Order submitted'"
+        );
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            0,
+            "dry-run must make zero HTTP requests"
+        );
+    }
+
+    /// Dry-run status message should include order details.
+    #[tokio::test]
+    async fn submit_order_dry_run_message_includes_order_details() {
+        let server = MockServer::start().await;
+        let client = AlpacaClient::new(dry_run_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::SubmitOrder {
+                symbol: "TSLA".into(),
+                side: "sell".into(),
+                order_type: "market".into(),
+                qty: Some("5".into()),
+                price: None,
+                time_in_force: "gtc".into(),
+            },
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        let msg = events.iter().find_map(|e| {
+            if let Event::StatusMsg(m) = e {
+                Some(m.as_str())
+            } else {
+                None
+            }
+        });
+        let msg = msg.expect("expected a StatusMsg");
+        assert!(
+            msg.contains("[DRY-RUN]"),
+            "message should have [DRY-RUN] tag"
+        );
+        assert!(msg.contains("TSLA"), "message should include symbol");
+        assert!(msg.contains("sell"), "message should include side");
+        assert!(msg.contains('5'), "message should include qty");
     }
 }
