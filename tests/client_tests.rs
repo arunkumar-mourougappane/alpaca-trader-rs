@@ -534,3 +534,27 @@ async fn get_intraday_bars_empty_returns_empty_vec() {
     let bars = client.get_intraday_bars("UNKNOWN").await.unwrap();
     assert!(bars.is_empty());
 }
+
+// ── is_paper ──────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn is_paper_returns_true_for_paper_env() {
+    let client = AlpacaClient::new(AlpacaConfig {
+        base_url: "http://localhost".into(),
+        key: "k".into(),
+        secret: "s".into(),
+        env: AlpacaEnv::Paper,
+    });
+    assert!(client.is_paper());
+}
+
+#[tokio::test]
+async fn is_paper_returns_false_for_live_env() {
+    let client = AlpacaClient::new(AlpacaConfig {
+        base_url: "http://localhost".into(),
+        key: "k".into(),
+        secret: "s".into(),
+        env: AlpacaEnv::Live,
+    });
+    assert!(!client.is_paper());
+}

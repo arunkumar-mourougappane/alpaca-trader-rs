@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue};
 
-use crate::config::AlpacaConfig;
+use crate::config::{AlpacaConfig, AlpacaEnv};
 use crate::types::{
     AccountInfo, BarsResponse, MarketClock, MinuteBar, Order, OrderRequest, PortfolioHistory,
     Position, Snapshot, Watchlist, WatchlistSummary,
@@ -27,6 +27,14 @@ impl AlpacaClient {
             http: reqwest::Client::new(),
             config,
         }
+    }
+
+    /// Returns `true` when this client is configured for the paper trading environment.
+    ///
+    /// Useful for skipping API calls that are unsupported on the paper endpoint
+    /// (e.g., `/v2/watchlists`).
+    pub fn is_paper(&self) -> bool {
+        self.config.env == AlpacaEnv::Paper
     }
 
     fn auth_headers(&self) -> Result<HeaderMap> {

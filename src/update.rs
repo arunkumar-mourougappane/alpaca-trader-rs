@@ -41,6 +41,9 @@ pub fn update(app: &mut App, event: Event) {
             }
             app.watchlist = Some(w);
         }
+        Event::WatchlistUnavailable => {
+            app.watchlist_unavailable = true;
+        }
         Event::MarketQuote(q) => {
             app.quotes.insert(q.symbol.clone(), q);
         }
@@ -231,6 +234,22 @@ mod tests {
         update(&mut app, Event::WatchlistUpdated(wl));
         assert!(app.watchlist.is_some());
         assert_eq!(app.watchlist_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn watchlist_unavailable_sets_flag() {
+        let mut app = make_test_app();
+        assert!(!app.watchlist_unavailable);
+        update(&mut app, Event::WatchlistUnavailable);
+        assert!(app.watchlist_unavailable);
+    }
+
+    #[test]
+    fn watchlist_unavailable_is_idempotent() {
+        let mut app = make_test_app();
+        update(&mut app, Event::WatchlistUnavailable);
+        update(&mut app, Event::WatchlistUnavailable);
+        assert!(app.watchlist_unavailable);
     }
 
     #[test]

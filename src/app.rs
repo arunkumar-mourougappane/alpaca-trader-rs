@@ -346,6 +346,9 @@ pub struct App {
     pub orders: Vec<Order>,
     pub quotes: HashMap<String, Quote>,
     pub watchlist: Option<Watchlist>,
+    /// Set to `true` when the paper trading endpoint signals that watchlists
+    /// are unsupported. Drives a persistent informational message in the UI.
+    pub watchlist_unavailable: bool,
     pub snapshots: HashMap<String, Snapshot>,
     pub clock: Option<MarketClock>,
     pub equity_history: Vec<u64>,
@@ -391,6 +394,7 @@ impl App {
             orders: Vec::new(),
             quotes: HashMap::new(),
             watchlist: None,
+            watchlist_unavailable: false,
             snapshots: HashMap::new(),
             clock: None,
             equity_history: Vec::new(),

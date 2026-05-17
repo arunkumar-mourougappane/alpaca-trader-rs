@@ -90,6 +90,10 @@ async fn poll_clock(client: &AlpacaClient, tx: &Sender<Event>) {
 }
 
 async fn poll_watchlist(client: &AlpacaClient, tx: &Sender<Event>) {
+    if client.is_paper() {
+        let _ = tx.send(Event::WatchlistUnavailable).await;
+        return;
+    }
     let summaries = match client.list_watchlists().await {
         Ok(s) => s,
         Err(e) => {
@@ -162,6 +166,15 @@ mod tests {
             key: "PKTEST".into(),
             secret: "secret".into(),
             env: AlpacaEnv::Paper,
+        }
+    }
+
+    fn live_test_config(base_url: String) -> AlpacaConfig {
+        AlpacaConfig {
+            base_url,
+            key: "AKTEST".into(),
+            secret: "secret".into(),
+            env: AlpacaEnv::Live,
         }
     }
 
@@ -240,7 +253,8 @@ mod tests {
         let server = MockServer::start().await;
         mount_all(&server).await;
 
-        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        // Use live config so the watchlist API call is made (paper mode skips it).
+        let client = Arc::new(AlpacaClient::new(live_test_config(server.uri())));
         let (tx, mut rx) = mpsc::channel(32);
         poll_once(tx, client).await;
 
@@ -582,7 +596,8 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        // Use live config so the watchlist API call is actually made.
+        let client = Arc::new(AlpacaClient::new(live_test_config(server.uri())));
         let (tx, mut rx) = mpsc::channel(32);
         poll_watchlist(&client, &tx).await;
 
@@ -610,5 +625,37 @@ mod tests {
         assert!((daily.v - 1_234_567.0).abs() < 1.0);
         let prev = aapl.prev_daily_bar.as_ref().expect("prevDailyBar expected");
         assert!((prev.c - 170.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn poll_watchlist_in_paper_mode_emits_unavailable_without_http_call() {
+        // The mock server has no mounts — any HTTP hit would be an unexpected request.
+        let server = MockServer::start().await;
+
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_watchlist(&client, &tx).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUnavailable)),
+            "paper mode must emit WatchlistUnavailable"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            "paper mode must not emit WatchlistUpdated"
+        );
+
+        // No HTTP calls should have been made — wiremock records unexpected requests.
+        let unexpected = server.received_requests().await.unwrap();
+        assert!(
+            unexpected.is_empty(),
+            "paper mode must not make any HTTP requests, got: {unexpected:?}"
+        );
     }
 }
