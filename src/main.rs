@@ -105,9 +105,7 @@ async fn main() -> anyhow::Result<()> {
     // ── Load user preferences ──────────────────────────────────────────────────
     let prefs = AppPrefs::load();
 
-    let env = if args.paper {
-        AlpacaEnv::Paper
-    } else if prefs.app.default_env == "paper" {
+    let env = if args.paper || prefs.app.default_env == "paper" {
         AlpacaEnv::Paper
     } else {
         AlpacaEnv::Live
