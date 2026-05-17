@@ -241,6 +241,7 @@ mod integration {
             key: "test-key".to_string(),
             secret: "test-secret".to_string(),
             env: AlpacaEnv::Paper,
+            dry_run: false,
         }
     }
 

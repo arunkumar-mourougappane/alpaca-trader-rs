@@ -15,6 +15,7 @@ fn test_config(base_url: String) -> AlpacaConfig {
         key: "PKTEST000".into(),
         secret: "secret000".into(),
         env: AlpacaEnv::Paper,
+        dry_run: false,
     }
 }
 
@@ -77,6 +78,7 @@ fn bad_key_config(base_url: String, key: &str) -> AlpacaConfig {
         key: key.into(),
         secret: "good-secret".into(),
         env: AlpacaEnv::Paper,
+        dry_run: false,
     }
 }
 
@@ -86,6 +88,7 @@ fn bad_secret_config(base_url: String, secret: &str) -> AlpacaConfig {
         key: "PKTEST000".into(),
         secret: secret.into(),
         env: AlpacaEnv::Paper,
+        dry_run: false,
     }
 }
 
@@ -544,6 +547,7 @@ async fn is_paper_returns_true_for_paper_env() {
         key: "k".into(),
         secret: "s".into(),
         env: AlpacaEnv::Paper,
+        dry_run: false,
     });
     assert!(client.is_paper());
 }
@@ -555,6 +559,59 @@ async fn is_paper_returns_false_for_live_env() {
         key: "k".into(),
         secret: "s".into(),
         env: AlpacaEnv::Live,
+        dry_run: false,
     });
     assert!(!client.is_paper());
+}
+
+// ── is_dry_run ────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn is_dry_run_returns_true_when_set() {
+    let client = AlpacaClient::new(AlpacaConfig {
+        base_url: "http://localhost".into(),
+        key: "k".into(),
+        secret: "s".into(),
+        env: AlpacaEnv::Paper,
+        dry_run: true,
+    });
+    assert!(client.is_dry_run());
+}
+
+#[tokio::test]
+async fn is_dry_run_returns_false_by_default() {
+    let client = AlpacaClient::new(AlpacaConfig {
+        base_url: "http://localhost".into(),
+        key: "k".into(),
+        secret: "s".into(),
+        env: AlpacaEnv::Paper,
+        dry_run: false,
+    });
+    assert!(!client.is_dry_run());
+}
+
+#[test]
+fn with_dry_run_builder_sets_flag() {
+    let config = AlpacaConfig {
+        base_url: "http://localhost".into(),
+        key: "k".into(),
+        secret: "s".into(),
+        env: AlpacaEnv::Paper,
+        dry_run: false,
+    }
+    .with_dry_run(true);
+    assert!(config.dry_run, "with_dry_run(true) should set dry_run");
+}
+
+#[test]
+fn with_dry_run_builder_can_unset_flag() {
+    let config = AlpacaConfig {
+        base_url: "http://localhost".into(),
+        key: "k".into(),
+        secret: "s".into(),
+        env: AlpacaEnv::Paper,
+        dry_run: true,
+    }
+    .with_dry_run(false);
+    assert!(!config.dry_run, "with_dry_run(false) should clear dry_run");
 }

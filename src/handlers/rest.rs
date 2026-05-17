@@ -166,6 +166,7 @@ mod tests {
             key: "PKTEST".into(),
             secret: "secret".into(),
             env: AlpacaEnv::Paper,
+            dry_run: false,
         }
     }
 
@@ -175,6 +176,7 @@ mod tests {
             key: "AKTEST".into(),
             secret: "secret".into(),
             env: AlpacaEnv::Live,
+            dry_run: false,
         }
     }
 

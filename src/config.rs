@@ -28,6 +28,7 @@ mod tests {
             key: String::new(),
             secret: String::new(),
             env: AlpacaEnv::Paper,
+            dry_run: false,
         };
         assert_eq!(cfg.env_label(), "PAPER");
     }
@@ -39,6 +40,7 @@ mod tests {
             key: String::new(),
             secret: String::new(),
             env: AlpacaEnv::Live,
+            dry_run: false,
         };
         assert_eq!(cfg.env_label(), "LIVE");
     }
@@ -160,6 +162,10 @@ pub struct AlpacaConfig {
     pub secret: String,
     /// Which environment (paper / live) this config targets.
     pub env: AlpacaEnv,
+    /// When `true`, order submissions are simulated locally and never sent to
+    /// the Alpaca API. All read-only calls (account, positions, watchlist …)
+    /// still use live or paper data from the selected environment.
+    pub dry_run: bool,
 }
 
 impl AlpacaConfig {
@@ -191,6 +197,7 @@ impl AlpacaConfig {
                     key,
                     secret,
                     env: AlpacaEnv::Live,
+                    dry_run: false,
                 })
             }
             AlpacaEnv::Paper => {
@@ -206,6 +213,7 @@ impl AlpacaConfig {
                     key,
                     secret,
                     env: AlpacaEnv::Paper,
+                    dry_run: false,
                 })
             }
         }
@@ -235,7 +243,29 @@ impl AlpacaConfig {
             key: creds.key,
             secret: creds.secret,
             env: creds.env,
+            dry_run: false,
         })
+    }
+
+    /// Set the dry-run flag, consuming and returning `self`.
+    ///
+    /// When `dry_run` is `true`, order submission calls will be intercepted
+    /// and simulated locally without contacting the Alpaca API.
+    ///
+    /// ```
+    /// # use alpaca_trader_rs::config::{AlpacaConfig, AlpacaEnv};
+    /// let config = AlpacaConfig {
+    ///     base_url: "http://localhost".into(),
+    ///     key: "k".into(),
+    ///     secret: "s".into(),
+    ///     env: AlpacaEnv::Paper,
+    ///     dry_run: false,
+    /// }.with_dry_run(true);
+    /// assert!(config.dry_run);
+    /// ```
+    pub fn with_dry_run(mut self, dry_run: bool) -> Self {
+        self.dry_run = dry_run;
+        self
     }
 
     /// Returns a short uppercase label for the current environment.

@@ -37,6 +37,15 @@ impl AlpacaClient {
         self.config.env == AlpacaEnv::Paper
     }
 
+    /// Returns `true` when dry-run mode is active.
+    ///
+    /// In dry-run mode, order-submission calls are simulated locally and never
+    /// forwarded to the Alpaca API. All read-only calls still reach the
+    /// configured endpoint.
+    pub fn is_dry_run(&self) -> bool {
+        self.config.dry_run
+    }
+
     fn auth_headers(&self) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
         headers.insert(
