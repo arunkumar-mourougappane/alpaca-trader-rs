@@ -1,19 +1,20 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::sync::{mpsc::Sender, Notify};
 use tokio_util::sync::CancellationToken;
 
 use crate::client::AlpacaClient;
 use crate::events::Event;
+use crate::prefs::AppPrefs;
 
 pub async fn run(
     tx: Sender<Event>,
     cancel: CancellationToken,
     client: Arc<AlpacaClient>,
     refresh_notify: Arc<Notify>,
+    prefs: AppPrefs,
 ) {
-    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    let mut interval = tokio::time::interval(prefs.refresh_interval());
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -392,7 +393,7 @@ mod tests {
         let notify = Arc::new(Notify::new());
 
         let cancel_clone = cancel.clone();
-        let handle = tokio::spawn(run(tx, cancel_clone, client, notify));
+        let handle = tokio::spawn(run(tx, cancel_clone, client, notify, AppPrefs::default()));
 
         // Cancel immediately and wait — should not hang
         cancel.cancel();

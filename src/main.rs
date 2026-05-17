@@ -16,6 +16,7 @@ use alpaca_trader_rs::{
     client::AlpacaClient,
     config::{AlpacaConfig, AlpacaEnv},
     events::Event,
+    prefs::AppPrefs,
 };
 
 /// Alpaca Markets TUI trading terminal.
@@ -58,6 +59,9 @@ mod config {
 mod events {
     pub use alpaca_trader_rs::events::*;
 }
+mod prefs {
+    pub use alpaca_trader_rs::prefs::*;
+}
 
 mod types {
     pub use alpaca_trader_rs::types::*;
@@ -98,7 +102,12 @@ async fn main() -> anyhow::Result<()> {
         nb
     });
 
+    // ── Load user preferences ──────────────────────────────────────────────────
+    let prefs = AppPrefs::load();
+
     let env = if args.paper {
+        AlpacaEnv::Paper
+    } else if prefs.app.default_env == "paper" {
         AlpacaEnv::Paper
     } else {
         AlpacaEnv::Live
@@ -139,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut app = App::new(
         config.clone(),
+        prefs.clone(),
         refresh_notify.clone(),
         command_tx,
         symbol_tx,
@@ -161,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
         cancel.clone(),
         client.clone(),
         refresh_notify.clone(),
+        prefs.clone(),
     ));
 
     // Command execution task (order submit, cancel, watchlist mutations)
@@ -178,6 +189,7 @@ async fn main() -> anyhow::Result<()> {
         cancel.clone(),
         config.clone(),
         symbol_rx,
+        prefs.clone(),
     ));
 
     // Account/trade updates WebSocket stream
@@ -185,6 +197,7 @@ async fn main() -> anyhow::Result<()> {
         tx.clone(),
         cancel.clone(),
         config.clone(),
+        prefs.clone(),
     ));
 
     // Tick task — drives clock refresh every 250 ms
