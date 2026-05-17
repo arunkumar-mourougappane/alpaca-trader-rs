@@ -16,6 +16,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::AlpacaConfig;
 use crate::events::{Event, StreamKind};
+use crate::prefs::AppPrefs;
 use crate::types::Order;
 
 const MAX_BACKOFF_SECS: u64 = 30;
@@ -24,7 +25,12 @@ const MAX_BACKOFF_SECS: u64 = 30;
 /// cancels, rejects), and emits `Event::TradeUpdate` on each state change.
 ///
 /// Reconnects automatically with exponential backoff.
-pub async fn run(tx: Sender<Event>, cancel: CancellationToken, config: AlpacaConfig) {
+pub async fn run(
+    tx: Sender<Event>,
+    cancel: CancellationToken,
+    config: AlpacaConfig,
+    prefs: AppPrefs,
+) {
     // Derive WebSocket URL from REST base_url:
     //   https://paper-api.alpaca.markets/v2  →  wss://paper-api.alpaca.markets/stream
     let ws_url = config
@@ -34,7 +40,7 @@ pub async fn run(tx: Sender<Event>, cancel: CancellationToken, config: AlpacaCon
         .replace("https://", "wss://")
         + "/stream";
 
-    run_inner(tx, cancel, config, &ws_url).await
+    run_inner(tx, cancel, config, &ws_url, prefs).await
 }
 
 async fn run_inner(
@@ -42,8 +48,12 @@ async fn run_inner(
     cancel: CancellationToken,
     config: AlpacaConfig,
     ws_url: &str,
+    prefs: AppPrefs,
 ) {
-    let mut backoff = 1u64;
+    let base_backoff = prefs.reconnect_backoff_base();
+    let max_attempts = prefs.stream.reconnect_max_attempts;
+    let mut backoff = base_backoff;
+    let mut attempt: u32 = 0;
 
     loop {
         tokio::select! {
@@ -57,15 +67,27 @@ async fn run_inner(
         match run_once(&tx, &cancel, &config, ws_url).await {
             Ok(_) => return,
             Err(e) => {
-                warn!(error = %e, backoff_secs = backoff, "account stream disconnected, reconnecting");
+                attempt += 1;
+                if max_attempts > 0 && attempt >= max_attempts {
+                    warn!(
+                        error = %e,
+                        attempts = attempt,
+                        "account stream reached max reconnect attempts, giving up"
+                    );
+                    let _ = tx
+                        .send(Event::StreamDisconnected(StreamKind::Account))
+                        .await;
+                    return;
+                }
+                warn!(error = %e, backoff_ms = backoff.as_millis(), "account stream disconnected, reconnecting");
                 let _ = tx
                     .send(Event::StreamDisconnected(StreamKind::Account))
                     .await;
                 tokio::select! {
                     _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
+                    _ = tokio::time::sleep(backoff) => {}
                 }
-                backoff = (backoff * 2).min(MAX_BACKOFF_SECS);
+                backoff = (backoff * 2).min(Duration::from_secs(MAX_BACKOFF_SECS));
             }
         }
     }
@@ -231,6 +253,7 @@ mod tests {
 mod integration {
     use super::*;
     use crate::config::AlpacaEnv;
+    use crate::prefs::AppPrefs;
     use futures::SinkExt;
     use tokio::sync::mpsc;
     use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -420,7 +443,7 @@ mod integration {
 
         let url2 = url.clone();
         tokio::spawn(async move {
-            run_inner(tx, cancel2, test_config(), &url2).await;
+            run_inner(tx, cancel2, test_config(), &url2, AppPrefs::default()).await;
         });
 
         let mut saw_disconnect = false;

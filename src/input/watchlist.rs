@@ -44,14 +44,23 @@ pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEven
                 (app.selected_watchlist_symbol(), app.watchlist.as_ref())
             {
                 let wl_id = wl.id.clone();
-                app.modal = Some(Modal::Confirm {
-                    message: format!("Remove {} from watchlist?", symbol),
-                    action: ConfirmAction::RemoveFromWatchlist {
-                        watchlist_id: wl_id,
-                        symbol,
-                    },
-                    confirmed: false,
-                });
+                if app.prefs.safety.confirm_watchlist_remove {
+                    app.modal = Some(Modal::Confirm {
+                        message: format!("Remove {} from watchlist?", symbol),
+                        action: ConfirmAction::RemoveFromWatchlist {
+                            watchlist_id: wl_id,
+                            symbol,
+                        },
+                        confirmed: false,
+                    });
+                } else {
+                    let _ =
+                        app.command_tx
+                            .try_send(crate::commands::Command::RemoveFromWatchlist {
+                                watchlist_id: wl_id,
+                                symbol,
+                            });
+                }
             }
         }
         KeyCode::Char('/') => {

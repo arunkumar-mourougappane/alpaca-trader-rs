@@ -4,11 +4,9 @@ use std::time::{Duration, Instant};
 
 use ratatui::layout::Rect;
 
-const STATUS_MSG_TTL: Duration = Duration::from_secs(3);
-
 /// A status bar message that may auto-expire.
 ///
-/// Transient messages (e.g. "Order submitted", "Refreshing…") carry a 3-second TTL and are
+/// Transient messages (e.g. "Order submitted", "Refreshing…") carry a TTL and are
 /// cleared automatically on the next `Tick` after they expire. Persistent messages (errors,
 /// "Loading…") set `expires_at = None` so they stay until replaced.
 #[derive(Clone, Debug)]
@@ -18,11 +16,11 @@ pub struct StatusMessage {
 }
 
 impl StatusMessage {
-    /// Creates a transient message that auto-dismisses after 3 seconds.
-    pub fn transient(text: impl Into<String>) -> Self {
+    /// Creates a transient message that auto-dismisses after the given duration.
+    pub fn with_ttl(text: impl Into<String>, ttl: Duration) -> Self {
         Self {
             text: text.into(),
-            expires_at: Some(Instant::now() + STATUS_MSG_TTL),
+            expires_at: Some(Instant::now() + ttl),
         }
     }
 
@@ -94,6 +92,7 @@ pub(crate) mod test_helpers {
                 env: AlpacaEnv::Paper,
                 dry_run: false,
             },
+            crate::prefs::AppPrefs::default(),
             Arc::new(tokio::sync::Notify::new()),
             command_tx,
             symbol_tx,
@@ -145,6 +144,7 @@ use tokio::sync::{mpsc, watch, Notify};
 
 use crate::commands::Command;
 use crate::config::AlpacaConfig;
+use crate::prefs::AppPrefs;
 use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Snapshot, Watchlist};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -338,6 +338,7 @@ pub struct HitAreas {
 
 pub struct App {
     pub config: AlpacaConfig,
+    pub prefs: AppPrefs,
     pub refresh_notify: Arc<Notify>,
     pub command_tx: mpsc::Sender<Command>,
     pub symbol_tx: watch::Sender<Vec<String>>,
@@ -381,12 +382,14 @@ pub struct App {
 impl App {
     pub fn new(
         config: AlpacaConfig,
+        prefs: AppPrefs,
         refresh_notify: Arc<Notify>,
         command_tx: mpsc::Sender<Command>,
         symbol_tx: watch::Sender<Vec<String>>,
     ) -> Self {
         Self {
             config,
+            prefs,
             refresh_notify,
             command_tx,
             symbol_tx,
@@ -478,6 +481,16 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Sets a transient status message using the TTL from user preferences.
+    pub fn push_transient_status(&mut self, text: impl Into<String>) {
+        self.status_msg = StatusMessage::with_ttl(text, self.prefs.status_ttl());
+    }
+
+    /// Sets a fill-notification status message using the fill TTL from user preferences.
+    pub fn push_fill_notification(&mut self, text: impl Into<String>) {
+        self.status_msg = StatusMessage::with_ttl(text, self.prefs.fill_ttl());
     }
 }
 

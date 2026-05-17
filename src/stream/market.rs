@@ -17,10 +17,10 @@ use tracing::{debug, info, warn};
 
 use crate::config::AlpacaConfig;
 use crate::events::{Event, StreamKind};
+use crate::prefs::AppPrefs;
 use crate::types::Quote;
 
 const DATA_URL: &str = "wss://stream.data.alpaca.markets/v2/iex";
-const MAX_BACKOFF_SECS: u64 = 30;
 
 /// Connects to the Alpaca market data WebSocket (IEX free tier), subscribes to
 /// quotes for the given symbols, and emits `Event::MarketQuote` on every tick.
@@ -32,8 +32,9 @@ pub async fn run(
     cancel: CancellationToken,
     config: AlpacaConfig,
     symbol_rx: watch::Receiver<Vec<String>>,
+    prefs: AppPrefs,
 ) {
-    run_inner(tx, cancel, config, symbol_rx, DATA_URL).await
+    run_inner(tx, cancel, config, symbol_rx, DATA_URL, prefs).await
 }
 
 async fn run_inner(
@@ -42,8 +43,12 @@ async fn run_inner(
     config: AlpacaConfig,
     mut symbol_rx: watch::Receiver<Vec<String>>,
     url: &str,
+    prefs: AppPrefs,
 ) {
-    let mut backoff = 1u64;
+    let base_backoff = prefs.reconnect_backoff_base();
+    let max_attempts = prefs.stream.reconnect_max_attempts;
+    let mut backoff = base_backoff;
+    let mut attempt: u32 = 0;
 
     loop {
         tokio::select! {
@@ -69,13 +74,23 @@ async fn run_inner(
                 return;
             }
             Err(e) => {
-                warn!(error = %e, backoff_secs = backoff, "market stream disconnected, reconnecting");
+                attempt += 1;
+                if max_attempts > 0 && attempt >= max_attempts {
+                    warn!(
+                        error = %e,
+                        attempts = attempt,
+                        "market stream reached max reconnect attempts, giving up"
+                    );
+                    let _ = tx.send(Event::StreamDisconnected(StreamKind::Market)).await;
+                    return;
+                }
+                warn!(error = %e, backoff_ms = backoff.as_millis(), "market stream disconnected, reconnecting");
                 let _ = tx.send(Event::StreamDisconnected(StreamKind::Market)).await;
                 tokio::select! {
                     _ = cancel.cancelled() => return,
-                    _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
+                    _ = tokio::time::sleep(backoff) => {}
                 }
-                backoff = (backoff * 2).min(MAX_BACKOFF_SECS);
+                backoff = (backoff * 2).min(Duration::from_secs(30));
             }
         }
     }
@@ -305,6 +320,7 @@ mod tests {
 mod integration {
     use super::*;
     use crate::config::AlpacaEnv;
+    use crate::prefs::AppPrefs;
     use futures::SinkExt;
     use tokio::sync::{mpsc, watch};
     use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -541,7 +557,15 @@ mod integration {
 
         let url2 = url.clone();
         tokio::spawn(async move {
-            run_inner(tx, cancel2, test_config(), sym_rx, &url2).await;
+            run_inner(
+                tx,
+                cancel2,
+                test_config(),
+                sym_rx,
+                &url2,
+                AppPrefs::default(),
+            )
+            .await;
         });
 
         let mut saw_disconnect = false;

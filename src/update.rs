@@ -48,6 +48,17 @@ pub fn update(app: &mut App, event: Event) {
             app.quotes.insert(q.symbol.clone(), q);
         }
         Event::TradeUpdate(o) => {
+            if app.prefs.notifications.fill_notifications_enabled
+                && (o.status == "filled" || o.status == "partially_filled")
+            {
+                let qty = o
+                    .filled_qty
+                    .parse::<f64>()
+                    .map(|q| format!("{}", q))
+                    .unwrap_or_else(|_| o.filled_qty.clone());
+                let msg = format!("Fill: {} {} {}", o.side, qty, o.symbol);
+                app.push_fill_notification(msg);
+            }
             if let Some(existing) = app.orders.iter_mut().find(|x| x.id == o.id) {
                 *existing = o;
             } else {
@@ -115,7 +126,7 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Tab => app.active_tab = app.active_tab.next(),
         KeyCode::BackTab => app.active_tab = app.active_tab.prev(),
         KeyCode::Char('r') => {
-            app.status_msg = StatusMessage::transient("Refreshing…");
+            app.push_transient_status("Refreshing…");
             app.refresh_notify.notify_one();
         }
         _ => handle_panel_key(app, key),
@@ -458,7 +469,10 @@ mod tests {
 
     #[test]
     fn status_msg_transient_has_expiry() {
-        let msg = crate::app::StatusMessage::transient("Submitting order…");
+        let msg = crate::app::StatusMessage::with_ttl(
+            "Submitting order…",
+            std::time::Duration::from_secs(3),
+        );
         assert!(!msg.text.is_empty());
         assert!(
             msg.expires_at.is_some(),
@@ -812,6 +826,7 @@ mod tests {
                 env: AlpacaEnv::Paper,
                 dry_run: false,
             },
+            crate::prefs::AppPrefs::default(),
             std::sync::Arc::new(tokio::sync::Notify::new()),
             command_tx,
             symbol_tx,
@@ -959,6 +974,7 @@ mod tests {
                 env: AlpacaEnv::Paper,
                 dry_run: false,
             },
+            crate::prefs::AppPrefs::default(),
             std::sync::Arc::new(tokio::sync::Notify::new()),
             command_tx,
             symbol_tx,
@@ -989,6 +1005,7 @@ mod tests {
                 env: AlpacaEnv::Paper,
                 dry_run: false,
             },
+            crate::prefs::AppPrefs::default(),
             std::sync::Arc::new(tokio::sync::Notify::new()),
             command_tx,
             symbol_tx,
