@@ -290,3 +290,349 @@ impl AlpacaClient {
             .bars)
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{AlpacaConfig, AlpacaEnv};
+    use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn paper_config(base_url: String) -> AlpacaConfig {
+        AlpacaConfig {
+            base_url,
+            key: "PKTEST".into(),
+            secret: "secret".into(),
+            env: AlpacaEnv::Paper,
+            dry_run: false,
+        }
+    }
+
+    fn live_config(base_url: String) -> AlpacaConfig {
+        AlpacaConfig {
+            base_url,
+            key: "AKTEST".into(),
+            secret: "secret".into(),
+            env: AlpacaEnv::Live,
+            dry_run: false,
+        }
+    }
+
+    // ── Unit tests ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_paper_true_for_paper_env() {
+        let client = AlpacaClient::new(paper_config("http://localhost".into()));
+        assert!(client.is_paper());
+    }
+
+    #[test]
+    fn is_paper_false_for_live_env() {
+        let client = AlpacaClient::new(live_config("http://localhost".into()));
+        assert!(!client.is_paper());
+    }
+
+    #[test]
+    fn is_dry_run_false_by_default() {
+        let client = AlpacaClient::new(paper_config("http://localhost".into()));
+        assert!(!client.is_dry_run());
+    }
+
+    #[test]
+    fn is_dry_run_true_when_set() {
+        let config = AlpacaConfig {
+            base_url: "http://localhost".into(),
+            key: "k".into(),
+            secret: "s".into(),
+            env: AlpacaEnv::Paper,
+            dry_run: true,
+        };
+        let client = AlpacaClient::new(config);
+        assert!(client.is_dry_run());
+    }
+
+    #[test]
+    fn data_url_uses_data_alpaca_markets_for_production() {
+        let config = AlpacaConfig {
+            base_url: "https://paper-api.alpaca.markets".into(),
+            key: "k".into(),
+            secret: "s".into(),
+            env: AlpacaEnv::Paper,
+            dry_run: false,
+        };
+        let client = AlpacaClient::new(config);
+        assert_eq!(
+            client.data_url("/stocks/snapshots"),
+            "https://data.alpaca.markets/v2/stocks/snapshots"
+        );
+    }
+
+    #[test]
+    fn data_url_uses_base_url_for_non_production() {
+        let client = AlpacaClient::new(paper_config("http://localhost:9999".into()));
+        assert_eq!(
+            client.data_url("/stocks/snapshots"),
+            "http://localhost:9999/stocks/snapshots"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_snapshots_returns_empty_map_without_request_when_no_symbols() {
+        // No mock server — any HTTP would panic/fail; proves no request is made.
+        let client = AlpacaClient::new(paper_config("http://127.0.0.1:1".into()));
+        let result = client.get_snapshots(&[]).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ── HTTP integration tests ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_account_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "ACTIVE", "equity": "100000", "buying_power": "200000",
+                "cash": "50000", "long_market_value": "50000",
+                "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let acct = client.get_account().await.unwrap();
+        assert_eq!(acct.status, "ACTIVE");
+        assert_eq!(acct.equity, "100000");
+    }
+
+    #[tokio::test]
+    async fn get_account_returns_error_on_bad_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let err = client.get_account().await.unwrap_err();
+        assert!(err.to_string().contains("parse failed"));
+    }
+
+    #[tokio::test]
+    async fn get_positions_parses_empty_list() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/positions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let positions = client.get_positions().await.unwrap();
+        assert!(positions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_orders_parses_empty_list() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let orders = client.get_orders("open").await.unwrap();
+        assert!(orders.is_empty());
+    }
+
+    #[tokio::test]
+    async fn submit_order_sends_post_and_parses_response() {
+        use crate::types::OrderRequest;
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "ord-1", "symbol": "AAPL", "side": "buy",
+                "order_type": "market", "status": "accepted",
+                "filled_qty": "0", "time_in_force": "day"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let req = OrderRequest {
+            symbol: "AAPL".into(),
+            qty: Some("1".into()),
+            notional: None,
+            side: "buy".into(),
+            order_type: "market".into(),
+            time_in_force: "day".into(),
+            limit_price: None,
+        };
+        let order = client.submit_order(&req).await.unwrap();
+        assert_eq!(order.symbol, "AAPL");
+        assert_eq!(order.status, "accepted");
+    }
+
+    #[tokio::test]
+    async fn cancel_order_succeeds_on_204() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/orders/order-abc"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        client.cancel_order("order-abc").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn get_clock_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "is_open": true,
+                "next_open": "2026-05-13T13:30:00Z",
+                "next_close": "2026-05-12T20:00:00Z",
+                "timestamp": "2026-05-12T15:00:00Z"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let clock = client.get_clock().await.unwrap();
+        assert!(clock.is_open);
+    }
+
+    #[tokio::test]
+    async fn list_watchlists_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"id": "wl-1", "name": "My List"}
+            ])))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let lists = client.list_watchlists().await.unwrap();
+        assert_eq!(lists.len(), 1);
+        assert_eq!(lists[0].name, "My List");
+    }
+
+    #[tokio::test]
+    async fn get_watchlist_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists/wl-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-1", "name": "My List", "assets": []
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let wl = client.get_watchlist("wl-1").await.unwrap();
+        assert_eq!(wl.name, "My List");
+        assert!(wl.assets.is_empty());
+    }
+
+    #[tokio::test]
+    async fn add_to_watchlist_returns_updated_watchlist() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/watchlists/wl-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-1", "name": "My List",
+                "assets": [{
+                    "id": "a-1", "symbol": "AAPL", "name": "Apple Inc.",
+                    "exchange": "NASDAQ", "class": "us_equity",
+                    "tradable": true, "shortable": true, "fractionable": true
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let wl = client.add_to_watchlist("wl-1", "AAPL").await.unwrap();
+        assert_eq!(wl.assets.len(), 1);
+        assert_eq!(wl.assets[0].symbol, "AAPL");
+    }
+
+    #[tokio::test]
+    async fn remove_from_watchlist_returns_updated_watchlist() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/watchlists/wl-1/AAPL"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-1", "name": "My List", "assets": []
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let wl = client.remove_from_watchlist("wl-1", "AAPL").await.unwrap();
+        assert!(wl.assets.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_portfolio_history_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/account/portfolio/history"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "equity": [100000.0, 100100.0, null],
+                "timestamp": [1000, 2000, 3000],
+                "base_value": 100000.0
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let history = client.get_portfolio_history().await.unwrap();
+        assert_eq!(history.equity.len(), 3);
+        assert_eq!(history.equity[0], Some(100000.0));
+        assert_eq!(history.equity[2], None);
+    }
+
+    #[tokio::test]
+    async fn get_snapshots_with_symbols_calls_endpoint() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/snapshots"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let result = client.get_snapshots(&["AAPL".to_string()]).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_intraday_bars_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/AAPL/bars"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [{"c": 195.5}],
+                "symbol": "AAPL",
+                "next_page_token": null
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let bars = client.get_intraday_bars("AAPL").await.unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].c, 195.5);
+    }
+}

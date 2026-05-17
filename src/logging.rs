@@ -161,6 +161,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
+    fn home_present_last_component_is_alpaca_trader() {
+        let dir = log_dir_from(Some(PathBuf::from("/Users/alice")));
+        assert_eq!(dir.file_name().unwrap(), "alpaca-trader");
+    }
+
+    #[test]
     #[cfg(not(target_os = "macos"))]
     fn home_present_returns_xdg_log_path() {
         let dir = log_dir_from(Some(PathBuf::from("/home/tester")));
@@ -168,6 +175,13 @@ mod tests {
             dir,
             PathBuf::from("/home/tester/.local/share/alpaca-trader/logs")
         );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn home_present_last_component_is_logs() {
+        let dir = log_dir_from(Some(PathBuf::from("/home/alice")));
+        assert_eq!(dir.file_name().unwrap(), "logs");
     }
 
     #[test]
@@ -180,5 +194,23 @@ mod tests {
             "fallback path should end with alpaca-trader-logs, got: {}",
             dir.display()
         );
+    }
+
+    #[test]
+    fn no_home_fallback_is_absolute() {
+        let dir = log_dir_from(None);
+        assert!(
+            dir.is_absolute(),
+            "fallback log dir should be absolute, got: {}",
+            dir.display()
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn log_dir_from_preserves_home_prefix() {
+        let home = PathBuf::from("/tmp/fakehome");
+        let dir = log_dir_from(Some(home.clone()));
+        assert!(dir.starts_with(&home));
     }
 }
