@@ -58,7 +58,7 @@ pub enum Event {
     },
     /// Watchlists are not available in paper trading mode.
     ///
-    /// Emitted once when [`handlers::rest`] detects `client.is_paper()` so the
+    /// Emitted once when the REST handler detects `client.is_paper()` so the
     /// UI can display a clear, persistent explanation instead of "Loading…".
     WatchlistUnavailable,
     /// Periodic tick to trigger UI refresh / REST polls.
