@@ -1,0 +1,16 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+    patch:
+      default:
+        # Platform-specific code (Windows, macOS) is compiled conditionally and
+        # cannot be covered on the Linux CI runner. Allow patch coverage to be
+        # up to 20 percentage points below the overall project coverage.
+        target: auto
+        threshold: 20%
+
+ignore:
+  - "src/main.rs"
