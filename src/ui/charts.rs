@@ -1,6 +1,8 @@
 use ratatui::style::Color;
 
-use crate::ui::theme;
+#[cfg(test)]
+use crate::ui::theme::Theme;
+use crate::ui::theme::ThemeColors;
 
 /// Convert a slice of u64 prices (in cents) to `(index, price_in_dollars)` pairs
 /// suitable for use with ratatui's `Chart` widget.
@@ -29,14 +31,15 @@ pub fn y_bounds(data: &[(f64, f64)]) -> [f64; 2] {
     }
 }
 
-/// Choose a line `Color` based on trend: green when last ≥ first, red otherwise.
-pub fn trend_color(data: &[(f64, f64)]) -> Color {
+/// Choose a line `Color` based on trend using the provided [`ThemeColors`]:
+/// `positive` when last ≥ first, `negative` otherwise.
+pub fn trend_color(data: &[(f64, f64)], colors: &ThemeColors) -> Color {
     let first = data.first().map(|p| p.1).unwrap_or(0.0);
     let last = data.last().map(|p| p.1).unwrap_or(0.0);
     if last >= first {
-        theme::GREEN
+        colors.positive
     } else {
-        theme::RED
+        colors.negative
     }
 }
 
@@ -99,25 +102,36 @@ mod tests {
     // ── trend_color ───────────────────────────────────────────────────────────
 
     #[test]
-    fn trend_color_up_is_green() {
+    fn trend_color_up_is_positive() {
+        let c = Theme::Default.colors();
         let data = vec![(0.0, 100.0), (1.0, 110.0)];
-        assert_eq!(trend_color(&data), theme::GREEN);
+        assert_eq!(trend_color(&data, &c), c.positive);
     }
 
     #[test]
-    fn trend_color_down_is_red() {
+    fn trend_color_down_is_negative() {
+        let c = Theme::Default.colors();
         let data = vec![(0.0, 110.0), (1.0, 100.0)];
-        assert_eq!(trend_color(&data), theme::RED);
+        assert_eq!(trend_color(&data, &c), c.negative);
     }
 
     #[test]
-    fn trend_color_flat_is_green() {
+    fn trend_color_flat_is_positive() {
+        let c = Theme::Default.colors();
         let data = vec![(0.0, 100.0), (1.0, 100.0)];
-        assert_eq!(trend_color(&data), theme::GREEN);
+        assert_eq!(trend_color(&data, &c), c.positive);
     }
 
     #[test]
-    fn trend_color_empty_is_green() {
-        assert_eq!(trend_color(&[]), theme::GREEN);
+    fn trend_color_empty_is_positive() {
+        let c = Theme::Default.colors();
+        assert_eq!(trend_color(&[], &c), c.positive);
+    }
+
+    #[test]
+    fn trend_color_uses_theme_colors() {
+        let c = Theme::Dark.colors();
+        let data = vec![(0.0, 100.0), (1.0, 110.0)];
+        assert_eq!(trend_color(&data, &c), c.positive);
     }
 }

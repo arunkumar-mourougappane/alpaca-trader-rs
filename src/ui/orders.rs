@@ -6,7 +6,6 @@ use ratatui::{
 };
 
 use crate::app::{App, OrdersSubTab};
-use crate::ui::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
@@ -20,6 +19,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn render_subtabs(frame: &mut Frame, area: Rect, app: &mut App) {
+    let c = app.current_theme.colors();
     let open_count = app
         .orders
         .iter()
@@ -76,41 +76,38 @@ fn render_subtabs(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let tabs = Tabs::new(titles)
         .select(selected)
-        .highlight_style(
-            Style::default()
-                .fg(theme::BRAND_CYAN)
-                .add_modifier(Modifier::BOLD),
-        )
+        .highlight_style(Style::default().fg(c.accent).add_modifier(Modifier::BOLD))
         .divider("|");
 
     frame.render_widget(tabs, area);
 }
 
 fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
+    let c = app.current_theme.colors();
     let orders = app.filtered_orders();
 
     if orders.is_empty() {
         let para = Paragraph::new("  No orders in this category.")
-            .style(Style::default().fg(theme::DIM))
+            .style(c.dim_style())
             .block(
                 Block::default()
                     .title(" Orders ")
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::BORDER_COLOR)),
+                    .border_style(c.border_fg_style()),
             );
         frame.render_widget(para, area);
         return;
     }
 
     let header = Row::new(vec![
-        Cell::from("ID").style(theme::style_header()),
-        Cell::from("Symbol").style(theme::style_header()),
-        Cell::from("Side").style(theme::style_header()),
-        Cell::from("Qty").style(theme::style_header()),
-        Cell::from("Type").style(theme::style_header()),
-        Cell::from("Limit").style(theme::style_header()),
-        Cell::from("Status").style(theme::style_header()),
-        Cell::from("Submitted").style(theme::style_header()),
+        Cell::from("ID").style(c.header_style()),
+        Cell::from("Symbol").style(c.header_style()),
+        Cell::from("Side").style(c.header_style()),
+        Cell::from("Qty").style(c.header_style()),
+        Cell::from("Type").style(c.header_style()),
+        Cell::from("Limit").style(c.header_style()),
+        Cell::from("Status").style(c.header_style()),
+        Cell::from("Submitted").style(c.header_style()),
     ]);
 
     let rows: Vec<Row> = orders
@@ -123,9 +120,9 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
             };
 
             let side_style = if o.side == "buy" {
-                Style::default().fg(theme::GREEN)
+                c.positive_style()
             } else {
-                Style::default().fg(theme::RED)
+                c.negative_style()
             };
 
             let qty_str = o
@@ -149,14 +146,14 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 .to_string();
 
             Row::new(vec![
-                Cell::from(short_id).style(theme::style_dim()),
-                Cell::from(o.symbol.clone()).style(theme::style_bold()),
+                Cell::from(short_id).style(c.dim_style()),
+                Cell::from(o.symbol.clone()).style(c.bold_style()),
                 Cell::from(o.side.to_uppercase()).style(side_style),
                 Cell::from(qty_str),
                 Cell::from(o.order_type.to_uppercase()),
                 Cell::from(limit_str),
                 Cell::from(o.status.clone()),
-                Cell::from(submitted).style(theme::style_dim()),
+                Cell::from(submitted).style(c.dim_style()),
             ])
         })
         .collect();
@@ -164,7 +161,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = Block::default()
         .title(" Orders ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::BORDER_COLOR));
+        .border_style(c.border_fg_style());
 
     let table = Table::new(
         rows,
@@ -181,7 +178,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     )
     .header(header)
     .block(block)
-    .row_highlight_style(theme::style_selected())
+    .row_highlight_style(c.selected_style())
     .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, area, &mut app.orders_state);

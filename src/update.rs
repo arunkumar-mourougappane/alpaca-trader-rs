@@ -129,6 +129,10 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             app.push_transient_status("Refreshing…");
             app.refresh_notify.notify_one();
         }
+        KeyCode::Char('T') => {
+            app.cycle_theme();
+            app.push_transient_status(format!("Theme: {}", app.current_theme.display_name()));
+        }
         _ => handle_panel_key(app, key),
     }
 }
@@ -2108,5 +2112,56 @@ mod tests {
         app.watchlist_state.select(Some(2));
         update(&mut app, key(KeyCode::Char('A')));
         assert_eq!(app.watchlist_state.selected(), Some(0));
+    }
+
+    // ── Theme cycling (T key) ─────────────────────────────────────────────────
+
+    #[test]
+    fn t_key_cycles_theme_default_to_dark() {
+        use crate::ui::theme::Theme;
+        let mut app = make_test_app();
+        assert_eq!(app.current_theme, Theme::Default);
+        update(&mut app, key(KeyCode::Char('T')));
+        assert_eq!(app.current_theme, Theme::Dark);
+    }
+
+    #[test]
+    fn t_key_cycles_dark_to_high_contrast() {
+        use crate::ui::theme::Theme;
+        let mut app = make_test_app();
+        app.current_theme = Theme::Dark;
+        update(&mut app, key(KeyCode::Char('T')));
+        assert_eq!(app.current_theme, Theme::HighContrast);
+    }
+
+    #[test]
+    fn t_key_wraps_high_contrast_to_default() {
+        use crate::ui::theme::Theme;
+        let mut app = make_test_app();
+        app.current_theme = Theme::HighContrast;
+        update(&mut app, key(KeyCode::Char('T')));
+        assert_eq!(app.current_theme, Theme::Default);
+    }
+
+    #[test]
+    fn t_key_sets_status_message() {
+        let mut app = make_test_app();
+        update(&mut app, key(KeyCode::Char('T')));
+        let status = app.status_msg.text.as_str();
+        assert!(
+            status.contains("Theme:"),
+            "Status should contain 'Theme:' after T key, got: {:?}",
+            status
+        );
+    }
+
+    #[test]
+    fn t_key_three_presses_returns_to_default() {
+        use crate::ui::theme::Theme;
+        let mut app = make_test_app();
+        for _ in 0..3 {
+            update(&mut app, key(KeyCode::Char('T')));
+        }
+        assert_eq!(app.current_theme, Theme::Default);
     }
 }

@@ -11,12 +11,12 @@ use ratatui::{
 };
 
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField};
-use crate::ui::{charts, popup_area, theme};
+use crate::ui::{charts, popup_area};
 
 pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
     match modal {
-        Modal::Help => render_help(frame, area),
-        Modal::About => render_about(frame, area),
+        Modal::Help => render_help(frame, area, app),
+        Modal::About => render_about(frame, area, app),
         Modal::OrderEntry(state) => render_order_entry(frame, area, state, app),
         Modal::SymbolDetail(symbol) => render_symbol_detail(frame, area, symbol, app),
         Modal::Confirm {
@@ -24,19 +24,21 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
             action,
             confirmed,
         } => render_confirm(frame, area, message, action, *confirmed, app),
-        Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input),
+        Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input, app),
     }
 }
 
-fn render_help(frame: &mut Frame, area: Rect) {
+fn render_help(frame: &mut Frame, area: Rect, app: &App) {
     let popup = popup_area(area, 50, 70);
     frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
 
     let block = Block::default()
         .title(" Keyboard Shortcuts ")
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(theme::BRAND_CYAN));
+        .border_style(c.accent_style());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -58,14 +60,15 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ("/", "Search / filter watchlist"),
         ("", ""),
         ("GLOBAL", ""),
+        ("T", "Cycle theme (Default → Dark → High-contrast)"),
         ("q / Ctrl-C", "Quit"),
         ("?", "This help screen"),
         ("A", "About this app"),
     ];
 
     let header = Row::new(vec![
-        Cell::from("Key").style(theme::style_header()),
-        Cell::from("Action").style(theme::style_header()),
+        Cell::from("Key").style(c.header_style()),
+        Cell::from("Action").style(c.header_style()),
     ]);
 
     let table_rows: Vec<Row> = rows
@@ -73,18 +76,12 @@ fn render_help(frame: &mut Frame, area: Rect) {
         .map(|(k, v)| {
             if v.is_empty() {
                 Row::new(vec![
-                    Cell::from(*k).style(
-                        Style::default()
-                            .fg(theme::BRAND_CYAN)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    Cell::from(*k)
+                        .style(Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
                     Cell::from(""),
                 ])
             } else {
-                Row::new(vec![
-                    Cell::from(*k).style(Style::default().fg(theme::DIM)),
-                    Cell::from(*v),
-                ])
+                Row::new(vec![Cell::from(*k).style(c.dim_style()), Cell::from(*v)])
             }
         })
         .collect();
@@ -103,19 +100,21 @@ fn render_help(frame: &mut Frame, area: Rect) {
     };
     let footer = Paragraph::new("  Press any key to close")
         .alignment(Alignment::Center)
-        .style(Style::default().fg(theme::DIM));
+        .style(c.dim_style());
     frame.render_widget(footer, footer_area);
 }
 
-fn render_about(frame: &mut Frame, area: Rect) {
+fn render_about(frame: &mut Frame, area: Rect, app: &App) {
     let popup = popup_area(area, 50, 60);
     frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
 
     let block = Block::default()
         .title(" About alpaca-trader-rs ")
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(theme::BRAND_CYAN));
+        .border_style(c.accent_style());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -129,61 +128,49 @@ fn render_about(frame: &mut Frame, area: Rect) {
             ),
             Span::styled(
                 format!("  v{}", env!("CARGO_PKG_VERSION")),
-                Style::default().fg(theme::BRAND_CYAN),
+                c.accent_style(),
             ),
         ]),
         Line::from(""),
         Line::from(Span::styled(
             "  Alpaca Markets TUI trading terminal",
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )),
         Line::from(Span::styled(
             "  and async REST client library.",
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )),
         Line::from(""),
         Line::from(Span::styled(
             "  ── Author ─────────────────────────────",
-            Style::default().fg(theme::BRAND_CYAN),
+            c.accent_style(),
         )),
         Line::from("  Arunkumar Mourougappane"),
-        Line::from(Span::styled(
-            "  amouroug.dev@gmail.com",
-            Style::default().fg(theme::DIM),
-        )),
+        Line::from(Span::styled("  amouroug.dev@gmail.com", c.dim_style())),
         Line::from(Span::styled(
             "  github.com/arunkumar-mourougappane",
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )),
-        Line::from(Span::styled(
-            "  anengineersrant.com",
-            Style::default().fg(theme::DIM),
-        )),
+        Line::from(Span::styled("  anengineersrant.com", c.dim_style())),
         Line::from(""),
         Line::from(Span::styled(
             "  ── Project ────────────────────────────",
-            Style::default().fg(theme::BRAND_CYAN),
+            c.accent_style(),
         )),
         Line::from(Span::styled(
             "  github.com/arunkumar-mourougappane/",
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )),
-        Line::from(Span::styled(
-            "    alpaca-trader-rs",
-            Style::default().fg(theme::DIM),
-        )),
-        Line::from(Span::styled(
-            "  docs.rs/alpaca-trader-rs",
-            Style::default().fg(theme::DIM),
-        )),
+        Line::from(Span::styled("    alpaca-trader-rs", c.dim_style())),
+        Line::from(Span::styled("  docs.rs/alpaca-trader-rs", c.dim_style())),
         Line::from(""),
         Line::from(Span::styled(
             "  ── License ────────────────────────────",
-            Style::default().fg(theme::BRAND_CYAN),
+            c.accent_style(),
         )),
         Line::from(Span::styled(
             format!("  {}", env!("CARGO_PKG_LICENSE")),
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )),
         Line::from(""),
     ];
@@ -205,7 +192,7 @@ fn render_about(frame: &mut Frame, area: Rect) {
     };
     let footer = Paragraph::new("  Press any key to close")
         .alignment(Alignment::Center)
-        .style(Style::default().fg(theme::DIM));
+        .style(c.dim_style());
     frame.render_widget(footer, footer_area);
 }
 
@@ -213,11 +200,13 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     let popup = popup_area(area, 45, 65);
     frame.render_widget(Clear, popup);
 
+    let c = app.current_theme.colors();
+
     let block = Block::default()
         .title(" New Order ")
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(theme::BRAND_CYAN));
+        .border_style(c.accent_style());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -259,9 +248,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
 
     let field_style = |field: &OrderField| {
         if focused(field) {
-            Style::default()
-                .fg(theme::BRAND_CYAN)
-                .add_modifier(Modifier::BOLD)
+            Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         }
@@ -281,27 +268,32 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
                 }
             ),
             field_style(&OrderField::Symbol),
+            c.dim_style(),
         ),
         chunks[0],
     );
 
     // Side
     let side_line = Line::from(vec![
-        Span::styled("  Side    ", Style::default().fg(theme::DIM)),
-        radio(state.side == crate::app::OrderSide::Buy, "BUY"),
+        Span::styled("  Side    ", c.dim_style()),
+        radio(state.side == crate::app::OrderSide::Buy, "BUY", &c),
         Span::raw("  "),
-        radio(state.side == crate::app::OrderSide::Sell, "SELL"),
+        radio(state.side == crate::app::OrderSide::Sell, "SELL", &c),
         Span::raw("  "),
-        radio(state.side == crate::app::OrderSide::SellShort, "SELL SHORT"),
+        radio(
+            state.side == crate::app::OrderSide::SellShort,
+            "SELL SHORT",
+            &c,
+        ),
     ]);
     frame.render_widget(Paragraph::new(side_line), chunks[2]);
 
     // Type
     let type_line = Line::from(vec![
-        Span::styled("  Type    ", Style::default().fg(theme::DIM)),
-        radio(!state.market_order, "LIMIT"),
+        Span::styled("  Type    ", c.dim_style()),
+        radio(!state.market_order, "LIMIT", &c),
         Span::raw("  "),
-        radio(state.market_order, "MARKET"),
+        radio(state.market_order, "MARKET", &c),
     ]);
     frame.render_widget(Paragraph::new(type_line), chunks[3]);
 
@@ -315,6 +307,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
                 if focused(&OrderField::Qty) { "▋" } else { "" }
             ),
             field_style(&OrderField::Qty),
+            c.dim_style(),
         ),
         chunks[4],
     );
@@ -334,14 +327,15 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
                     }
                 ),
                 field_style(&OrderField::Price),
+                c.dim_style(),
             ),
             chunks[5],
         );
     } else {
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled("  Price ", Style::default().fg(theme::DIM)),
-                Span::styled("N/A (Market order)", Style::default().fg(theme::DIM)),
+                Span::styled("  Price ", c.dim_style()),
+                Span::styled("N/A (Market order)", c.dim_style()),
             ])),
             chunks[5],
         );
@@ -349,10 +343,10 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
 
     // TimeInForce
     let tif_line = Line::from(vec![
-        Span::styled("  TIF     ", Style::default().fg(theme::DIM)),
-        radio(!state.gtc_order, "DAY"),
+        Span::styled("  TIF     ", c.dim_style()),
+        radio(!state.gtc_order, "DAY", &c),
         Span::raw("  "),
-        radio(state.gtc_order, "GTC"),
+        radio(state.gtc_order, "GTC", &c),
     ]);
     frame.render_widget(Paragraph::new(tif_line), chunks[6]);
 
@@ -360,8 +354,8 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     let est_total = estimate_total(state);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Est. Total  ", Style::default().fg(theme::DIM)),
-            Span::styled(est_total, theme::style_bold()),
+            Span::styled("  Est. Total  ", c.dim_style()),
+            Span::styled(est_total, c.bold_style()),
         ])),
         chunks[8],
     );
@@ -374,8 +368,8 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         .unwrap_or_else(|| "—".into());
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Buying Power  ", Style::default().fg(theme::DIM)),
-            Span::styled(bp, theme::style_bold()),
+            Span::styled("  Buying Power  ", c.dim_style()),
+            Span::styled(bp, c.bold_style()),
         ])),
         chunks[9],
     );
@@ -385,9 +379,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         frame.render_widget(
             Paragraph::new(Line::from(vec![Span::styled(
                 "  ⚠ Market closed — switch to GTC or wait",
-                Style::default()
-                    .fg(theme::YELLOW)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(c.neutral).add_modifier(Modifier::BOLD),
             )])),
             chunks[11],
         );
@@ -397,24 +389,23 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     let market_closed_day = !market_open && !state.gtc_order;
     let submit_style = if focused(&OrderField::Submit) && !market_closed_day {
         Style::default()
-            .fg(theme::BRAND_CYAN)
+            .fg(c.accent)
             .add_modifier(Modifier::BOLD | Modifier::REVERSED)
     } else if market_closed_day {
-        Style::default().fg(theme::DIM)
+        c.dim_style()
     } else {
         Style::default()
     };
     let buttons = Line::from(vec![
         Span::styled("  [ Submit Order ]", submit_style),
         Span::raw("  "),
-        Span::styled("[ Esc: Cancel ]", Style::default().fg(theme::DIM)),
+        Span::styled("[ Esc: Cancel ]", c.dim_style()),
     ]);
     frame.render_widget(Paragraph::new(buttons), chunks[12]);
 
     // Hint
     frame.render_widget(
-        Paragraph::new("  Tab:Next  ←/→:Toggle  Enter:Advance  Esc:Close")
-            .style(Style::default().fg(theme::DIM)),
+        Paragraph::new("  Tab:Next  ←/→:Toggle  Enter:Advance  Esc:Close").style(c.dim_style()),
         chunks[13],
     );
 }
@@ -422,6 +413,8 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
 fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
     let popup = popup_area(area, 55, 88);
     frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
 
     let asset = app
         .watchlist
@@ -440,7 +433,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
         .title(format!(" {} — {} ", symbol, name))
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(theme::BRAND_CYAN));
+        .border_style(c.accent_style());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -475,14 +468,14 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
         .map(|c| format!("{:+.2}%", c))
         .unwrap_or_else(|| "—".into());
     let value_style = change_pct
-        .map(|c| {
-            if c >= 0.0 {
-                Style::default().fg(theme::GREEN)
+        .map(|pct| {
+            if pct >= 0.0 {
+                c.positive_style()
             } else {
-                Style::default().fg(theme::RED)
+                c.negative_style()
             }
         })
-        .unwrap_or_else(theme::style_bold);
+        .unwrap_or_else(|| c.bold_style());
 
     let open_str = daily
         .map(|b| format!("${:.2}", b.o))
@@ -526,31 +519,31 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     // ── OHLCV rows ───────────────────────────────────────────────────────────
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Price    ", Style::default().fg(theme::DIM)),
+            Span::styled("  Price    ", c.dim_style()),
             Span::styled(price_str, value_style),
             Span::raw("   "),
-            Span::styled("Change    ", Style::default().fg(theme::DIM)),
+            Span::styled("Change    ", c.dim_style()),
             Span::styled(change_str, value_style),
         ])),
         chunks[1],
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Open     ", Style::default().fg(theme::DIM)),
-            Span::styled(open_str, theme::style_bold()),
+            Span::styled("  Open     ", c.dim_style()),
+            Span::styled(open_str, c.bold_style()),
             Span::raw("   "),
-            Span::styled("High      ", Style::default().fg(theme::DIM)),
-            Span::styled(high_str, Style::default().fg(theme::GREEN)),
+            Span::styled("High      ", c.dim_style()),
+            Span::styled(high_str, c.positive_style()),
         ])),
         chunks[2],
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Low      ", Style::default().fg(theme::DIM)),
-            Span::styled(low_str, Style::default().fg(theme::RED)),
+            Span::styled("  Low      ", c.dim_style()),
+            Span::styled(low_str, c.negative_style()),
             Span::raw("   "),
-            Span::styled("Volume    ", Style::default().fg(theme::DIM)),
-            Span::styled(vol_str, theme::style_bold()),
+            Span::styled("Volume    ", c.dim_style()),
+            Span::styled(vol_str, c.bold_style()),
         ])),
         chunks[3],
     );
@@ -559,7 +552,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
             "  ── Intraday ──",
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )])),
         chunks[5],
     );
@@ -567,16 +560,12 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     match app.intraday_bars.get(symbol) {
         None => {
             // Command dispatched but response not yet received
-            frame.render_widget(
-                Paragraph::new("  Loading…").style(Style::default().fg(theme::DIM)),
-                chunks[6],
-            );
+            frame.render_widget(Paragraph::new("  Loading…").style(c.dim_style()), chunks[6]);
         }
         Some(bars) if bars.is_empty() => {
             // Fetched but no bars (market closed, pre-market, or error)
             frame.render_widget(
-                Paragraph::new("  No intraday data available")
-                    .style(Style::default().fg(theme::DIM)),
+                Paragraph::new("  No intraday data available").style(c.dim_style()),
                 chunks[6],
             );
         }
@@ -584,7 +573,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             let data_points = charts::price_points(bars);
             let n = data_points.len() as f64;
             let [y_min, y_max] = charts::y_bounds(&data_points);
-            let line_color = charts::trend_color(&data_points);
+            let line_color = charts::trend_color(&data_points, &c);
 
             let dataset = Dataset::default()
                 .marker(symbols::Marker::Braille)
@@ -607,54 +596,54 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     // ── Asset flags ──────────────────────────────────────────────────────────
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Exchange ", Style::default().fg(theme::DIM)),
+            Span::styled("  Exchange ", c.dim_style()),
             Span::styled(
                 asset
                     .map(|a| a.exchange.as_str())
                     .unwrap_or("—")
                     .to_string(),
-                theme::style_bold(),
+                c.bold_style(),
             ),
             Span::raw("   "),
-            Span::styled("Class     ", Style::default().fg(theme::DIM)),
+            Span::styled("Class     ", c.dim_style()),
             Span::styled(
                 asset
                     .map(|a| a.asset_class.as_str())
                     .unwrap_or("—")
                     .to_string(),
-                theme::style_bold(),
+                c.bold_style(),
             ),
         ])),
         chunks[8],
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Tradable ", Style::default().fg(theme::DIM)),
+            Span::styled("  Tradable ", c.dim_style()),
             Span::styled(
                 flag(asset.map(|a| a.tradable).unwrap_or(false)),
-                Style::default().fg(theme::GREEN),
+                c.positive_style(),
             ),
             Span::raw("   "),
-            Span::styled("Shortable ", Style::default().fg(theme::DIM)),
+            Span::styled("Shortable ", c.dim_style()),
             Span::styled(
                 flag(asset.map(|a| a.shortable).unwrap_or(false)),
-                Style::default().fg(theme::GREEN),
+                c.positive_style(),
             ),
         ])),
         chunks[9],
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  Fractional ", Style::default().fg(theme::DIM)),
+            Span::styled("  Fractional ", c.dim_style()),
             Span::styled(
                 flag(asset.map(|a| a.fractionable).unwrap_or(false)),
-                Style::default().fg(theme::GREEN),
+                c.positive_style(),
             ),
             Span::raw(" "),
-            Span::styled("ETB       ", Style::default().fg(theme::DIM)),
+            Span::styled("ETB       ", c.dim_style()),
             Span::styled(
                 flag(asset.map(|a| a.easy_to_borrow).unwrap_or(false)),
-                Style::default().fg(theme::GREEN),
+                c.positive_style(),
             ),
         ])),
         chunks[10],
@@ -664,7 +653,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
             format!("  o:Buy  s:Sell  {}  Esc:Close", wl_label),
-            Style::default().fg(theme::DIM),
+            c.dim_style(),
         )])),
         chunks[12],
     );
@@ -681,11 +670,13 @@ fn render_confirm(
     let popup = popup_area(area, 40, 25);
     frame.render_widget(Clear, popup);
 
+    let c = app.current_theme.colors();
+
     let block = Block::default()
         .title(" Confirm ")
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(theme::BRAND_RED));
+        .border_style(c.negative_style());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -703,23 +694,23 @@ fn render_confirm(
     app.hit_areas.modal_confirm_buttons = Some(chunks[2]);
 
     frame.render_widget(
-        Paragraph::new(format!("  {}", message)).style(theme::style_bold()),
+        Paragraph::new(format!("  {}", message)).style(c.bold_style()),
         chunks[0],
     );
 
     let yes_style = if confirmed {
         Style::default()
-            .fg(theme::GREEN)
+            .fg(c.positive)
             .add_modifier(Modifier::BOLD | Modifier::REVERSED)
     } else {
-        Style::default().fg(theme::GREEN)
+        c.positive_style()
     };
     let no_style = if !confirmed {
         Style::default()
-            .fg(theme::RED)
+            .fg(c.negative)
             .add_modifier(Modifier::BOLD | Modifier::REVERSED)
     } else {
-        Style::default().fg(theme::RED)
+        c.negative_style()
     };
 
     let buttons = Line::from(vec![
@@ -730,15 +721,17 @@ fn render_confirm(
     frame.render_widget(Paragraph::new(buttons), chunks[2]);
 }
 
-fn render_add_symbol(frame: &mut Frame, area: Rect, input: &str) {
+fn render_add_symbol(frame: &mut Frame, area: Rect, input: &str, app: &App) {
     let popup = popup_area(area, 35, 20);
     frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
 
     let block = Block::default()
         .title(" Add Symbol ")
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(theme::BRAND_CYAN));
+        .border_style(c.accent_style());
 
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -753,40 +746,38 @@ fn render_add_symbol(frame: &mut Frame, area: Rect, input: &str) {
         .split(inner);
 
     frame.render_widget(
-        Paragraph::new("  Enter ticker symbol:").style(Style::default().fg(theme::DIM)),
+        Paragraph::new("  Enter ticker symbol:").style(c.dim_style()),
         chunks[0],
     );
 
     let input_line = Line::from(vec![
         Span::raw("  "),
-        Span::styled(input.to_string(), theme::style_bold()),
-        Span::styled("▋", Style::default().fg(theme::BRAND_CYAN)),
+        Span::styled(input.to_string(), c.bold_style()),
+        Span::styled("▋", c.accent_style()),
     ]);
     frame.render_widget(Paragraph::new(input_line), chunks[1]);
 
     frame.render_widget(
-        Paragraph::new("  Enter:Add  Esc:Cancel").style(Style::default().fg(theme::DIM)),
+        Paragraph::new("  Enter:Add  Esc:Cancel").style(c.dim_style()),
         chunks[2],
     );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn field_line<'a>(label: &'a str, value: &'a str, style: Style) -> Paragraph<'a> {
+fn field_line(label: &str, value: &str, style: Style, dim_style: Style) -> Paragraph<'static> {
     Paragraph::new(Line::from(vec![
-        Span::styled(format!("  {:<8}", label), Style::default().fg(theme::DIM)),
+        Span::styled(format!("  {:<8}", label), dim_style),
         Span::styled(value.to_string(), style),
     ]))
 }
 
-fn radio(selected: bool, label: &str) -> Span<'static> {
+fn radio(selected: bool, label: &str, c: &crate::ui::theme::ThemeColors) -> Span<'static> {
     let marker = if selected { "● " } else { "○ " };
     let style = if selected {
-        Style::default()
-            .fg(theme::BRAND_CYAN)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(theme::DIM)
+        c.dim_style()
     };
     Span::styled(format!("{}{}", marker, label), style)
 }
@@ -1041,12 +1032,13 @@ mod tests {
     }
 
     fn render_about_to_string() -> String {
+        let app = make_test_app();
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
             .draw(|frame| {
                 let area = frame.area();
-                render_about(frame, area);
+                render_about(frame, area, &app);
             })
             .unwrap();
         let buffer = terminal.backend().buffer().clone();

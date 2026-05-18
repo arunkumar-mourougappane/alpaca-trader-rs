@@ -146,6 +146,7 @@ use crate::commands::Command;
 use crate::config::AlpacaConfig;
 use crate::prefs::AppPrefs;
 use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Snapshot, Watchlist};
+use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tab {
@@ -339,6 +340,8 @@ pub struct HitAreas {
 pub struct App {
     pub config: AlpacaConfig,
     pub prefs: AppPrefs,
+    /// The currently active colour theme. Changed at runtime via the `T` key.
+    pub current_theme: Theme,
     pub refresh_notify: Arc<Notify>,
     pub command_tx: mpsc::Sender<Command>,
     pub symbol_tx: watch::Sender<Vec<String>>,
@@ -387,9 +390,11 @@ impl App {
         command_tx: mpsc::Sender<Command>,
         symbol_tx: watch::Sender<Vec<String>>,
     ) -> Self {
+        let current_theme = Theme::from_str(&prefs.ui.theme);
         Self {
             config,
             prefs,
+            current_theme,
             refresh_notify,
             command_tx,
             symbol_tx,
@@ -491,6 +496,20 @@ impl App {
     /// Sets a fill-notification status message using the fill TTL from user preferences.
     pub fn push_fill_notification(&mut self, text: impl Into<String>) {
         self.status_msg = StatusMessage::with_ttl(text, self.prefs.fill_ttl());
+    }
+
+    /// Advances to the next theme in the cycle (Default → Dark → High-contrast → Default).
+    ///
+    /// Updates `prefs.ui.theme` and persists it to disk silently. If the config
+    /// file is unavailable the change is kept in memory only.
+    pub fn cycle_theme(&mut self) {
+        self.current_theme = self.current_theme.cycle();
+        self.prefs.ui.theme = self.current_theme.as_str().to_string();
+        if let Some(path) = AppPrefs::default_path() {
+            if let Err(e) = self.prefs.write_to(&path) {
+                tracing::warn!(error = %e, "could not persist theme to config");
+            }
+        }
     }
 }
 

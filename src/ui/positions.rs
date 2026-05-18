@@ -1,23 +1,23 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 
 use crate::app::App;
-use crate::ui::theme;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    let c = app.current_theme.colors();
+
     if app.positions.is_empty() {
         let para = Paragraph::new("  No open positions.")
-            .style(Style::default().fg(theme::DIM))
+            .style(c.dim_style())
             .block(
                 Block::default()
                     .title(" Positions ")
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(theme::BORDER_COLOR)),
+                    .border_style(c.border_fg_style()),
             );
         frame.render_widget(para, area);
         return;
@@ -29,13 +29,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .split(area);
 
     let header = Row::new(vec![
-        Cell::from("Symbol").style(theme::style_header()),
-        Cell::from("Qty").style(theme::style_header()),
-        Cell::from("Avg Cost").style(theme::style_header()),
-        Cell::from("Cur Price").style(theme::style_header()),
-        Cell::from("Mkt Value").style(theme::style_header()),
-        Cell::from("Unrealized P&L").style(theme::style_header()),
-        Cell::from("%").style(theme::style_header()),
+        Cell::from("Symbol").style(c.header_style()),
+        Cell::from("Qty").style(c.header_style()),
+        Cell::from("Avg Cost").style(c.header_style()),
+        Cell::from("Cur Price").style(c.header_style()),
+        Cell::from("Mkt Value").style(c.header_style()),
+        Cell::from("Unrealized P&L").style(c.header_style()),
+        Cell::from("%").style(c.header_style()),
     ]);
 
     let rows: Vec<Row> = app
@@ -51,10 +51,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
             let pnl = p.unrealized_pl.trim().to_string();
             let pnl_pct = fmt_pct(&p.unrealized_plpc);
-            let pnl_style = theme::pnl_style(&pnl);
+            let pnl_style = c.pnl_style(&pnl);
 
             Row::new(vec![
-                Cell::from(p.symbol.clone()).style(theme::style_bold()),
+                Cell::from(p.symbol.clone()).style(c.bold_style()),
                 Cell::from(p.qty.clone()),
                 Cell::from(format!("${}", fmt_dollar(&p.avg_entry_price))),
                 Cell::from(cur_price),
@@ -68,7 +68,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = Block::default()
         .title(format!(" Positions ({}) ", app.positions.len()))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::BORDER_COLOR));
+        .border_style(c.border_fg_style());
 
     let table = Table::new(
         rows,
@@ -84,7 +84,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     )
     .header(header)
     .block(block)
-    .row_highlight_style(theme::style_selected())
+    .row_highlight_style(c.selected_style())
     .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, chunks[0], &mut app.positions_state);
@@ -101,15 +101,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .filter_map(|p| p.unrealized_pl.parse::<f64>().ok())
         .sum();
     let pnl_style = if total_pnl >= 0.0 {
-        theme::style_positive()
+        c.positive_style()
     } else {
-        theme::style_negative()
+        c.negative_style()
     };
 
     let footer = Line::from(vec![
-        Span::styled("  Total Long: ", Style::default().fg(theme::DIM)),
-        Span::styled(format!("${:.2}", total_value), theme::style_bold()),
-        Span::styled("    Total Unrealized: ", Style::default().fg(theme::DIM)),
+        Span::styled("  Total Long: ", c.dim_style()),
+        Span::styled(format!("${:.2}", total_value), c.bold_style()),
+        Span::styled("    Total Unrealized: ", c.dim_style()),
         Span::styled(format!("${:.2}", total_pnl), pnl_style),
     ]);
 

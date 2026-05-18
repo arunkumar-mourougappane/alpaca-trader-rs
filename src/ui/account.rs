@@ -9,7 +9,8 @@ use ratatui::{
 
 use crate::app::App;
 use crate::types::Position;
-use crate::ui::{charts, theme};
+use crate::ui::charts;
+use crate::ui::theme::ThemeColors;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
@@ -22,16 +23,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
+    let c = app.current_theme.colors();
     let block = Block::default()
         .title(" Account ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::BORDER_COLOR));
+        .border_style(c.border_fg_style());
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if let Some(acc) = &app.account {
-        let equity = format!("${}", format_dollars(&acc.equity));
         let buying_power = format!("${}", format_dollars(&acc.buying_power));
         let cash = format!("${}", format_dollars(&acc.cash));
         let long_val = format!("${}", format_dollars(&acc.long_market_value));
@@ -41,12 +42,12 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
             Some((pl, pct)) => format_day_pl(pl, pct),
             None => "—".into(),
         };
-        let day_pl_style = theme::pnl_style(&day_pl_str);
+        let day_pl_style = c.pnl_style(&day_pl_str);
 
         // Open P&L
         let open_pl = compute_open_pl(&app.positions);
         let open_pl_str = format_pl_amount(open_pl);
-        let open_pl_style = theme::pnl_style(&open_pl_str);
+        let open_pl_style = c.pnl_style(&open_pl_str);
 
         // Account number (show dash if empty)
         let account_num = if acc.account_number.is_empty() {
@@ -57,31 +58,31 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
 
         let lines = vec![
             Line::from(vec![
-                label("  Portfolio Value  "),
-                value(&equity),
+                label_t("  Portfolio Value  ", &c),
+                value(acc.equity.as_str()),
                 spacer(),
-                label("  Day P&L    "),
+                label_t("  Day P&L    ", &c),
                 Span::styled(day_pl_str, day_pl_style),
             ]),
             Line::from(vec![
-                label("  Buying Power    "),
+                label_t("  Buying Power    ", &c),
                 value(&buying_power),
                 spacer(),
-                label("  Open P&L   "),
+                label_t("  Open P&L   ", &c),
                 Span::styled(open_pl_str, open_pl_style),
             ]),
             Line::from(vec![
-                label("  Cash            "),
+                label_t("  Cash            ", &c),
                 value(&cash),
                 spacer(),
-                label("  Account #  "),
+                label_t("  Account #  ", &c),
                 value(&account_num),
             ]),
             Line::from(vec![
-                label("  Long Mkt Value  "),
+                label_t("  Long Mkt Value  ", &c),
                 value(&long_val),
                 spacer(),
-                label("  Status     "),
+                label_t("  Status     ", &c),
                 value(&acc.status),
             ]),
         ];
@@ -89,20 +90,21 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
         let para = Paragraph::new(lines);
         frame.render_widget(para, inner);
     } else {
-        let para = Paragraph::new("  Loading account data…").style(Style::default().fg(theme::DIM));
+        let para = Paragraph::new("  Loading account data…").style(c.dim_style());
         frame.render_widget(para, inner);
     }
 }
 
 fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
+    let c = app.current_theme.colors();
     let block = Block::default()
         .title(" Today's Equity Curve ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::BORDER_COLOR));
+        .border_style(c.border_fg_style());
 
     if app.equity_history.is_empty() {
         let para = Paragraph::new("  Collecting data…")
-            .style(Style::default().fg(theme::DIM))
+            .style(c.dim_style())
             .block(block);
         frame.render_widget(para, area);
         return;
@@ -111,7 +113,7 @@ fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
     let data_points = charts::price_points(&app.equity_history);
     let n = data_points.len() as f64;
     let [y_min, y_max] = charts::y_bounds(&data_points);
-    let line_color = charts::trend_color(&data_points);
+    let line_color = charts::trend_color(&data_points, &c);
 
     let dataset = Dataset::default()
         .marker(symbols::Marker::Braille)
@@ -167,12 +169,15 @@ fn format_day_pl(pl: f64, pct: f64) -> String {
     format!("{}${:.2} ({}{:.2}%)", sign, pl.abs(), sign, pct.abs())
 }
 
-fn label(s: &str) -> Span<'static> {
-    Span::styled(s.to_string(), Style::default().fg(theme::DIM))
+fn label_t(s: &str, c: &ThemeColors) -> Span<'static> {
+    Span::styled(s.to_string(), c.dim_style())
 }
 
 fn value(s: &str) -> Span<'static> {
-    Span::styled(s.to_string(), theme::style_bold())
+    Span::styled(
+        s.to_string(),
+        ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD),
+    )
 }
 
 fn spacer() -> Span<'static> {
@@ -254,7 +259,8 @@ mod tests {
 
     #[test]
     fn label_span_contains_text() {
-        let span = label("  Portfolio Value  ");
+        let c = crate::ui::theme::Theme::Default.colors();
+        let span = label_t("  Portfolio Value  ", &c);
         assert_eq!(span.content, "  Portfolio Value  ");
     }
 
