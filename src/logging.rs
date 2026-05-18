@@ -397,7 +397,10 @@ mod tests {
         assert_eq!(dir.file_name().unwrap(), "logs");
     }
 
+    // On Windows, log_dir_from(None) returns the %LOCALAPPDATA% path rather than
+    // the CWD/temp fallback because the Windows branch ignores the `home` argument.
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn no_home_falls_back_to_non_panicking_dir() {
         let dir = log_dir_from(None);
         assert!(
@@ -408,11 +411,30 @@ mod tests {
     }
 
     #[test]
-    fn no_home_fallback_is_absolute() {
+    #[cfg(target_os = "windows")]
+    fn no_home_returns_localappdata_dir_on_windows() {
+        // On Windows the home arg is unused; log dir comes from %LOCALAPPDATA%.
+        let dir = log_dir_from(None);
+        let dir_str = dir.to_str().unwrap_or("");
+        assert!(
+            dir_str.contains("alpaca-trader"),
+            "expected alpaca-trader in Windows log path, got: {dir_str}"
+        );
+        assert_eq!(
+            dir.file_name().unwrap(),
+            "logs",
+            "last component should be 'logs', got: {dir_str}"
+        );
+    }
+
+    #[test]
+    fn no_home_result_is_absolute() {
+        // Every platform must return an absolute path regardless of whether
+        // the home arg is None.
         let dir = log_dir_from(None);
         assert!(
             dir.is_absolute(),
-            "fallback log dir should be absolute, got: {}",
+            "log dir should be absolute, got: {}",
             dir.display()
         );
     }
