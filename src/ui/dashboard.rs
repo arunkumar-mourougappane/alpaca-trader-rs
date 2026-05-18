@@ -9,30 +9,30 @@ use ratatui::{
 
 use crate::app::{App, Tab};
 use crate::types::MarketState;
-use crate::ui::theme;
 
 pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
+    let c = app.current_theme.colors();
     let env_label = app.config.env_label();
     let env_color = if env_label == "PAPER" {
-        theme::BRAND_CYAN
+        c.accent
     } else {
-        theme::BRAND_RED
+        c.negative
     };
 
     let (market_status, market_color) = app
         .clock
         .as_ref()
-        .map(|c| {
-            let state = c.market_state();
+        .map(|cl| {
+            let state = cl.market_state();
             let color = match &state {
-                MarketState::Open => theme::GREEN,
-                MarketState::PreMarket => theme::YELLOW,
+                MarketState::Open => c.positive,
+                MarketState::PreMarket => c.neutral,
                 MarketState::AfterHours => Color::Magenta,
-                MarketState::Closed => theme::DIM,
+                MarketState::Closed => c.dim,
             };
             (state.as_str(), color)
         })
-        .unwrap_or(("—", theme::DIM));
+        .unwrap_or(("—", c.dim));
 
     let now = Local::now().format("%H:%M:%S ET  %Y-%m-%d").to_string();
 
@@ -46,14 +46,14 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
-        Span::styled("Market: ", Style::default().fg(theme::DIM)),
+        Span::styled("Market: ", c.dim_style()),
         Span::styled(
             market_status,
             Style::default()
                 .fg(market_color)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(format!("   {}", now), Style::default().fg(theme::DIM)),
+        Span::styled(format!("   {}", now), c.dim_style()),
     ];
 
     if app.config.dry_run {
@@ -61,9 +61,7 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             1,
             Span::styled(
                 " [DRY-RUN]",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(c.neutral).add_modifier(Modifier::BOLD),
             ),
         );
     }
@@ -77,9 +75,7 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         };
         spans.push(Span::styled(
             which,
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(c.neutral).add_modifier(Modifier::BOLD),
         ));
     }
 
@@ -93,12 +89,13 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 pub fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
+    let c = app.current_theme.colors();
     let titles = vec!["1:Account", "2:Watchlist", "3:Positions", "4:Orders"];
     let tabs = Tabs::new(titles)
         .select(app.active_tab.index())
         .highlight_style(
             Style::default()
-                .fg(theme::BRAND_CYAN)
+                .fg(c.accent)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )
         .divider("|");
@@ -106,13 +103,16 @@ pub fn render_tabs(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
+    let c = app.current_theme.colors();
     let panel_hints = match app.active_tab {
-        Tab::Account => " r:Refresh  A:About  ?:Help  q:Quit",
+        Tab::Account => " r:Refresh  T:Theme  A:About  ?:Help  q:Quit",
         Tab::Watchlist => {
-            " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  /:Search  A:About  ?:Help  q:Quit"
+            " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  /:Search  T:Theme  A:About  ?:Help  q:Quit"
         }
-        Tab::Positions => " j/k:Navigate  Enter:Detail  o:Close  s:Short  A:About  ?:Help  q:Quit",
-        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  A:About  ?:Help  q:Quit",
+        Tab::Positions => {
+            " j/k:Navigate  Enter:Detail  o:Close  s:Short  T:Theme  A:About  ?:Help  q:Quit"
+        }
+        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
     };
 
     let status = if app.status_msg.is_empty() {
@@ -121,7 +121,7 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
         format!("  {}  │{}", app.status_msg.text, panel_hints)
     };
 
-    let para = Paragraph::new(status).style(Style::default().fg(theme::DIM));
+    let para = Paragraph::new(status).style(c.dim_style());
     frame.render_widget(para, area);
 }
 

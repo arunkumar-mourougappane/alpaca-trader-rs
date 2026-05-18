@@ -7,7 +7,6 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::ui::theme;
 
 /// Format a trading volume number into a compact human-readable string.
 ///
@@ -25,21 +24,23 @@ pub fn format_volume(v: f64) -> String {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+    let c = app.current_theme.colors();
+
     if app.watchlist_unavailable {
         let text = vec![
             Line::from(""),
             Line::from(Span::styled(
                 "  Watchlists are not available in paper trading mode.",
-                Style::default().fg(theme::DIM),
+                c.dim_style(),
             )),
             Line::from(Span::styled(
                 "  The Alpaca paper API does not support the /v2/watchlists endpoint.",
-                Style::default().fg(theme::DIM),
+                c.dim_style(),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "  To use watchlists, run without the --paper flag.",
-                Style::default().fg(theme::DIM),
+                c.dim_style(),
             )),
         ];
         let para =
@@ -52,7 +53,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Some(w) => w,
         None => {
             let para = Paragraph::new("  Loading watchlist…")
-                .style(Style::default().fg(theme::DIM))
+                .style(c.dim_style())
                 .block(Block::default().title(" Watchlist ").borders(Borders::ALL));
             frame.render_widget(para, area);
             return;
@@ -83,11 +84,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
 
     let header = Row::new(vec![
-        Cell::from("Symbol").style(theme::style_header()),
-        Cell::from("Name").style(theme::style_header()),
-        Cell::from("Price").style(theme::style_header()),
-        Cell::from("Change%").style(theme::style_header()),
-        Cell::from("Volume").style(theme::style_header()),
+        Cell::from("Symbol").style(c.header_style()),
+        Cell::from("Name").style(c.header_style()),
+        Cell::from("Price").style(c.header_style()),
+        Cell::from("Change%").style(c.header_style()),
+        Cell::from("Volume").style(c.header_style()),
     ]);
 
     let rows: Vec<Row> = filtered
@@ -121,9 +122,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                         let pct = (cur - prev) / prev * 100.0;
                         let text = format!("{:+.2}%", pct);
                         let style = if pct >= 0.0 {
-                            theme::style_positive()
+                            c.positive_style()
                         } else {
-                            theme::style_negative()
+                            c.negative_style()
                         };
                         (text, style)
                     }
@@ -139,9 +140,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 match (current_price, prev_close) {
                     (Some(cur), Some(prev)) if prev != 0.0 => {
                         if cur >= prev {
-                            theme::style_positive()
+                            c.positive_style()
                         } else {
-                            theme::style_negative()
+                            c.negative_style()
                         }
                     }
                     _ => Style::default(),
@@ -155,7 +156,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 .unwrap_or_else(|| "—".into());
 
             Row::new(vec![
-                Cell::from(asset.symbol.clone()).style(theme::style_bold()),
+                Cell::from(asset.symbol.clone()).style(c.bold_style()),
                 Cell::from(asset.name.clone()),
                 Cell::from(price_text).style(price_style),
                 Cell::from(change_text).style(change_style),
@@ -168,7 +169,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::BORDER_COLOR));
+        .border_style(c.border_fg_style());
 
     let table = Table::new(
         rows,
@@ -182,21 +183,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     )
     .header(header)
     .block(block)
-    .row_highlight_style(theme::style_selected())
+    .row_highlight_style(c.selected_style())
     .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, table_area, &mut app.watchlist_state);
 
     if let Some(sa) = search_area {
         let search_line = Line::from(vec![
-            Span::styled(" Search: ", Style::default().fg(theme::DIM)),
-            Span::styled(app.search_query.clone(), theme::style_bold()),
-            Span::styled("▋", Style::default().fg(theme::BRAND_CYAN)),
+            Span::styled(" Search: ", c.dim_style()),
+            Span::styled(app.search_query.clone(), c.bold_style()),
+            Span::styled("▋", c.accent_style()),
         ]);
         let search_box = Paragraph::new(search_line).block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(theme::BRAND_CYAN)),
+                .border_style(c.accent_style()),
         );
         frame.render_widget(search_box, sa);
     }
