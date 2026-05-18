@@ -132,3 +132,156 @@ fn fmt_pct(s: &str) -> String {
         s.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::app::test_helpers::make_test_app;
+    use crate::types::Position;
+
+    fn make_position(symbol: &str, pnl: &str) -> Position {
+        Position {
+            symbol: symbol.into(),
+            qty: "10".into(),
+            avg_entry_price: "100.00".into(),
+            current_price: "110.00".into(),
+            market_value: "1100.00".into(),
+            unrealized_pl: pnl.into(),
+            unrealized_plpc: "0.10".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }
+    }
+
+    fn render_positions_to_string(app: &mut crate::app::App) -> String {
+        let backend = TestBackend::new(120, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                super::render(frame, frame.area(), app);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut out = String::new();
+        for row in 0..buf.area.height {
+            for col in 0..buf.area.width {
+                out.push_str(buf[(col, row)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn positions_empty_shows_no_positions_message() {
+        let mut app = make_test_app();
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("No open positions"),
+            "expected no-positions message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_shows_header_columns() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(output.contains("Symbol"), "expected Symbol header");
+        assert!(output.contains("Qty"), "expected Qty header");
+        assert!(output.contains("Avg Cost"), "expected Avg Cost header");
+    }
+
+    #[test]
+    fn positions_shows_symbol_and_qty() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("TSLA", "250.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(output.contains("TSLA"), "expected TSLA symbol in row");
+        assert!(output.contains("10"), "expected qty in row");
+    }
+
+    #[test]
+    fn positions_shows_footer_totals() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Total Long"),
+            "expected Total Long footer label"
+        );
+        assert!(
+            output.contains("Total Unrealized"),
+            "expected Total Unrealized footer label"
+        );
+    }
+
+    #[test]
+    fn positions_negative_pnl_renders() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("NVDA", "-50.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(output.contains("NVDA"), "expected NVDA symbol");
+    }
+
+    #[test]
+    fn positions_multiple_rows() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        app.positions.push(make_position("MSFT", "-30.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(output.contains("AAPL"), "expected AAPL");
+        assert!(output.contains("MSFT"), "expected MSFT");
+    }
+
+    #[test]
+    fn positions_count_in_title() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions.push(make_position("GOOG", "75.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Positions (2)"),
+            "expected 'Positions (2)' in title, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_render_uses_theme_colors() {
+        use crate::ui::theme::Theme;
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        app.current_theme = Theme::HighContrast;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("AAPL"),
+            "should render with high-contrast theme"
+        );
+    }
+
+    #[test]
+    fn positions_fmt_dollar_invalid_passthrough() {
+        assert_eq!(super::fmt_dollar("not-a-number"), "not-a-number");
+    }
+
+    #[test]
+    fn positions_fmt_dollar_valid() {
+        assert_eq!(super::fmt_dollar("123.456"), "123.46");
+    }
+
+    #[test]
+    fn positions_fmt_pct_valid() {
+        assert_eq!(super::fmt_pct("0.05"), "+5.00%");
+    }
+
+    #[test]
+    fn positions_fmt_pct_negative() {
+        assert_eq!(super::fmt_pct("-0.025"), "-2.50%");
+    }
+
+    #[test]
+    fn positions_fmt_pct_invalid() {
+        assert_eq!(super::fmt_pct("n/a"), "n/a");
+    }
+}
