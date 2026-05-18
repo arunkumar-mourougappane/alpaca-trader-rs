@@ -6,11 +6,21 @@ coverage:
         threshold: 5%
     patch:
       default:
-        # Platform-specific code (Windows, macOS) is compiled conditionally and
-        # cannot be covered on the Linux CI runner. Allow patch coverage to be
-        # up to 20 percentage points below the overall project coverage.
         target: auto
-        threshold: 20%
+        threshold: 5%
+
+# Coverage is collected from both Linux and Windows runners so that
+# platform-specific code paths (#[cfg(unix)] and #[cfg(target_os = "windows")])
+# are each instrumented on their native OS.
+flags:
+  Linux:
+    paths:
+      - src/
+    carryforward: true
+  Windows:
+    paths:
+      - src/
+    carryforward: true
 
 ignore:
   - "src/main.rs"
