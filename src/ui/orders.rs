@@ -183,3 +183,143 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
 
     frame.render_stateful_widget(table, area, &mut app.orders_state);
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::app::test_helpers::{make_order, make_test_app};
+
+    fn render_orders_to_string(app: &mut crate::app::App) -> String {
+        let backend = TestBackend::new(100, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                super::render(frame, frame.area(), app);
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut out = String::new();
+        for row in 0..buf.area.height {
+            for col in 0..buf.area.width {
+                out.push_str(buf[(col, row)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn orders_empty_shows_no_orders_message() {
+        let mut app = make_test_app();
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("No orders"),
+            "expected no-orders message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_shows_subtabs() {
+        let mut app = make_test_app();
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("Open"), "expected Open subtab");
+        assert!(output.contains("Filled"), "expected Filled subtab");
+        assert!(output.contains("Cancelled"), "expected Cancelled subtab");
+    }
+
+    #[test]
+    fn orders_shows_open_order_row() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("abcdefgh-1234", "new"));
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("AAPL"), "expected AAPL symbol in row");
+        assert!(output.contains("BUY"), "expected BUY side in row");
+    }
+
+    #[test]
+    fn orders_filled_subtab_shows_filled_orders() {
+        use crate::app::OrdersSubTab;
+        let mut app = make_test_app();
+        app.orders.push(make_order("filled-order", "filled"));
+        app.orders_subtab = OrdersSubTab::Filled;
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("AAPL"), "expected AAPL in filled orders");
+    }
+
+    #[test]
+    fn orders_cancelled_subtab_shows_cancelled_orders() {
+        use crate::app::OrdersSubTab;
+        let mut app = make_test_app();
+        app.orders.push(make_order("cancelled-order", "canceled"));
+        app.orders_subtab = OrdersSubTab::Cancelled;
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("AAPL"), "expected AAPL in cancelled orders");
+    }
+
+    #[test]
+    fn orders_sell_side_shows_sell() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "sell-id".into(),
+            symbol: "TSLA".into(),
+            side: "sell".into(),
+            qty: Some("5".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            time_in_force: "day".into(),
+        });
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("TSLA"), "expected TSLA symbol");
+        assert!(output.contains("SELL"), "expected SELL side");
+    }
+
+    #[test]
+    fn orders_with_limit_price_shows_price() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "limit-id".into(),
+            symbol: "NVDA".into(),
+            side: "buy".into(),
+            qty: Some("2".into()),
+            notional: None,
+            order_type: "limit".into(),
+            limit_price: Some("500.00".into()),
+            status: "new".into(),
+            submitted_at: Some("2024-01-15T10:30:00Z".into()),
+            filled_at: None,
+            filled_qty: "0".into(),
+            time_in_force: "day".into(),
+        });
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("NVDA"), "expected NVDA symbol");
+        assert!(output.contains("500.00"), "expected limit price");
+    }
+
+    #[test]
+    fn orders_render_uses_theme_colors() {
+        use crate::ui::theme::Theme;
+        let mut app = make_test_app();
+        app.orders.push(make_order("theme-test", "new"));
+        app.current_theme = Theme::Dark;
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("AAPL"), "should render with dark theme");
+    }
+
+    #[test]
+    fn orders_count_shown_in_subtab_labels() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders.push(make_order("o2", "filled"));
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("Open (1)"), "expected Open (1)");
+        assert!(output.contains("Filled (1)"), "expected Filled (1)");
+    }
+}
