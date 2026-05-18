@@ -9,10 +9,12 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 // ── Syslog layer ──────────────────────────────────────────────────────────────
 
+#[cfg(unix)]
 struct MessageVisitor {
     message: String,
 }
 
+#[cfg(unix)]
 impl tracing::field::Visit for MessageVisitor {
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
         if field.name() == "message" {
@@ -177,14 +179,18 @@ pub(crate) fn log_dir_from(home: Option<std::path::PathBuf>) -> std::path::PathB
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    #[cfg(unix)]
     use std::sync::{Arc, Mutex};
+    #[cfg(unix)]
     use tracing_subscriber::layer::SubscriberExt;
 
     // ── Helper: run a closure under a per-thread subscriber that captures
     //    whatever MessageVisitor extracts from each tracing event. ─────────────
 
+    #[cfg(unix)]
     struct MessageCapture(Arc<Mutex<String>>);
 
+    #[cfg(unix)]
     impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for MessageCapture {
         fn on_event(
             &self,
@@ -201,6 +207,7 @@ mod tests {
 
     /// Run `f` under a thread-local subscriber that records the last captured
     /// message into the returned string. Does not touch the global subscriber.
+    #[cfg(unix)]
     fn capture<F: FnOnce()>(f: F) -> String {
         let captured = Arc::new(Mutex::new(String::new()));
         let sub = tracing_subscriber::registry().with(MessageCapture(Arc::clone(&captured)));
@@ -212,6 +219,7 @@ mod tests {
     // ── MessageVisitor ────────────────────────────────────────────────────────
 
     #[test]
+    #[cfg(unix)]
     fn message_visitor_record_debug_captures_message() {
         // tracing!("text") records the message via record_debug
         let msg = capture(|| tracing::info!("hello from test"));
@@ -219,6 +227,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn message_visitor_record_debug_non_message_field_is_ignored() {
         // count = 42 exercises the record_debug non-"message" branch;
         // the text part still gets captured.
@@ -227,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn message_visitor_record_str_captures_explicit_message_field() {
         // message = "string" uses record_str for the message field
         let msg = capture(|| tracing::info!(message = "explicit string"));
@@ -234,6 +244,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn message_visitor_record_str_non_message_field_is_ignored() {
         // name = "alice" is a &str that is NOT the "message" field;
         // exercises the record_str non-"message" branch.
