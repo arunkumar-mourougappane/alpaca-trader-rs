@@ -1,8 +1,11 @@
 //! Application logging setup using `tracing` and `tracing-appender`.
+#[cfg(unix)]
 use std::sync::Mutex;
 
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+#[cfg(unix)]
+use tracing_subscriber::Layer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 // ── Syslog layer ──────────────────────────────────────────────────────────────
 
@@ -23,10 +26,12 @@ impl tracing::field::Visit for MessageVisitor {
     }
 }
 
+#[cfg(unix)]
 struct SyslogLayer {
     logger: Mutex<syslog::Logger<syslog::LoggerBackend, syslog::Formatter3164>>,
 }
 
+#[cfg(unix)]
 impl<S: tracing::Subscriber> Layer<S> for SyslogLayer {
     fn on_event(
         &self,
@@ -89,25 +94,31 @@ pub(crate) fn init_with_dir(log_dir: &std::path::Path) -> anyhow::Result<WorkerG
         EnvFilter::new("info,alpaca_trader_rs=debug,tokio=warn,crossterm=warn,ratatui=warn")
     });
 
-    // Optional syslog layer — silently skipped if the socket is unavailable
-    let syslog_layer = syslog::unix(syslog::Formatter3164 {
-        facility: syslog::Facility::LOG_USER,
-        hostname: None,
-        process: "alpaca-trader".into(),
-        pid: std::process::id(),
-    })
-    .ok()
-    .map(|logger| SyslogLayer {
-        logger: Mutex::new(logger),
-    });
-
     let registry = tracing_subscriber::registry().with(filter).with(file_layer);
 
-    if let Some(syslog) = syslog_layer {
-        registry.with(syslog).try_init().ok();
-    } else {
-        registry.try_init().ok();
+    #[cfg(unix)]
+    {
+        // Optional syslog layer — silently skipped if the socket is unavailable
+        let syslog_layer = syslog::unix(syslog::Formatter3164 {
+            facility: syslog::Facility::LOG_USER,
+            hostname: None,
+            process: "alpaca-trader".into(),
+            pid: std::process::id(),
+        })
+        .ok()
+        .map(|logger| SyslogLayer {
+            logger: Mutex::new(logger),
+        });
+
+        if let Some(syslog) = syslog_layer {
+            registry.with(syslog).try_init().ok();
+        } else {
+            registry.try_init().ok();
+        }
     }
+
+    #[cfg(not(unix))]
+    registry.try_init().ok();
 
     Ok(guard)
 }
@@ -129,7 +140,13 @@ pub(crate) fn log_dir_from(home: Option<std::path::PathBuf>) -> std::path::PathB
     #[cfg(target_os = "macos")]
     let platform_dir = home.map(|h| h.join("Library/Logs/alpaca-trader"));
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    let platform_dir = {
+        let _ = home; // unused on Windows; log dir comes from %LOCALAPPDATA%
+        dirs::data_local_dir().map(|d| d.join("alpaca-trader").join("logs"))
+    };
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     let platform_dir = home.map(|h| h.join(".local/share/alpaca-trader/logs"));
 
     if let Some(dir) = platform_dir {
@@ -226,6 +243,7 @@ mod tests {
 
     // ── SyslogLayer ───────────────────────────────────────────────────────────
 
+    #[cfg(unix)]
     fn make_syslog_layer() -> Option<SyslogLayer> {
         syslog::unix(syslog::Formatter3164 {
             facility: syslog::Facility::LOG_USER,
@@ -240,6 +258,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn syslog_layer_empty_message_returns_early_without_panic() {
         let Some(layer) = make_syslog_layer() else {
             return; // syslog socket unavailable — skip
@@ -250,6 +269,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn syslog_layer_dispatches_error_level() {
         let Some(layer) = make_syslog_layer() else {
             return;
@@ -259,6 +279,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn syslog_layer_dispatches_warn_level() {
         let Some(layer) = make_syslog_layer() else {
             return;
@@ -268,6 +289,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn syslog_layer_dispatches_info_level() {
         let Some(layer) = make_syslog_layer() else {
             return;
@@ -277,6 +299,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn syslog_layer_dispatches_debug_level() {
         let Some(layer) = make_syslog_layer() else {
             return;
@@ -339,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     fn home_present_returns_xdg_log_path() {
         let dir = log_dir_from(Some(PathBuf::from("/home/tester")));
         assert_eq!(
@@ -349,9 +372,28 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     fn home_present_last_component_is_logs() {
         let dir = log_dir_from(Some(PathBuf::from("/home/alice")));
+        assert_eq!(dir.file_name().unwrap(), "logs");
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn home_present_returns_windows_log_path() {
+        // On Windows the home parameter is ignored; log dir comes from %LOCALAPPDATA%
+        let dir = log_dir_from(Some(PathBuf::from("C:\\Users\\tester")));
+        let dir_str = dir.to_str().unwrap_or("");
+        assert!(
+            dir_str.contains("alpaca-trader"),
+            "expected alpaca-trader in Windows log path, got: {dir_str}"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn home_present_last_component_is_logs_on_windows() {
+        let dir = log_dir_from(Some(PathBuf::from("C:\\Users\\alice")));
         assert_eq!(dir.file_name().unwrap(), "logs");
     }
 
