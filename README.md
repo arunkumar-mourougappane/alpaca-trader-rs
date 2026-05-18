@@ -310,6 +310,12 @@ variables for the active environment are used — the opposing set is ignored.
 
 ---
 
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and our [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards.
+
+---
+
 ## Licensing
 
 Licensed under either of
