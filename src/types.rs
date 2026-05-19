@@ -109,6 +109,25 @@ mod tests {
         assert!(order.qty.is_none());
         assert_eq!(order.notional.as_deref(), Some("500"));
         assert!(order.limit_price.is_none());
+        assert!(order.filled_avg_price.is_none());
+    }
+
+    #[test]
+    fn order_filled_avg_price_deserializes() {
+        let json = r#"{
+            "id": "xyz",
+            "symbol": "TSLA",
+            "side": "buy",
+            "qty": "5",
+            "order_type": "market",
+            "status": "filled",
+            "filled_qty": "5",
+            "filled_avg_price": "312.45",
+            "time_in_force": "day"
+        }"#;
+        let order: Order = serde_json::from_str(json).unwrap();
+        assert_eq!(order.filled_avg_price.as_deref(), Some("312.45"));
+        assert_eq!(order.filled_qty, "5");
     }
 
     #[test]
@@ -401,6 +420,9 @@ pub struct Order {
     pub filled_at: Option<String>,
     /// Number of shares filled so far.
     pub filled_qty: String,
+    /// Average price at which the order was filled; `None` if not yet filled.
+    #[serde(default)]
+    pub filled_avg_price: Option<String>,
     /// Time-in-force: `"day"`, `"gtc"`, etc.
     pub time_in_force: String,
 }

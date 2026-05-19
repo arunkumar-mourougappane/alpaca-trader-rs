@@ -85,6 +85,7 @@ fn render_subtabs(frame: &mut Frame, area: Rect, app: &mut App) {
 fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let c = app.current_theme.colors();
     let orders = app.filtered_orders();
+    let is_filled_tab = app.orders_subtab == OrdersSubTab::Filled;
 
     if orders.is_empty() {
         let para = Paragraph::new("  No orders in this category.")
@@ -99,7 +100,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
-    let header = Row::new(vec![
+    let mut header_cells = vec![
         Cell::from("ID").style(c.header_style()),
         Cell::from("Symbol").style(c.header_style()),
         Cell::from("Side").style(c.header_style()),
@@ -108,7 +109,12 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         Cell::from("Limit").style(c.header_style()),
         Cell::from("Status").style(c.header_style()),
         Cell::from("Submitted").style(c.header_style()),
-    ]);
+    ];
+    if is_filled_tab {
+        header_cells.push(Cell::from("Filled Qty").style(c.header_style()));
+        header_cells.push(Cell::from("Fill Price").style(c.header_style()));
+    }
+    let header = Row::new(header_cells);
 
     let rows: Vec<Row> = orders
         .iter()
@@ -145,7 +151,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 .unwrap_or("—")
                 .to_string();
 
-            Row::new(vec![
+            let mut cells = vec![
                 Cell::from(short_id).style(c.dim_style()),
                 Cell::from(o.symbol.clone()).style(c.bold_style()),
                 Cell::from(o.side.to_uppercase()).style(side_style),
@@ -154,7 +160,24 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 Cell::from(limit_str),
                 Cell::from(o.status.clone()),
                 Cell::from(submitted).style(c.dim_style()),
-            ])
+            ];
+
+            if is_filled_tab {
+                let filled_qty_str = if o.filled_qty == "0" || o.filled_qty.is_empty() {
+                    "—".into()
+                } else {
+                    o.filled_qty.clone()
+                };
+                let fill_price_str = o
+                    .filled_avg_price
+                    .as_deref()
+                    .map(|p| format!("${:.2}", p.parse::<f64>().unwrap_or(0.0)))
+                    .unwrap_or_else(|| "—".into());
+                cells.push(Cell::from(filled_qty_str));
+                cells.push(Cell::from(fill_price_str).style(c.positive_style()));
+            }
+
+            Row::new(cells)
         })
         .collect();
 
@@ -163,23 +186,26 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         .borders(Borders::ALL)
         .border_style(c.border_fg_style());
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(10),
-            Constraint::Length(8),
-            Constraint::Length(6),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(10),
-            Constraint::Min(12),
-            Constraint::Length(10),
-        ],
-    )
-    .header(header)
-    .block(block)
-    .row_highlight_style(c.selected_style())
-    .highlight_symbol("▶ ");
+    let mut constraints = vec![
+        Constraint::Length(10),
+        Constraint::Length(8),
+        Constraint::Length(6),
+        Constraint::Length(8),
+        Constraint::Length(8),
+        Constraint::Length(10),
+        Constraint::Min(12),
+        Constraint::Length(10),
+    ];
+    if is_filled_tab {
+        constraints.push(Constraint::Length(10));
+        constraints.push(Constraint::Length(11));
+    }
+
+    let table = Table::new(rows, constraints)
+        .header(header)
+        .block(block)
+        .row_highlight_style(c.selected_style())
+        .highlight_symbol("▶ ");
 
     frame.render_stateful_widget(table, area, &mut app.orders_state);
 }
@@ -273,6 +299,7 @@ mod tests {
             submitted_at: None,
             filled_at: None,
             filled_qty: "0".into(),
+            filled_avg_price: None,
             time_in_force: "day".into(),
         });
         let output = render_orders_to_string(&mut app);
@@ -296,6 +323,7 @@ mod tests {
             submitted_at: Some("2024-01-15T10:30:00Z".into()),
             filled_at: None,
             filled_qty: "0".into(),
+            filled_avg_price: None,
             time_in_force: "day".into(),
         });
         let output = render_orders_to_string(&mut app);
@@ -321,5 +349,90 @@ mod tests {
         let output = render_orders_to_string(&mut app);
         assert!(output.contains("Open (1)"), "expected Open (1)");
         assert!(output.contains("Filled (1)"), "expected Filled (1)");
+    }
+
+    #[test]
+    fn filled_subtab_shows_filled_qty_and_fill_price_columns() {
+        use crate::app::OrdersSubTab;
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "filled-id".into(),
+            symbol: "MSFT".into(),
+            side: "buy".into(),
+            qty: Some("3".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "filled".into(),
+            submitted_at: None,
+            filled_at: Some("2024-06-01T14:00:00Z".into()),
+            filled_qty: "3".into(),
+            filled_avg_price: Some("425.50".into()),
+            time_in_force: "day".into(),
+        });
+        app.orders_subtab = OrdersSubTab::Filled;
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("Filled Qty"), "expected Filled Qty header");
+        assert!(output.contains("Fill Price"), "expected Fill Price header");
+        assert!(output.contains("425.50"), "expected fill price value");
+        assert!(output.contains("MSFT"), "expected MSFT symbol");
+    }
+
+    #[test]
+    fn filled_subtab_shows_dash_when_no_fill_price() {
+        use crate::app::OrdersSubTab;
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "filled-id2".into(),
+            symbol: "AMZN".into(),
+            side: "sell".into(),
+            qty: Some("1".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "filled".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        app.orders_subtab = OrdersSubTab::Filled;
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("Fill Price"), "expected Fill Price header");
+        assert!(
+            output.contains("—"),
+            "expected em-dash for missing fill price"
+        );
+    }
+
+    #[test]
+    fn open_subtab_does_not_show_filled_columns() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("open-id", "new"));
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            !output.contains("Fill Price"),
+            "Open tab should not show Fill Price column"
+        );
+        assert!(
+            !output.contains("Filled Qty"),
+            "Open tab should not show Filled Qty column"
+        );
+    }
+
+    #[test]
+    fn cancelled_subtab_does_not_show_filled_columns() {
+        use crate::app::OrdersSubTab;
+        let mut app = make_test_app();
+        app.orders.push(make_order("cancelled-id", "canceled"));
+        app.orders_subtab = OrdersSubTab::Cancelled;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            !output.contains("Fill Price"),
+            "Cancelled tab should not show Fill Price column"
+        );
     }
 }
