@@ -13,7 +13,12 @@ pub fn update(app: &mut App, event: Event) {
     match event {
         Event::Input(key) => handle_key(app, key),
         Event::Mouse(m) => handle_mouse(app, m),
-        Event::Resize(_, _) => {}
+        Event::Resize(_, _) => {
+            // Ratatui re-layouts on the next draw, but without an explicit
+            // trigger the UI waits up to 250 ms for the next tick. Request
+            // an immediate redraw so the layout adapts right away.
+            app.needs_redraw = true;
+        }
 
         Event::AccountUpdated(a) => {
             app.account = Some(a);
@@ -195,6 +200,23 @@ mod tests {
     }
 
     // ── Data events ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn resize_event_sets_needs_redraw() {
+        let mut app = make_test_app();
+        assert!(!app.needs_redraw);
+        update(&mut app, Event::Resize(80, 24));
+        assert!(app.needs_redraw, "needs_redraw must be true after resize");
+    }
+
+    #[test]
+    fn resize_event_does_not_quit_or_change_state() {
+        let mut app = make_test_app();
+        update(&mut app, Event::Resize(120, 40));
+        assert!(!app.should_quit);
+        assert_eq!(app.active_tab, Tab::Account);
+        assert!(app.needs_redraw);
+    }
 
     #[test]
     fn account_updated_sets_account_and_pushes_equity() {
