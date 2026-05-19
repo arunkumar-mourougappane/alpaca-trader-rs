@@ -112,6 +112,7 @@ pub(crate) mod test_helpers {
             submitted_at: None,
             filled_at: None,
             filled_qty: "0".into(),
+            filled_avg_price: None,
             time_in_force: "day".into(),
         }
     }
