@@ -85,6 +85,7 @@ alpaca-trader --paper
 ```bash
 alpaca-trader           # live trading (real money — default)
 alpaca-trader --paper   # paper trading (simulated funds)
+alpaca-trader --dry-run # simulate order submissions (no real orders sent)
 ```
 
 The header badge shows **[PAPER]** in cyan or **[LIVE]** in red at all times.
@@ -120,6 +121,7 @@ alpaca-trader --reset live    # remove live keychain entries
 | `?` | Help overlay |
 | `A` | About overlay |
 | `Esc` | Close modal |
+| `T` | Toggle colour theme |
 | `q` / `Ctrl-C` | Quit |
 
 Full interaction spec (including mouse): [docs/ui-mockups.md](docs/ui-mockups.md)
@@ -132,7 +134,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-alpaca-trader-rs = "0.4"
+alpaca-trader-rs = "0.5"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -276,24 +278,29 @@ variables for the active environment are used — the opposing set is ignored.
 | Feature | Status |
 |---|---|
 | Typed async REST client (`AlpacaClient`) | ✅ |
-| TUI — header, tabs, status bar, sparkline | ✅ |
+| TUI — header, tabs, status bar, braille line charts | ✅ |
 | Account panel with Day P&L, Open P&L, Account # | ✅ |
 | Watchlist panel — Volume, Change%, live search | ✅ |
 | Positions panel with totals footer | ✅ |
 | Orders panel — Open / Filled / Cancelled sub-tabs | ✅ |
 | Order Entry modal with Side, Type, TIF dropdowns (↑/↓) | ✅ |
-| Symbol Detail modal — OHLCV, intraday sparkline, watchlist toggle | ✅ |
+| Symbol Detail modal — OHLCV, intraday chart, watchlist toggle | ✅ |
 | Help and About overlays | ✅ |
 | Paper / Live switching (`--paper` / `--live`) | ✅ |
+| `--dry-run` mode — simulate orders without sending to Alpaca | ✅ |
+| Persistent user preferences (TOML config file) | ✅ |
+| Runtime colour theme switching (`T` key) | ✅ |
 | SELL SHORT from Positions panel (`s` key) | ✅ |
 | Header market-session state (PRE-MARKET / OPEN / AFTER-HOURS / CLOSED) | ✅ |
+| Instant UI redraw on terminal resize | ✅ |
 | WebSocket market data + account/trade streaming | ✅ |
 | Live order submission and cancellation | ✅ |
 | Watchlist add / remove (wired to REST) | ✅ |
 | OS-native keychain credential storage | ✅ |
 | Interactive first-run credential prompt | ✅ |
-| GitHub Actions CI, security audit, Codecov, release builds | ✅ |
-| 327 tests (unit + integration) | ✅ |
+| Windows, macOS, and Linux support | ✅ |
+| GitHub Actions CI, security audit, Codecov (Linux + Windows), release builds | ✅ |
+| 449 tests (unit + integration) | ✅ |
 
 ---
 

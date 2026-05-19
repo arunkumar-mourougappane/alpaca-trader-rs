@@ -7,6 +7,72 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.5.0] — 2026-05-18
+
+Adds a `--dry-run` mode, persistent user preferences, runtime colour-theme switching, Windows
+platform support, and braille line charts throughout the UI. Fixes paper-trading watchlist
+display, market-closed price data, and a silent resize event that left the UI clipped after
+terminal resize. Test count grows from **327 → 449**.
+
+### Added
+
+#### CLI
+- **`--dry-run` flag** — intercepts order submissions and shows them as `[DRY-RUN]` in the status
+  bar without transmitting to Alpaca. All read-only operations (account, positions, watchlist) still
+  hit the configured environment.
+
+#### User Preferences
+- **Persistent TOML config** (`src/prefs.rs`) — preferences are saved to the OS config directory
+  (`~/.config/alpaca-trader/prefs.toml` on Linux/macOS, `%APPDATA%\alpaca-trader\prefs.toml` on
+  Windows). Supported prefs: `app.default_env` (paper/live), `ui.theme`.
+
+#### UI
+- **Runtime colour-theme switching** (`T` key) — cycles between the available colour themes
+  without restarting; theme selection is persisted to `prefs.toml` automatically.
+- **Braille line charts** — equity and intraday price charts upgraded from `Sparkline` to ratatui
+  `Chart` with double-resolution braille canvas, giving a much sharper visual.
+
+#### Platform
+- **Windows support** — full CI matrix (`Test`, `Coverage`) now includes `windows-latest`;
+  platform-conditional code paths for log directory resolution, syslog (unix-only), and keychain.
+
+#### CI / Quality
+- **Windows code coverage** — `cargo-llvm-cov` runs on both `ubuntu-latest` and `windows-latest`;
+  both reports are merged in Codecov with `carryforward: true` flags (`Linux` / `Windows`).
+- **`codecov.yml`** — project and patch thresholds (5%), flag groups defined, `src/main.rs` ignored.
+
+### Fixed
+
+- **Terminal resize ignored** (`src/update.rs`) — `Event::Resize` now sets `app.needs_redraw =
+  true`; the main loop draws an extra frame immediately so the layout adapts without waiting for the
+  next tick (up to 250 ms).
+- **Watchlist paper-trading message** (`src/update.rs`) — a persistent "Watchlists unavailable in
+  paper mode" notice is now shown when the paper endpoint signals the watchlist API is unsupported.
+- **Watchlist price/Change% when market is closed** — REST snapshot data is now used to populate
+  Price and Change% columns even when the market is closed and live quotes are unavailable.
+- **`MessageVisitor` unused-struct warning on Windows** — `MessageVisitor` and all syslog-related
+  helpers are now gated to `#[cfg(unix)]`, eliminating the dead-code warning that failed
+  clippy `-D warnings` on Windows CI.
+
+### Tests
+
+**449 tests total** (up from 327 in v0.4.0):
+
+| Scope | Count |
+|---|---|
+| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 99 |
+| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 320 |
+| HTTP integration (`tests/client_tests.rs`) | 29 |
+| Doc-tests | 1 |
+
+Coverage additions include:
+- `resize_event_sets_needs_redraw` and `resize_event_does_not_quit_or_change_state`
+- Logging module expanded to ~90% coverage (MessageVisitor, SyslogLayer, log-dir resolution)
+- Orders and Positions UI renderer unit tests
+- Client module improved coverage
+
+---
+
 ## [0.4.0] — 2026-05-12
 
 Adds the About modal, SELL SHORT from positions, up/down arrow navigation in Order Entry dropdowns,
@@ -248,6 +314,7 @@ First release. Ships as both an integratable Rust library and a standalone TUI t
 
 ---
 
+[0.5.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.1.0...v0.2.0
