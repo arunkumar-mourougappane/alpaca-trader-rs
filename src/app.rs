@@ -372,6 +372,9 @@ pub struct App {
 
     pub status_msg: StatusMessage,
     pub should_quit: bool,
+    /// Set to `true` by the `Event::Resize` handler to request an immediate
+    /// redraw before the next tick. Cleared by the main loop after drawing.
+    pub needs_redraw: bool,
 
     /// `true` while the market-data WebSocket is connected and authenticated.
     pub market_stream_ok: bool,
@@ -418,6 +421,7 @@ impl App {
             searching: false,
             status_msg: StatusMessage::persistent("Loading…"),
             should_quit: false,
+            needs_redraw: false,
             market_stream_ok: false,
             account_stream_ok: false,
             hit_areas: HitAreas::default(),

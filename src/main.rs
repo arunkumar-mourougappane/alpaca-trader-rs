@@ -229,6 +229,14 @@ async fn main() -> anyhow::Result<()> {
             Some(event) => update(&mut app, event),
         }
 
+        // If the update requested an immediate redraw (e.g. terminal resize),
+        // draw again before blocking for the next event so the layout adapts
+        // right away instead of waiting for the next periodic tick.
+        if app.needs_redraw {
+            app.needs_redraw = false;
+            terminal.draw(|f| ui::render(f, &mut app))?;
+        }
+
         if app.should_quit {
             break;
         }
