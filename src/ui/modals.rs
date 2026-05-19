@@ -1074,8 +1074,9 @@ mod tests {
     #[test]
     fn render_about_shows_version() {
         let output = render_about_to_string();
+        let expected = format!("v{}", env!("CARGO_PKG_VERSION"));
         assert!(
-            output.contains("v0.4.0"),
+            output.contains(&expected),
             "About modal should display the version"
         );
     }
