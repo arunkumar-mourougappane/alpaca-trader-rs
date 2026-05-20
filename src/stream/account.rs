@@ -151,12 +151,14 @@ async fn run_once(
 }
 
 #[cfg(test)]
-pub(crate) fn parse_trade_update(text: &str) -> Option<Order> {
+pub(crate) fn parse_trade_update(text: &str) -> Option<(Order, String)> {
     let v: Value = serde_json::from_str(text).ok()?;
     if v["stream"] != "trade_updates" {
         return None;
     }
-    serde_json::from_value::<Order>(v["data"]["order"].clone()).ok()
+    let event_type = v["data"]["event"].as_str().unwrap_or("").to_string();
+    let order = serde_json::from_value::<Order>(v["data"]["order"].clone()).ok()?;
+    Some((order, event_type))
 }
 
 async fn process_message(tx: &Sender<Event>, text: &str) {
@@ -178,7 +180,12 @@ async fn process_message(tx: &Sender<Event>, text: &str) {
                 status   = %order.status,
                 "trade update received"
             );
-            let _ = tx.send(Event::TradeUpdate(order)).await;
+            let _ = tx
+                .send(Event::TradeUpdate {
+                    order,
+                    event_type: event_type.to_string(),
+                })
+                .await;
         }
         Err(e) => {
             error!(error = %e, event = %event_type, "failed to parse trade update order");
@@ -215,19 +222,21 @@ mod tests {
     #[test]
     fn parse_trade_update_fill() {
         let msg = trade_update_msg("fill", "filled");
-        let order = parse_trade_update(&msg).expect("should parse");
+        let (order, event_type) = parse_trade_update(&msg).expect("should parse");
         assert_eq!(order.id, "order-123");
         assert_eq!(order.symbol, "AAPL");
         assert_eq!(order.status, "filled");
         assert_eq!(order.side, "buy");
         assert_eq!(order.qty.as_deref(), Some("10"));
+        assert_eq!(event_type, "fill");
     }
 
     #[test]
     fn parse_trade_update_canceled() {
         let msg = trade_update_msg("canceled", "canceled");
-        let order = parse_trade_update(&msg).expect("should parse");
+        let (order, event_type) = parse_trade_update(&msg).expect("should parse");
         assert_eq!(order.status, "canceled");
+        assert_eq!(event_type, "canceled");
     }
 
     #[test]
@@ -329,7 +338,7 @@ mod integration {
         let order = tokio::time::timeout(Duration::from_secs(3), async {
             loop {
                 match rx.recv().await? {
-                    Event::TradeUpdate(o) => return Some(o),
+                    Event::TradeUpdate { order: o, .. } => return Some(o),
                     _ => continue,
                 }
             }
@@ -454,7 +463,7 @@ mod integration {
                     Some(Event::StreamDisconnected(StreamKind::Account)) => {
                         saw_disconnect = true;
                     }
-                    Some(Event::TradeUpdate(o)) if o.symbol == "AAPL" => {
+                    Some(Event::TradeUpdate { order: o, .. }) if o.symbol == "AAPL" => {
                         saw_trade = true;
                     }
                     Some(_) => {}
