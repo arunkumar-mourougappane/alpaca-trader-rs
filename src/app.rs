@@ -552,7 +552,7 @@ impl App {
 
     /// Appends an estimated equity data point computed from live streaming quotes.
     ///
-    /// Called on every [`Event::MarketQuote`] so the equity chart updates
+    /// Called on every `MarketQuote` event so the equity chart updates
     /// between REST polls without any extra API calls.
     ///
     /// The estimate is: `account.cash + Σ(qty × mid_price)` for each open
