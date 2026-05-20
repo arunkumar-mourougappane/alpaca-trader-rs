@@ -8,6 +8,11 @@ use ratatui::layout::Rect;
 /// Maximum number of status messages held in the queue at once.
 const STATUS_QUEUE_CAP: usize = 5;
 
+/// Minimum gap between equity-history samples pushed from streaming quotes.
+///
+/// Prevents flooding `equity_history` when many quotes arrive in rapid succession.
+const EQUITY_STREAM_INTERVAL: Duration = Duration::from_secs(1);
+
 ///
 /// Transient messages (e.g. "Order submitted", "Refreshing…") carry a TTL and are
 /// cleared automatically on the next `Tick` after they expire. Persistent messages (errors,
@@ -397,6 +402,19 @@ pub struct App {
     /// Set on the first `g`; cleared when a second `g` arrives within 500 ms
     /// (firing jump-to-top) or when any other key clears the pending state.
     pub pending_g_at: Option<Instant>,
+
+    /// Timestamp of the last equity-history point pushed from streaming quotes.
+    ///
+    /// Used to throttle how often `push_equity_from_quotes` appends a new
+    /// sample so the chart isn't flooded on every incoming quote.
+    pub last_equity_stream_push: Option<Instant>,
+
+    /// Tracks when each symbol's intraday bars were last fetched.
+    ///
+    /// Keyed by ticker symbol; updated whenever `Event::IntradayBarsReceived`
+    /// arrives. The `Tick` handler uses this to schedule periodic re-fetches
+    /// while a symbol-detail modal is open.
+    pub intraday_fetched_at: HashMap<String, Instant>,
 }
 
 impl App {
@@ -443,6 +461,8 @@ impl App {
             account_stream_ok: false,
             hit_areas: HitAreas::default(),
             pending_g_at: None,
+            last_equity_stream_push: None,
+            intraday_fetched_at: HashMap::new(),
         }
     }
 
@@ -527,6 +547,63 @@ impl App {
                     self.equity_history.remove(0);
                 }
             }
+        }
+    }
+
+    /// Appends an estimated equity data point computed from live streaming quotes.
+    ///
+    /// Called on every [`Event::MarketQuote`] so the equity chart updates
+    /// between REST polls without any extra API calls.
+    ///
+    /// The estimate is: `account.cash + Σ(qty × mid_price)` for each open
+    /// position, where `mid_price` is the ask or bid from the latest streaming
+    /// quote for that symbol, falling back to the position's `current_price`
+    /// when no live quote is available yet.
+    ///
+    /// Calls are throttled to at most once per [`EQUITY_STREAM_INTERVAL`] to
+    /// avoid flooding `equity_history` when quotes arrive in rapid succession.
+    /// Skips silently when there are no open positions (nothing to compute).
+    pub fn push_equity_from_quotes(&mut self) {
+        // Throttle: skip if we pushed a streaming sample too recently.
+        if let Some(last) = self.last_equity_stream_push {
+            if last.elapsed() < EQUITY_STREAM_INTERVAL {
+                return;
+            }
+        }
+
+        // No positions → no meaningful estimate to push.
+        if self.positions.is_empty() {
+            return;
+        }
+
+        let position_value: f64 = self
+            .positions
+            .iter()
+            .filter_map(|p| {
+                let qty = p.qty.parse::<f64>().ok()?;
+                // Prefer live quote (ask then bid), fall back to last REST price.
+                let price = self
+                    .quotes
+                    .get(&p.symbol)
+                    .and_then(|q| q.ap.or(q.bp))
+                    .or_else(|| p.current_price.parse::<f64>().ok())?;
+                Some(qty * price)
+            })
+            .sum();
+
+        let cash: f64 = self
+            .account
+            .as_ref()
+            .and_then(|a| a.cash.parse::<f64>().ok())
+            .unwrap_or(0.0);
+
+        let equity = cash + position_value;
+        if equity > 0.0 {
+            self.equity_history.push((equity * 100.0) as u64);
+            if self.equity_history.len() > 120 {
+                self.equity_history.remove(0);
+            }
+            self.last_equity_stream_push = Some(Instant::now());
         }
     }
 
@@ -773,7 +850,147 @@ mod tests {
         assert!(app.equity_history.is_empty());
     }
 
-    // ── selected_watchlist_symbol ─────────────────────────────────────────────
+    // ── push_equity_from_quotes ───────────────────────────────────────────────
+
+    fn make_position_with_price(
+        symbol: &str,
+        qty: &str,
+        current_price: &str,
+    ) -> crate::types::Position {
+        crate::types::Position {
+            symbol: symbol.into(),
+            qty: qty.into(),
+            avg_entry_price: current_price.into(),
+            current_price: current_price.into(),
+            market_value: "0".into(),
+            unrealized_pl: "0".into(),
+            unrealized_plpc: "0".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }
+    }
+
+    #[test]
+    fn push_equity_from_quotes_no_positions_is_noop() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "10000.00".into(),
+            ..Default::default()
+        });
+        app.push_equity_from_quotes();
+        assert!(app.equity_history.is_empty());
+    }
+
+    #[test]
+    fn push_equity_from_quotes_uses_live_quote_ask_price() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("AAPL", "10", "150.00")];
+        app.quotes.insert(
+            "AAPL".into(),
+            crate::types::Quote {
+                symbol: "AAPL".into(),
+                ap: Some(200.00),
+                bp: None,
+                ..Default::default()
+            },
+        );
+        app.push_equity_from_quotes();
+        // 10 shares × $200.00 = $2000.00 → 200000 cents
+        assert_eq!(app.equity_history, vec![200_000]);
+    }
+
+    #[test]
+    fn push_equity_from_quotes_falls_back_to_bid_when_no_ask() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("TSLA", "5", "300.00")];
+        app.quotes.insert(
+            "TSLA".into(),
+            crate::types::Quote {
+                symbol: "TSLA".into(),
+                ap: None,
+                bp: Some(250.00),
+                ..Default::default()
+            },
+        );
+        app.push_equity_from_quotes();
+        // 5 × $250.00 = $1250.00 → 125000 cents
+        assert_eq!(app.equity_history, vec![125_000]);
+    }
+
+    #[test]
+    fn push_equity_from_quotes_falls_back_to_current_price_when_no_quote() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("NVDA", "2", "400.00")];
+        // No quote for NVDA
+        app.push_equity_from_quotes();
+        // 2 × $400.00 = $800.00 → 80000 cents
+        assert_eq!(app.equity_history, vec![80_000]);
+    }
+
+    #[test]
+    fn push_equity_from_quotes_includes_cash() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "500.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("AAPL", "1", "100.00")];
+        app.push_equity_from_quotes();
+        // $500 cash + 1 × $100.00 = $600.00 → 60000 cents
+        assert_eq!(app.equity_history, vec![60_000]);
+    }
+
+    #[test]
+    fn push_equity_from_quotes_throttles_rapid_calls() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("AAPL", "1", "100.00")];
+
+        app.push_equity_from_quotes();
+        assert_eq!(app.equity_history.len(), 1);
+
+        // Immediately call again — should be suppressed by throttle
+        app.push_equity_from_quotes();
+        assert_eq!(
+            app.equity_history.len(),
+            1,
+            "second immediate call should be throttled"
+        );
+    }
+
+    #[test]
+    fn push_equity_from_quotes_caps_at_120_entries() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("AAPL", "1", "100.00")];
+
+        // Bypass throttle for this test by pre-filling equity_history
+        app.equity_history = vec![1u64; 120];
+        // Reset throttle stamp so one more push is allowed
+        app.last_equity_stream_push = None;
+        app.push_equity_from_quotes();
+        assert_eq!(app.equity_history.len(), 120, "should stay at 120 cap");
+    }
+
+    // ── focused_symbol ────────────────────────────────────────────────────────
 
     #[test]
     fn selected_watchlist_symbol_returns_at_index() {
