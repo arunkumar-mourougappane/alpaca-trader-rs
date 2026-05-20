@@ -342,6 +342,9 @@ pub struct HitAreas {
     pub modal_submit: Option<Rect>,
     /// Confirm modal: button row (left half = Yes, right half = No).
     pub modal_confirm_buttons: Option<Rect>,
+    /// Full area of the equity chart block on the Account tab.
+    /// Used to hit-test mouse clicks and map column → data-point index.
+    pub equity_chart_area: Rect,
 }
 
 pub struct App {

@@ -74,6 +74,31 @@ pub(crate) fn handle_mouse(app: &mut App, mouse: MouseEvent) {
         }
     }
 
+    // ── Equity chart click (Account tab) ─────────────────────────────────────
+    if app.active_tab == Tab::Account {
+        let chart_area = app.hit_areas.equity_chart_area;
+        if chart_area.height > 0 && hit(chart_area, col, row) {
+            let n = app.equity_history.len();
+            if n > 0 {
+                // Mirror the plot-area offsets used in render_chart_crosshair:
+                //   plot_x = area.x + 9,  plot_w = area.width - 11
+                let plot_x = chart_area.x + 9;
+                let plot_w = chart_area.width.saturating_sub(11);
+                if plot_w > 0 && col >= plot_x {
+                    let offset = (col - plot_x) as usize;
+                    // Map terminal column → data-point index (clamped)
+                    let idx = if n <= 1 {
+                        0
+                    } else {
+                        ((offset * (n - 1)) / (plot_w as usize - 1)).min(n - 1)
+                    };
+                    app.equity_chart_cursor = Some(idx);
+                }
+            }
+        }
+        return;
+    }
+
     // ── List row ─────────────────────────────────────────────────────────────
     let start_y = app.hit_areas.list_data_start_y;
     if start_y > 0 && row >= start_y {

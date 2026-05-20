@@ -13,12 +13,13 @@ use crate::ui::charts;
 use crate::ui::formatting::format_dollar;
 use crate::ui::theme::ThemeColors;
 
-pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(8), Constraint::Min(4)])
         .split(area);
 
+    app.hit_areas.equity_chart_area = chunks[1];
     render_summary(frame, chunks[0], app);
     render_equity_chart(frame, chunks[1], app);
 }
@@ -656,5 +657,61 @@ mod tests {
             "title should contain navigation hint arrows, got:\n{}",
             output
         );
+    }
+
+    // ── mouse click → cursor ──────────────────────────────────────────────────
+
+    fn mouse_click(col: u16, row: u16) -> crossterm::event::MouseEvent {
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: col,
+            row,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn mouse_click_inside_chart_sets_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.active_tab = crate::app::Tab::Account;
+        // Set the chart area hit rect to a 60-wide, 15-tall area at (0,0)
+        // plot_x=9, plot_w=49; clicking col=9 (first plot col) → idx 0
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 15);
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(9, 5)));
+        assert_eq!(app.equity_chart_cursor, Some(0));
+    }
+
+    #[test]
+    fn mouse_click_last_column_sets_last_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.active_tab = crate::app::Tab::Account;
+        // chart area 60-wide → plot_x=9, plot_w=49, last plot col = 9+49-1 = 57
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 15);
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(57, 5)));
+        assert_eq!(app.equity_chart_cursor, Some(9));
+    }
+
+    #[test]
+    fn mouse_click_outside_chart_area_does_not_change_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.equity_chart_cursor = Some(3);
+        app.active_tab = crate::app::Tab::Account;
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 5, 60, 15);
+        // Click is above the chart area (row 0 < area.y 5)
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(20, 0)));
+        assert_eq!(app.equity_chart_cursor, Some(3));
+    }
+
+    #[test]
+    fn mouse_click_non_account_tab_does_not_set_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.active_tab = crate::app::Tab::Watchlist;
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 15);
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(20, 5)));
+        assert!(app.equity_chart_cursor.is_none());
     }
 }
