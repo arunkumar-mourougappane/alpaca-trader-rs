@@ -38,7 +38,16 @@ pub enum Event {
     /// Latest NBBO quote received from the market data WebSocket.
     MarketQuote(Quote),
     /// Order update received from the account WebSocket stream.
-    TradeUpdate(Order),
+    ///
+    /// `event_type` is the Alpaca event field (e.g. `"fill"`, `"partial_fill"`,
+    /// `"canceled"`, `"rejected"`).  The UI uses it to render status bar
+    /// notifications with appropriate icons and messages.
+    TradeUpdate {
+        /// The updated order state.
+        order: Order,
+        /// Alpaca event type string (e.g. `"fill"`, `"partial_fill"`, `"rejected"`).
+        event_type: String,
+    },
     /// A WebSocket stream successfully (re)connected.
     StreamConnected(StreamKind),
     /// A WebSocket stream disconnected; reconnection will be attempted.

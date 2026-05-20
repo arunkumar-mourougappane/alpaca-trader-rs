@@ -53,17 +53,14 @@ pub fn update(app: &mut App, event: Event) {
         Event::MarketQuote(q) => {
             app.quotes.insert(q.symbol.clone(), q);
         }
-        Event::TradeUpdate(o) => {
-            if app.prefs.notifications.fill_notifications_enabled
-                && (o.status == "filled" || o.status == "partially_filled")
-            {
-                let qty = o
-                    .filled_qty
-                    .parse::<f64>()
-                    .map(|q| format!("{}", q))
-                    .unwrap_or_else(|_| o.filled_qty.clone());
-                let msg = format!("Fill: {} {} {}", o.side, qty, o.symbol);
-                app.push_fill_notification(msg);
+        Event::TradeUpdate {
+            order: o,
+            event_type,
+        } => {
+            if app.prefs.notifications.fill_notifications_enabled {
+                if let Some(msg) = fill_notification_text(&o, &event_type) {
+                    app.push_fill_notification(msg);
+                }
             }
             if let Some(existing) = app.orders.iter_mut().find(|x| x.id == o.id) {
                 *existing = o;
@@ -177,6 +174,42 @@ fn handle_panel_key(app: &mut App, key: crossterm::event::KeyEvent) {
         Tab::Watchlist => handle_watchlist_key(app, key),
         Tab::Positions => handle_positions_key(app, key),
         Tab::Orders => handle_orders_key(app, key),
+    }
+}
+
+/// Build a human-readable status bar notification for a trade update event.
+///
+/// Returns `None` for events that don't warrant a notification (e.g. `pending_new`).
+fn fill_notification_text(order: &crate::types::Order, event_type: &str) -> Option<String> {
+    let side = order.side.to_uppercase();
+    let symbol = &order.symbol;
+    let qty = order.qty.as_deref().unwrap_or("?");
+    let filled_qty = &order.filled_qty;
+
+    match event_type {
+        "fill" => {
+            let price_suffix = order
+                .filled_avg_price
+                .as_deref()
+                .map(|p| format!(" @ ${p}"))
+                .unwrap_or_default();
+            Some(format!("✓ {side} {qty} {symbol} filled{price_suffix}"))
+        }
+        "partial_fill" => {
+            let price_suffix = order
+                .filled_avg_price
+                .as_deref()
+                .map(|p| format!(" @ ${p}"))
+                .unwrap_or_default();
+            Some(format!(
+                "~ {side} {filled_qty}/{qty} {symbol} partial fill{price_suffix}"
+            ))
+        }
+        "rejected" | "expired" | "suspended" => {
+            Some(format!("✗ {side} {qty} {symbol} {event_type}"))
+        }
+        "canceled" => Some(format!("✗ {side} {qty} {symbol} canceled")),
+        _ => None,
     }
 }
 
@@ -327,7 +360,13 @@ mod tests {
             status: "filled".into(),
             ..make_order("o1", "filled")
         };
-        update(&mut app, Event::TradeUpdate(updated));
+        update(
+            &mut app,
+            Event::TradeUpdate {
+                order: updated,
+                event_type: "fill".to_string(),
+            },
+        );
         assert_eq!(app.orders.len(), 1);
         assert_eq!(app.orders[0].status, "filled");
     }
@@ -336,7 +375,13 @@ mod tests {
     fn trade_update_new_id_prepends() {
         let mut app = make_test_app();
         app.orders = vec![make_order("o1", "accepted")];
-        update(&mut app, Event::TradeUpdate(make_order("o2", "accepted")));
+        update(
+            &mut app,
+            Event::TradeUpdate {
+                order: make_order("o2", "accepted"),
+                event_type: "pending_new".to_string(),
+            },
+        );
         assert_eq!(app.orders.len(), 2);
         assert_eq!(app.orders[0].id, "o2");
     }
@@ -2548,5 +2593,160 @@ mod tests {
         assert_eq!(app.active_tab, Tab::Account);
         update(&mut app, key(KeyCode::Char('c')));
         assert_eq!(app.current_status_text(), "No symbol selected");
+    }
+
+    // ── fill_notification_text ──────────────────────────────────────────────
+
+    #[test]
+    fn fill_notification_fill_with_price() {
+        let order = Order {
+            filled_avg_price: Some("173.42".into()),
+            ..make_order("o1", "filled")
+        };
+        let msg = fill_notification_text(&order, "fill").unwrap();
+        assert_eq!(msg, "✓ BUY 10 AAPL filled @ $173.42");
+    }
+
+    #[test]
+    fn fill_notification_fill_without_price() {
+        let order = make_order("o1", "filled");
+        let msg = fill_notification_text(&order, "fill").unwrap();
+        assert_eq!(msg, "✓ BUY 10 AAPL filled");
+    }
+
+    #[test]
+    fn fill_notification_partial_fill_with_price() {
+        let order = Order {
+            filled_qty: "5".into(),
+            filled_avg_price: Some("173.40".into()),
+            ..make_order("o1", "partially_filled")
+        };
+        let msg = fill_notification_text(&order, "partial_fill").unwrap();
+        assert_eq!(msg, "~ BUY 5/10 AAPL partial fill @ $173.40");
+    }
+
+    #[test]
+    fn fill_notification_partial_fill_without_price() {
+        let order = Order {
+            filled_qty: "3".into(),
+            ..make_order("o1", "partially_filled")
+        };
+        let msg = fill_notification_text(&order, "partial_fill").unwrap();
+        assert_eq!(msg, "~ BUY 3/10 AAPL partial fill");
+    }
+
+    #[test]
+    fn fill_notification_rejected() {
+        let order = make_order("o1", "rejected");
+        let msg = fill_notification_text(&order, "rejected").unwrap();
+        assert_eq!(msg, "✗ BUY 10 AAPL rejected");
+    }
+
+    #[test]
+    fn fill_notification_expired() {
+        let order = make_order("o1", "expired");
+        let msg = fill_notification_text(&order, "expired").unwrap();
+        assert_eq!(msg, "✗ BUY 10 AAPL expired");
+    }
+
+    #[test]
+    fn fill_notification_canceled() {
+        let order = make_order("o1", "canceled");
+        let msg = fill_notification_text(&order, "canceled").unwrap();
+        assert_eq!(msg, "✗ BUY 10 AAPL canceled");
+    }
+
+    #[test]
+    fn fill_notification_pending_new_is_none() {
+        let order = make_order("o1", "pending_new");
+        assert!(fill_notification_text(&order, "pending_new").is_none());
+    }
+
+    #[test]
+    fn fill_notification_unknown_event_is_none() {
+        let order = make_order("o1", "accepted");
+        assert!(fill_notification_text(&order, "replaced").is_none());
+    }
+
+    // ── TradeUpdate event dispatch ──────────────────────────────────────────
+
+    #[test]
+    fn trade_update_fill_pushes_notification() {
+        let mut app = make_test_app();
+        app.prefs.notifications.fill_notifications_enabled = true;
+        let order = Order {
+            filled_avg_price: Some("173.42".into()),
+            ..make_order("o1", "filled")
+        };
+        update(
+            &mut app,
+            Event::TradeUpdate {
+                order,
+                event_type: "fill".to_string(),
+            },
+        );
+        let status = app.current_status_text();
+        assert!(
+            status.contains("✓") && status.contains("AAPL"),
+            "expected fill notification, got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn trade_update_fill_skipped_when_notifications_disabled() {
+        let mut app = make_test_app();
+        app.prefs.notifications.fill_notifications_enabled = false;
+        let order = Order {
+            filled_avg_price: Some("173.42".into()),
+            ..make_order("o1", "filled")
+        };
+        update(
+            &mut app,
+            Event::TradeUpdate {
+                order,
+                event_type: "fill".to_string(),
+            },
+        );
+        let status = app.current_status_text();
+        assert!(
+            !status.contains("✓"),
+            "expected no notification when disabled, got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn trade_update_rejected_pushes_notification() {
+        let mut app = make_test_app();
+        app.prefs.notifications.fill_notifications_enabled = true;
+        update(
+            &mut app,
+            Event::TradeUpdate {
+                order: make_order("o1", "rejected"),
+                event_type: "rejected".to_string(),
+            },
+        );
+        let status = app.current_status_text();
+        assert!(
+            status.contains("✗") && status.contains("AAPL"),
+            "expected rejected notification, got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn trade_update_pending_no_notification() {
+        let mut app = make_test_app();
+        app.prefs.notifications.fill_notifications_enabled = true;
+        update(
+            &mut app,
+            Event::TradeUpdate {
+                order: make_order("o1", "pending_new"),
+                event_type: "pending_new".to_string(),
+            },
+        );
+        let status = app.current_status_text();
+        assert!(
+            !status.contains("✓") && !status.contains("✗") && !status.contains("~"),
+            "pending_new should not push a notification, got: {status:?}"
+        );
     }
 }
