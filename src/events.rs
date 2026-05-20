@@ -61,6 +61,15 @@ pub enum Event {
     /// Emitted once when the REST handler detects `client.is_paper()` so the
     /// UI can display a clear, persistent explanation instead of "Loading…".
     WatchlistUnavailable,
+    /// A REST fetch has been dispatched (one per in-flight request).
+    ///
+    /// Increments `App::pending_requests` so the UI can show a spinner.
+    FetchStarted,
+    /// A REST fetch has completed (success or error).
+    ///
+    /// Decrements `App::pending_requests`; when it reaches zero,
+    /// `App::last_updated` is recorded with the current local time.
+    FetchComplete,
     /// Periodic tick to trigger UI refresh / REST polls.
     Tick,
     /// One-shot status message to display in the status bar.

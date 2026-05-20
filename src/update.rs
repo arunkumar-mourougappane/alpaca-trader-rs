@@ -90,7 +90,13 @@ pub fn update(app: &mut App, event: Event) {
         Event::IntradayBarsReceived { symbol, bars } => {
             app.intraday_bars.insert(symbol, bars);
         }
+        Event::FetchStarted => app.request_started(),
+        Event::FetchComplete => app.request_finished(),
         Event::Tick => {
+            // Advance spinner frame while any fetch is in-flight.
+            if app.pending_requests > 0 {
+                app.tick_spinner();
+            }
             // Pop the front entry if it has expired; keep popping while the
             // next front is also expired so stale messages never block fresh ones.
             loop {
@@ -2258,5 +2264,103 @@ mod tests {
             update(&mut app, key(KeyCode::Char('T')));
         }
         assert_eq!(app.current_theme, Theme::Default);
+    }
+
+    // ── Fetch counter / spinner ───────────────────────────────────────────────
+
+    #[test]
+    fn fetch_started_increments_pending_requests() {
+        let mut app = make_test_app();
+        assert_eq!(app.pending_requests, 0);
+        update(&mut app, Event::FetchStarted);
+        assert_eq!(app.pending_requests, 1);
+        update(&mut app, Event::FetchStarted);
+        assert_eq!(app.pending_requests, 2);
+    }
+
+    #[test]
+    fn fetch_complete_decrements_pending_requests() {
+        let mut app = make_test_app();
+        update(&mut app, Event::FetchStarted);
+        update(&mut app, Event::FetchStarted);
+        update(&mut app, Event::FetchComplete);
+        assert_eq!(app.pending_requests, 1);
+    }
+
+    #[test]
+    fn fetch_complete_sets_last_updated_when_counter_reaches_zero() {
+        let mut app = make_test_app();
+        assert!(app.last_updated.is_none());
+        update(&mut app, Event::FetchStarted);
+        update(&mut app, Event::FetchComplete);
+        assert!(
+            app.last_updated.is_some(),
+            "last_updated should be set once all fetches complete"
+        );
+    }
+
+    #[test]
+    fn fetch_complete_does_not_set_last_updated_while_still_pending() {
+        let mut app = make_test_app();
+        update(&mut app, Event::FetchStarted);
+        update(&mut app, Event::FetchStarted);
+        update(&mut app, Event::FetchComplete); // still 1 in-flight
+        assert!(
+            app.last_updated.is_none(),
+            "last_updated must not be set while fetches are still in-flight"
+        );
+    }
+
+    #[test]
+    fn fetch_complete_does_not_underflow_pending_requests() {
+        let mut app = make_test_app();
+        // Simulate spurious extra FetchComplete without FetchStarted
+        update(&mut app, Event::FetchComplete);
+        assert_eq!(
+            app.pending_requests, 0,
+            "saturating_sub should prevent underflow"
+        );
+    }
+
+    #[test]
+    fn tick_advances_spinner_when_requests_pending() {
+        let mut app = make_test_app();
+        app.pending_requests = 1;
+        let before = app.spinner_tick;
+        update(&mut app, Event::Tick);
+        assert_eq!(app.spinner_tick, before.wrapping_add(1));
+    }
+
+    #[test]
+    fn tick_does_not_advance_spinner_when_idle() {
+        let mut app = make_test_app();
+        assert_eq!(app.pending_requests, 0);
+        let before = app.spinner_tick;
+        update(&mut app, Event::Tick);
+        assert_eq!(
+            app.spinner_tick, before,
+            "spinner should not advance when idle"
+        );
+    }
+
+    #[test]
+    fn spinner_frame_cycles_through_ten_frames() {
+        let mut app = make_test_app();
+        let frames: Vec<char> = (0..10)
+            .map(|_| {
+                let f = app.spinner_frame();
+                app.spinner_tick = app.spinner_tick.wrapping_add(1);
+                f
+            })
+            .collect();
+        // All frames distinct within a cycle
+        let unique: std::collections::HashSet<char> = frames.iter().copied().collect();
+        assert_eq!(unique.len(), 10, "spinner should have 10 distinct frames");
+        // Frame 10 wraps back to frame 0
+        assert_eq!(
+            app.spinner_frame(),
+            frames[0],
+            "spinner should wrap after 10 ticks"
+        );
     }
 }
