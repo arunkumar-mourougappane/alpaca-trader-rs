@@ -6,6 +6,7 @@
 #![deny(missing_docs)]
 
 pub mod client;
+pub mod clipboard;
 pub mod commands;
 pub mod config;
 pub mod events;

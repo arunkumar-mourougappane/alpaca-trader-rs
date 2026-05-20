@@ -489,6 +489,26 @@ impl App {
         orders.get(i).map(|o| o.id.clone())
     }
 
+    /// Returns the ticker symbol of the selected row in the Orders table.
+    pub fn selected_order_symbol(&self) -> Option<String> {
+        let orders = self.filtered_orders();
+        let i = self.orders_state.selected()?;
+        orders.get(i).map(|o| o.symbol.clone())
+    }
+
+    /// Returns the ticker symbol of the focused row in whichever table tab is active.
+    ///
+    /// Returns `None` when no row is selected or the active tab has no symbols
+    /// (e.g. the Account tab).
+    pub fn focused_symbol(&self) -> Option<String> {
+        match self.active_tab {
+            Tab::Watchlist => self.selected_watchlist_symbol(),
+            Tab::Positions => self.selected_position_symbol(),
+            Tab::Orders => self.selected_order_symbol(),
+            Tab::Account => None,
+        }
+    }
+
     pub fn push_equity(&mut self) {
         if let Some(account) = &self.account {
             if let Ok(v) = account.equity.parse::<f64>() {
@@ -768,5 +788,78 @@ mod tests {
         app.search_query = "ts".into();
         app.watchlist_state.select(Some(0)); // index 0 of the *filtered* list = TSLA
         assert_eq!(app.selected_watchlist_symbol(), Some("TSLA".into()));
+    }
+
+    // ── selected_order_symbol ─────────────────────────────────────────────────
+
+    #[test]
+    fn selected_order_symbol_returns_symbol_of_selected_order() {
+        let mut app = make_test_app();
+        app.orders = vec![make_order("id-1", "new"), make_order("id-2", "filled")];
+        app.orders_state.select(Some(0));
+        // Open sub-tab — id-1 is in "new" status, so it's shown
+        assert_eq!(app.selected_order_symbol(), Some("AAPL".into()));
+    }
+
+    #[test]
+    fn selected_order_symbol_none_when_no_selection() {
+        let mut app = make_test_app();
+        app.orders = vec![make_order("id-1", "new")];
+        assert_eq!(app.selected_order_symbol(), None);
+    }
+
+    // ── focused_symbol ────────────────────────────────────────────────────────
+
+    #[test]
+    fn focused_symbol_watchlist_tab_returns_selected_symbol() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL", "TSLA"]));
+        app.watchlist_state.select(Some(0));
+        assert_eq!(app.focused_symbol(), Some("AAPL".into()));
+    }
+
+    #[test]
+    fn focused_symbol_positions_tab_returns_selected_symbol() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Positions;
+        app.positions = vec![crate::types::Position {
+            symbol: "MSFT".into(),
+            qty: "5".into(),
+            avg_entry_price: "300".into(),
+            current_price: "310".into(),
+            market_value: "1550".into(),
+            unrealized_pl: "50".into(),
+            unrealized_plpc: "0.032".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }];
+        app.positions_state.select(Some(0));
+        assert_eq!(app.focused_symbol(), Some("MSFT".into()));
+    }
+
+    #[test]
+    fn focused_symbol_orders_tab_returns_selected_symbol() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Orders;
+        app.orders = vec![make_order("id-1", "new")];
+        app.orders_state.select(Some(0));
+        assert_eq!(app.focused_symbol(), Some("AAPL".into()));
+    }
+
+    #[test]
+    fn focused_symbol_account_tab_returns_none() {
+        let app = make_test_app();
+        // active_tab defaults to Account
+        assert_eq!(app.focused_symbol(), None);
+    }
+
+    #[test]
+    fn focused_symbol_returns_none_when_nothing_selected() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        // no selection
+        assert_eq!(app.focused_symbol(), None);
     }
 }
