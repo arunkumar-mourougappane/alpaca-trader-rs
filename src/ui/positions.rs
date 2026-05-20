@@ -1,13 +1,13 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    text::{Line, Span},
+    layout::Constraint,
+    style::Style,
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
     Frame,
 };
 
 use crate::app::App;
 
-pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
+pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     let c = app.current_theme.colors();
 
     if app.positions.is_empty() {
@@ -23,11 +23,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)])
-        .split(area);
-
     let header = Row::new(vec![
         Cell::from("Symbol").style(c.header_style()),
         Cell::from("Qty").style(c.header_style()),
@@ -38,7 +33,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         Cell::from("%").style(c.header_style()),
     ]);
 
-    let rows: Vec<Row> = app
+    let mut rows: Vec<Row> = app
         .positions
         .iter()
         .map(|p| {
@@ -65,6 +60,47 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
+    // ── Totals footer row ─────────────────────────────────────────────────
+    let total_value: f64 = app
+        .positions
+        .iter()
+        .filter_map(|p| p.market_value.parse::<f64>().ok())
+        .sum();
+    let total_pnl: f64 = app
+        .positions
+        .iter()
+        .filter_map(|p| p.unrealized_pl.parse::<f64>().ok())
+        .sum();
+    // cost basis = market_value - unrealized_pl; avoid division by zero
+    let total_cost = total_value - total_pnl;
+    let total_pct = if total_cost != 0.0 {
+        total_pnl / total_cost * 100.0
+    } else {
+        0.0
+    };
+    let footer_pnl_style = if total_pnl >= 0.0 {
+        c.positive_style()
+    } else {
+        c.negative_style()
+    };
+
+    rows.push(
+        Row::new(vec![
+            Cell::from("TOTAL").style(c.bold_style()),
+            Cell::from(""),
+            Cell::from(""),
+            Cell::from(""),
+            Cell::from(format!("${:.2}", total_value)).style(c.bold_style()),
+            Cell::from({
+                let sign = if total_pnl >= 0.0 { "+" } else { "-" };
+                format!("{}${:.2}", sign, total_pnl.abs())
+            })
+            .style(footer_pnl_style),
+            Cell::from(format!("{:+.2}%", total_pct)).style(footer_pnl_style),
+        ])
+        .style(Style::default()),
+    );
+
     let block = Block::default()
         .title(format!(" Positions ({}) ", app.positions.len()))
         .borders(Borders::ALL)
@@ -87,34 +123,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     .row_highlight_style(c.selected_style())
     .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(table, chunks[0], &mut app.positions_state);
-
-    // Footer totals
-    let total_value: f64 = app
-        .positions
-        .iter()
-        .filter_map(|p| p.market_value.parse::<f64>().ok())
-        .sum();
-    let total_pnl: f64 = app
-        .positions
-        .iter()
-        .filter_map(|p| p.unrealized_pl.parse::<f64>().ok())
-        .sum();
-    let pnl_style = if total_pnl >= 0.0 {
-        c.positive_style()
-    } else {
-        c.negative_style()
-    };
-
-    let footer = Line::from(vec![
-        Span::styled("  Total Long: ", c.dim_style()),
-        Span::styled(format!("${:.2}", total_value), c.bold_style()),
-        Span::styled("    Total Unrealized: ", c.dim_style()),
-        Span::styled(format!("${:.2}", total_pnl), pnl_style),
-    ]);
-
-    let footer_para = Paragraph::new(footer).block(Block::default().borders(Borders::NONE));
-    frame.render_widget(footer_para, chunks[1]);
+    frame.render_stateful_widget(table, area, &mut app.positions_state);
 }
 
 fn fmt_dollar(s: &str) -> String {
@@ -203,17 +212,60 @@ mod tests {
     }
 
     #[test]
-    fn positions_shows_footer_totals() {
+    fn positions_shows_footer_total_row() {
         let mut app = make_test_app();
         app.positions.push(make_position("AAPL", "100.00"));
         let output = render_positions_to_string(&mut app);
         assert!(
-            output.contains("Total Long"),
-            "expected Total Long footer label"
+            output.contains("TOTAL"),
+            "expected TOTAL footer row in table, got: {output}"
         );
+    }
+
+    #[test]
+    fn positions_footer_total_market_value() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00")); // market_value = 1100.00
+        let output = render_positions_to_string(&mut app);
         assert!(
-            output.contains("Total Unrealized"),
-            "expected Total Unrealized footer label"
+            output.contains("1100.00"),
+            "expected total market value in footer row, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_footer_total_pnl_sum() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        app.positions.push(make_position("TSLA", "-30.00"));
+        let output = render_positions_to_string(&mut app);
+        // total PnL = +70.00 → +$70.00
+        assert!(
+            output.contains("+$70.00"),
+            "expected summed PnL in footer row, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_footer_negative_total_pnl() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "-50.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("-$50.00"),
+            "expected negative total PnL in footer, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_footer_pct_calculated() {
+        let mut app = make_test_app();
+        // market_value=1100, unrealized_pl=100 → cost=1000 → pct=+10.00%
+        app.positions.push(make_position("AAPL", "100.00"));
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("+10.00%"),
+            "expected +10.00% in footer row, got: {output}"
         );
     }
 
