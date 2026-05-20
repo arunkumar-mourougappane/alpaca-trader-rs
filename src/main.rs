@@ -68,6 +68,7 @@ mod types {
 }
 
 mod app;
+mod clipboard;
 mod credentials;
 mod handlers;
 mod input;

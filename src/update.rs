@@ -3,6 +3,7 @@ use std::time::Instant;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::app::{App, Modal, StatusMessage, Tab};
+use crate::clipboard;
 use crate::events::{Event, StreamKind};
 use crate::input::{
     handle_modal_key, handle_mouse, handle_orders_key, handle_positions_key, handle_search_key,
@@ -149,7 +150,24 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             app.cycle_theme();
             app.push_transient_status(format!("Theme: {}", app.current_theme.display_name()));
         }
+        // Copy focused symbol to clipboard (Watchlist, Positions, Orders)
+        KeyCode::Char('c') if app.active_tab != Tab::Orders => {
+            copy_focused_symbol(app);
+        }
         _ => handle_panel_key(app, key),
+    }
+}
+
+/// Copies the currently focused symbol to the system clipboard and sets a
+/// transient status message.  If no row is selected, or the clipboard is
+/// unavailable, an informational status is shown instead.
+fn copy_focused_symbol(app: &mut App) {
+    match app.focused_symbol() {
+        None => app.push_transient_status("No symbol selected"),
+        Some(symbol) => match clipboard::copy_to_clipboard(&symbol) {
+            Ok(()) => app.push_transient_status(format!("Copied {symbol} to clipboard")),
+            Err(e) => app.push_transient_status(e),
+        },
     }
 }
 
@@ -2362,5 +2380,72 @@ mod tests {
             frames[0],
             "spinner should wrap after 10 ticks"
         );
+    }
+
+    // ── copy symbol ('c' key) ─────────────────────────────────────────────────
+
+    #[test]
+    fn c_key_on_watchlist_with_selection_sets_status_message() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL", "TSLA"]));
+        app.watchlist_state.select(Some(0));
+        update(&mut app, key(KeyCode::Char('c')));
+        let status = app.current_status_text();
+        // Either "Copied AAPL to clipboard" or a clipboard error — either way non-empty
+        assert!(
+            !status.is_empty(),
+            "pressing 'c' with a selection must always set a status message"
+        );
+        assert!(
+            status.contains("AAPL") || status.contains("Clipboard") || status.contains("clipboard"),
+            "status should mention symbol or clipboard; got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn c_key_on_watchlist_without_selection_sets_no_symbol_selected_message() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        // no selection
+        update(&mut app, key(KeyCode::Char('c')));
+        assert_eq!(app.current_status_text(), "No symbol selected");
+    }
+
+    #[test]
+    fn c_key_on_positions_with_selection_sets_status_message() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('c')));
+        let status = app.current_status_text();
+        assert!(
+            !status.is_empty(),
+            "pressing 'c' on positions with selection must set a status message"
+        );
+    }
+
+    #[test]
+    fn c_key_on_orders_does_not_copy_but_opens_cancel_modal() {
+        let mut app = orders_app();
+        // Orders tab: 'c' should still trigger cancel confirm, not copy
+        update(&mut app, key(KeyCode::Char('c')));
+        assert!(
+            matches!(app.modal, Some(Modal::Confirm { .. })),
+            "pressing 'c' in Orders should open cancel confirm modal, not copy"
+        );
+        // Status should not be set to a copy message
+        let status = app.current_status_text();
+        assert!(
+            !status.contains("Copied"),
+            "Orders 'c' must not trigger copy; got: {status:?}"
+        );
+    }
+
+    #[test]
+    fn c_key_on_account_tab_sets_no_symbol_selected() {
+        let mut app = make_test_app();
+        assert_eq!(app.active_tab, Tab::Account);
+        update(&mut app, key(KeyCode::Char('c')));
+        assert_eq!(app.current_status_text(), "No symbol selected");
     }
 }

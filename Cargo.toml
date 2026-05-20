@@ -47,6 +47,7 @@ ratatui    = "0.30"
 crossterm  = { version = "0.29", features = ["event-stream"] }
 clap       = { version = "4", features = ["derive"] }
 rpassword  = "7"
+arboard    = "3"
 
 # Logging
 tracing            = "0.1"

@@ -117,10 +117,10 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
     let panel_hints = match app.active_tab {
         Tab::Account => " r:Refresh  T:Theme  A:About  ?:Help  q:Quit",
         Tab::Watchlist => {
-            " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  /:Search  T:Theme  A:About  ?:Help  q:Quit"
+            " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  c:Copy  /:Search  T:Theme  A:About  ?:Help  q:Quit"
         }
         Tab::Positions => {
-            " j/k:Navigate  Enter:Detail  o:Close  s:Short  T:Theme  A:About  ?:Help  q:Quit"
+            " j/k:Navigate  Enter:Detail  o:Close  s:Short  c:Copy  T:Theme  A:About  ?:Help  q:Quit"
         }
         Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
     };
