@@ -7,6 +7,86 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.6.0] — 2026-05-19
+
+Adds live WebSocket chart streaming, order fill notifications, a P&L footer in the Positions panel,
+clipboard copy, watchlist-removal confirmation, refresh spinner, status bar message queue, a Filled
+Price column in Orders, and vim `gg`/`G` navigation. Internal refactoring consolidates repeated
+formatting, navigation, and render-test helpers. Test count grows from **449 → 541**.
+
+### Added
+
+#### Charts
+- **Live WebSocket chart streaming** (`src/handlers/stream.rs`, `src/ui/account.rs`) — intraday
+  equity and position charts are fed with real-time quote ticks between REST poll cycles, giving
+  smooth braille curve updates without waiting for the next 60-second poll.
+
+#### Orders
+- **Filled Price column** (`src/types.rs`, `src/ui/orders.rs`) — `filled_avg_price` field added to
+  the `Order` type and surfaced as a new column in the Orders table so executed prices are always
+  visible.
+- **Order fill notifications** (`src/handlers/rest.rs`, `src/update.rs`) — when a polled order
+  transitions to `filled`, a transient status bar message flashes "✓ \<SYMBOL\> order filled at
+  $\<price\>" so traders are notified without leaving the current panel.
+
+#### Positions
+- **P&L summary footer row** (`src/ui/positions.rs`) — a pinned footer row below the Positions
+  table shows aggregate unrealised P&L across all open positions in both dollar and percentage form.
+
+#### Watchlist
+- **Removal confirmation modal** (`src/update.rs`, `src/ui/`) — pressing `d` on a watchlist entry
+  now shows a "Remove \<SYMBOL\> from watchlist?" yes/no confirmation before sending the delete
+  command.
+
+#### Keyboard
+- **Clipboard copy** (`c` key, Positions/Watchlist/Orders) — copies the selected row's symbol to
+  the system clipboard; confirmation shown in the status bar.
+- **`gg` / `G` jump navigation** (Positions, Orders, Watchlist) — vim-style `gg` jumps to the
+  first row; `G` jumps to the last row; `j`/`k` scroll one row at a time.
+
+#### UX
+- **Refresh spinner and last-updated timestamp** — header area shows a spinning Braille frame while
+  a REST poll is in flight and the hh:mm:ss timestamp of the last successful refresh.
+- **Status bar message queue** — rapid events (fill notifications, clipboard confirmations, errors)
+  are queued and shown sequentially instead of overwriting each other.
+
+### Refactored
+
+- **`src/ui/formatting.rs`** (new) — shared `format_dollar`, `format_price`, `format_pct_ratio`,
+  and `header_cell` helpers; removes duplicate private formatting functions from `positions.rs`,
+  `account.rs`, and `orders.rs`.
+- **`src/ui/test_helpers.rs`** (new) — `render_to_string(width, height, fn)` helper eliminates
+  `TestBackend` boilerplate from every UI module's test section.
+- **`ThemeColors::bordered_block`** (`src/ui/theme.rs`) — single call replaces all inline
+  `Block::default().title().borders(ALL).border_style()` chains across the codebase.
+- **`handle_nav_key` + `SelectionState` trait** (`src/input/mod.rs`) — extracted shared vim-nav
+  logic works generically over both `ListState` and `TableState`; removes ~20 duplicated lines from
+  each of the three input handlers.
+- **`OrderEntryState::with_side` builder** (`src/app.rs`) — replaces manual field mutation in the
+  modal handler.
+
+### Tests
+
+**541 tests total** (up from 449 in v0.5.0):
+
+| Scope | Count |
+|---|---|
+| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 99 |
+| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 413 |
+| HTTP integration (`tests/client_tests.rs`) | 29 |
+
+Coverage additions include:
+- Live chart streaming event handlers
+- Order fill notification detection and dispatch
+- P&L footer rendering (zero positions, single, multi)
+- Watchlist removal confirmation modal flow
+- Clipboard copy keybinding paths
+- `gg`/`G` navigation in all three table panels
+- Status bar message queue ordering and dequeue behaviour
+- Shared formatting helpers (`format_dollar`, `format_price`, `format_pct_ratio`, `header_cell`)
+
+---
+
 ## [0.5.0] — 2026-05-18
 
 Adds a `--dry-run` mode, persistent user preferences, runtime colour-theme switching, Windows

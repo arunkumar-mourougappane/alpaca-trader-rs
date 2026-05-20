@@ -1,115 +1,129 @@
-# Release Notes — v0.5.0
+# Release Notes — v0.6.0
 
-**Release date:** 2026-05-18
+**Release date:** 2026-05-19
 **MSRV:** Rust 1.88+
-**Previous release:** [v0.4.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.4.0)
+**Previous release:** [v0.5.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.5.0)
 
 ---
 
 ## Overview
 
-v0.5.0 is a quality, portability, and UX release. The five headline changes are:
+v0.6.0 is a UX and real-time data release. The ten headline changes are:
 
-1. **`--dry-run` mode** — test order workflows without sending a single real order.
-2. **Persistent user preferences** — theme and environment settings survive restarts.
-3. **Runtime colour-theme switching** (`T` key) — switch themes live and have the choice remembered.
-4. **Windows support** — full CI build, test, and code-coverage matrix on `windows-latest`.
-5. **Braille line charts** — sharper double-resolution equity and intraday charts.
+1. **Live WebSocket chart streaming** — intraday charts update with every quote tick, not just once per poll cycle.
+2. **Filled Price column in Orders** — `filled_avg_price` is now shown directly in the Orders table.
+3. **Order fill notifications** — a status bar flash when a polled order transitions to `filled`.
+4. **P&L summary footer row** — aggregate unrealised P&L shown in dollar and percentage form below the Positions table.
+5. **Watchlist removal confirmation** — a yes/no modal before `d` deletes a watchlist entry.
+6. **Clipboard copy (`c` key)** — copies the selected symbol to the system clipboard from Positions and Watchlist panels.
+7. **`gg` / `G` jump navigation** — vim-style jump-to-top / jump-to-bottom in Positions, Orders, and Watchlist.
+8. **Refresh spinner and last-updated timestamp** — visual feedback in the header while a REST poll is in flight.
+9. **Status bar message queue** — rapid events are queued and shown sequentially instead of overwriting each other.
+10. **Internal refactoring** — shared formatting helpers, a render-test helper, and a generic vim-nav trait eliminate ~150 lines of duplication.
 
-Four bug fixes land alongside: the terminal resize no-op, paper-trading watchlist messaging,
-market-closed price data, and a Windows clippy warning in the logging module.
-
-Test count grows from **327 → 449 tests**.
+Test count grows from **449 → 540 tests**.
 
 ---
 
 ## What's New
 
-### `--dry-run` Mode
+### Live WebSocket Chart Streaming
 
-Pass `--dry-run` to intercept all order submissions before they reach Alpaca. The order is shown
-as `[DRY-RUN]` in the status bar and logged, but no network request is made. Read-only operations
-(account data, positions, watchlist, quotes) are unaffected.
+Intraday equity and position charts are now fed with real-time quote ticks between REST poll cycles. Previously, charts only updated once per 60-second poll. Now every WebSocket quote event advances the chart curve immediately, giving smooth braille updates at market speed.
 
-```bash
-alpaca-trader --paper --dry-run   # safe sandbox — simulated env + no real orders
-alpaca-trader --dry-run           # live data, intercepted orders
+### Filled Price Column in Orders
+
+The `filled_avg_price` field is now part of the `Order` type and surfaced as a dedicated column in the Orders table. Traders no longer need to open a position detail to confirm the execution price.
+
+### Order Fill Notifications
+
+When a REST poll detects that an order has transitioned to `filled`, a transient status bar message flashes:
+
+```
+✓ AAPL order filled at $213.42
 ```
 
-The dry-run state is visible in the header so it's impossible to forget it is active.
+The notification is queued behind any other pending status messages so nothing is silently dropped.
 
-### Persistent User Preferences
+### P&L Summary Footer Row
 
-A `prefs.toml` file is created on first run in the OS config directory:
+A pinned footer row appears below the Positions table showing aggregate unrealised P&L across all open positions:
 
-| Platform | Path |
-|---|---|
-| Linux / macOS | `~/.config/alpaca-trader/prefs.toml` |
-| Windows | `%APPDATA%\alpaca-trader\prefs.toml` |
+```
+TOTAL    —    —    —    +$1,234.56   +2.34%
+```
 
-Current persisted settings:
+The footer updates whenever the positions data refreshes.
 
-| Key | Default | Description |
-|---|---|---|
-| `app.default_env` | `"live"` | Which environment to connect to when `--paper` is not passed |
-| `ui.theme` | `"default"` | Active colour theme name |
+### Watchlist Removal Confirmation
 
-The file is created automatically with defaults on first run and never requires manual editing.
+Pressing `d` on a watchlist entry now opens a confirmation modal:
 
-### Runtime Colour-Theme Switching (`T` key)
+```
+Remove AAPL from watchlist? [y / n]
+```
 
-Press `T` at any time to cycle through the available colour themes. The selection is written to
-`prefs.toml` immediately so it persists across restarts. The key binding is documented in the Help
-overlay (`?`).
+The deletion is only sent to Alpaca after `y` is pressed. Pressing `n` or `Esc` dismisses the modal without any change.
 
-### Windows Support
+### Clipboard Copy (`c` Key)
 
-The full CI pipeline now runs on `windows-latest` in addition to the existing `ubuntu-latest` and
-`macos-latest` runners:
+Press `c` on any selected row in Positions or Watchlist to copy the row's symbol to the system clipboard. A confirmation message appears in the status bar:
 
-- **Build** — `cargo build --release` succeeds on Windows with no feature flags needed
-- **Tests** — all 449 tests pass on Windows (platform-conditional tests skip unix-only paths)
-- **Code coverage** — `cargo-llvm-cov` runs on both Linux and Windows; both reports are uploaded to
-  Codecov with separate `Linux` / `Windows` flags and merged into the coverage badge
+```
+Copied AAPL to clipboard
+```
 
-### Braille Line Charts
+On the Orders panel, `c` retains its existing behaviour of cancelling the selected order.
 
-The equity sparkline in the Account panel and the intraday price chart in the Symbol Detail modal
-have been upgraded from ratatui's `Sparkline` widget to a full `Chart` with a braille canvas.
-Braille cells pack 2×4 dots per cell, giving roughly double the effective resolution at the same
-terminal width.
+### `gg` / `G` Jump Navigation
+
+Vim-style jump bindings work in all three table panels:
+
+| Key | Action |
+|-----|--------|
+| `gg` | Jump to first row |
+| `G` | Jump to last row |
+| `j` / `↓` | Move down one row |
+| `k` / `↑` | Move up one row |
+
+### Refresh Spinner and Last-Updated Timestamp
+
+The header now shows a spinning Braille frame while a REST poll is in flight, and the `hh:mm:ss` timestamp of the last successful refresh once the poll completes. This makes it clear whether the displayed data is fresh.
+
+### Status Bar Message Queue
+
+Events such as fill notifications, clipboard confirmations, and errors are enqueued rather than overwriting each other. Messages are shown sequentially and cleared automatically after their display duration elapses.
 
 ---
 
-## Bug Fixes
+## Refactoring Highlights
 
-| Fix | Details |
-|---|---|
-| Terminal resize silently ignored | `Event::Resize` now sets `needs_redraw = true`; the main loop draws an extra frame before blocking for the next event, so layout adapts immediately instead of waiting up to 250 ms for the next tick |
-| Paper-trading watchlist shows blank panel | A persistent info message ("Watchlists unavailable in paper mode") is now shown when the paper endpoint returns a 422, matching the behaviour users expect from the `--paper` flag |
-| Price and Change% blank when market is closed | Watchlist rows now fall back to REST snapshot data for price and daily change when the market is closed and live quotes are unavailable |
-| `MessageVisitor` dead-code warning on Windows | `struct MessageVisitor` and all syslog helpers are gated to `#[cfg(unix)]`; Windows builds are now clippy-clean with `-D warnings` |
+- **`src/ui/formatting.rs`** (new) — shared `format_dollar`, `format_price`, `format_pct_ratio`, and `header_cell` helpers; removes duplicate private formatting functions from `positions.rs`, `account.rs`, and `orders.rs`.
+- **`src/ui/test_helpers.rs`** (new) — `render_to_string(width, height, fn)` eliminates `TestBackend` boilerplate from every UI module's test section.
+- **`ThemeColors::bordered_block`** — single call replaces all inline `Block::default().title().borders(ALL).border_style()` chains.
+- **`handle_nav_key` + `SelectionState` trait** — extracted shared vim-nav logic works generically over both `ListState` and `TableState`; removes ~20 duplicated lines from each of the three input handlers.
+- **`OrderEntryState::with_side` builder** — replaces manual field mutation in the modal handler.
 
 ---
 
 ## Tests
 
-**449 tests total** (up from 327 in v0.4.0):
+**540 tests total** (up from 449 in v0.5.0):
 
-| Scope | Count | Notable additions |
-|---|---|---|
-| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 99 | Logging module ~90% coverage; client coverage improvements |
-| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 320 | Resize handler, theme switching, prefs persistence, UI renderer tests |
-| HTTP integration (`tests/client_tests.rs`) | 29 | Additional REST method coverage |
-| Doc-tests | 1 | `with_dry_run` example |
+| Scope | Count |
+|---|---|
+| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 100 |
+| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 410 |
+| HTTP integration (`tests/client_tests.rs`) | 29 |
+| Doc-tests | 1 |
+
+Coverage additions include live chart streaming handlers, order fill notification detection, P&L footer rendering, watchlist removal modal flow, clipboard keybinding paths, `gg`/`G` navigation, status bar queue ordering, and shared formatting helpers.
 
 ---
 
 ## No Breaking Changes
 
-v0.5.0 is fully backwards-compatible with v0.4.0. All credential resolution, CLI flags,
-environment variables, and library API are unchanged. The only new required file is `prefs.toml`,
-which is created automatically with safe defaults.
+v0.6.0 is fully backwards-compatible with v0.5.0. All CLI flags, credential resolution, environment variables, and library API are unchanged.
 
 ---
 
@@ -119,12 +133,8 @@ which is created automatically with safe defaults.
 git clone https://github.com/arunkumar-mourougappane/alpaca-trader-rs
 cd alpaca-trader-rs
 
-# First run — app prompts for credentials and offers to save to keychain
-./run.sh --paper   # paper trading (simulated funds — recommended for first run)
-./run.sh           # live trading  (real money — default)
-
-# Try out dry-run mode without any risk
-./run.sh --paper --dry-run
+./run.sh --paper   # paper trading (recommended for first run)
+./run.sh           # live trading
 ```
 
 Or configure via `.env`:
@@ -135,5 +145,4 @@ cp .env.example .env
 ./run.sh --paper
 ```
 
-See [README.md](README.md) for full setup options and [docs/credentials-setup.md](docs/credentials-setup.md) for obtaining API keys from the Alpaca dashboard.
-
+See [README.md](README.md) for full setup options and [docs/credentials-setup.md](docs/credentials-setup.md) for API key setup.

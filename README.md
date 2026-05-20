@@ -109,11 +109,12 @@ alpaca-trader --reset live    # remove live keychain entries
 | `4` | Switch to Orders panel |
 | `Tab` / `Shift-Tab` | Cycle panels forward / backward |
 | `j` / `k` or `↑` / `↓` | Navigate rows |
-| `g` / `G` | Jump to first / last row |
+| `gg` / `G` | Jump to first / last row |
 | `Enter` | Open symbol detail |
 | `o` | New order (pre-fills selected symbol) |
 | `s` | SELL SHORT order (Positions panel) |
-| `c` | Cancel selected order |
+| `c` | Copy symbol to clipboard (Positions / Watchlist) |
+| `c` | Cancel selected order (Orders panel) |
 | `a` | Add symbol to watchlist |
 | `d` | Remove symbol from watchlist |
 | `/` | Search / filter watchlist |
@@ -134,7 +135,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-alpaca-trader-rs = "0.5"
+alpaca-trader-rs = "0.6"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -300,7 +301,7 @@ variables for the active environment are used — the opposing set is ignored.
 | Interactive first-run credential prompt | ✅ |
 | Windows, macOS, and Linux support | ✅ |
 | GitHub Actions CI, security audit, Codecov (Linux + Windows), release builds | ✅ |
-| 449 tests (unit + integration) | ✅ |
+| 540 tests (unit + integration) | ✅ |
 
 ---
 
