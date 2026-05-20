@@ -313,6 +313,29 @@ mod tests {
     }
 
     #[test]
+    fn positions_footer_zero_cost_basis_pct_is_zero() {
+        // When total_cost (market_value - unrealized_pl) == 0, pct should display 0.00%
+        let mut app = make_test_app();
+        // market_value == unrealized_pl → cost basis = 0, avoid division by zero
+        app.positions.push(Position {
+            symbol: "ZERO".into(),
+            qty: "1".into(),
+            avg_entry_price: "0.00".into(),
+            current_price: "100.00".into(),
+            market_value: "100.00".into(),
+            unrealized_pl: "100.00".into(),
+            unrealized_plpc: "0.0".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        });
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("+0.00%"),
+            "expected +0.00% when cost basis is zero, got: {output}"
+        );
+    }
+
+    #[test]
     fn positions_fmt_dollar_invalid_passthrough() {
         assert_eq!(super::fmt_dollar("not-a-number"), "not-a-number");
     }
