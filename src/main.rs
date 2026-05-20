@@ -151,6 +151,8 @@ async fn main() -> anyhow::Result<()> {
         command_tx,
         symbol_tx,
     );
+    // Show "Loading…" while initial data is being fetched.
+    app.push_status(app::StatusMessage::persistent("Loading…"));
 
     // Event channel
     let (tx, mut rx) = mpsc::channel::<Event>(256);

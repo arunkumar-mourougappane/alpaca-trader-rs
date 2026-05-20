@@ -96,7 +96,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         let market_open = app.clock.as_ref().map(|c| c.is_open).unwrap_or(true);
                         if let Some(err) = crate::input::validate(&state, buying_power, market_open)
                         {
-                            app.status_msg = StatusMessage::persistent(err);
+                            app.push_status(StatusMessage::persistent(err));
                             app.modal = Some(Modal::OrderEntry(state));
                             return;
                         }

@@ -115,10 +115,10 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
     };
 
-    let status = if app.status_msg.is_empty() {
+    let status = if app.current_status_text().is_empty() {
         panel_hints.to_string()
     } else {
-        format!("  {}  │{}", app.status_msg.text, panel_hints)
+        format!("  {}  │{}", app.current_status_text(), panel_hints)
     };
 
     let para = Paragraph::new(status).style(c.dim_style());
@@ -243,6 +243,50 @@ mod tests {
         assert!(
             !output.contains("[DRY-RUN]"),
             "header must not show [DRY-RUN] badge when dry_run is false"
+        );
+    }
+
+    #[test]
+    fn status_bar_empty_queue_shows_only_hints() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        // queue starts empty → only hints should appear
+        let output = render_status_to_string(&app);
+        assert!(output.contains("q:Quit"), "should show hints");
+        assert!(
+            !output.contains("│"),
+            "should not show separator when no status message"
+        );
+    }
+
+    #[test]
+    fn status_bar_with_queue_message_shows_message_and_separator() {
+        use crate::app::StatusMessage;
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        app.push_status(StatusMessage::persistent("Refreshing…"));
+        let output = render_status_to_string(&app);
+        assert!(output.contains("Refreshing…"), "should show status message");
+        assert!(
+            output.contains("│"),
+            "should show separator between message and hints"
+        );
+    }
+
+    #[test]
+    fn status_bar_shows_front_of_queue() {
+        use crate::app::StatusMessage;
+        let mut app = make_test_app();
+        app.push_status(StatusMessage::persistent("First"));
+        app.push_status(StatusMessage::persistent("Second"));
+        let output = render_status_to_string(&app);
+        assert!(
+            output.contains("First"),
+            "should show first (front) message"
+        );
+        assert!(
+            !output.contains("Second"),
+            "should not show queued second message"
         );
     }
 }
