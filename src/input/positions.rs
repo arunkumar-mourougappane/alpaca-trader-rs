@@ -1,9 +1,19 @@
+use std::time::Duration;
+
 use crossterm::event::KeyCode;
 
 use crate::app::{App, Modal, OrderEntryState, OrderSide};
 
+const GG_TIMEOUT: Duration = Duration::from_millis(500);
+
 pub(crate) fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = app.positions.len();
+
+    // Any key other than 'g' clears the pending-gg state.
+    if key.code != KeyCode::Char('g') {
+        app.pending_g_at = None;
+    }
+
     match key.code {
         KeyCode::Char('j') | KeyCode::Down if len > 0 => {
             let i = app.positions_state.selected().unwrap_or(0);
@@ -13,7 +23,18 @@ pub(crate) fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEven
             let i = app.positions_state.selected().unwrap_or(0);
             app.positions_state.select(Some(i.saturating_sub(1)));
         }
-        KeyCode::Char('g') => app.positions_state.select(Some(0)),
+        KeyCode::Char('g') => {
+            if app
+                .pending_g_at
+                .map(|t| t.elapsed() < GG_TIMEOUT)
+                .unwrap_or(false)
+            {
+                app.positions_state.select(Some(0));
+                app.pending_g_at = None;
+            } else {
+                app.pending_g_at = Some(std::time::Instant::now());
+            }
+        }
         KeyCode::Char('G') if len > 0 => {
             app.positions_state.select(Some(len - 1));
         }
