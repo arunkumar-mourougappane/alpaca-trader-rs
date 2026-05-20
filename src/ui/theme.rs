@@ -1,4 +1,7 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::{
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders},
+};
 
 // ── ThemeColors ───────────────────────────────────────────────────────────────
 
@@ -71,6 +74,18 @@ impl ThemeColors {
         } else {
             self.positive_style()
         }
+    }
+
+    /// Create a bordered [`Block`] with `Borders::ALL` and `border_fg_style()`.
+    ///
+    /// Eliminates the repeated
+    /// `Block::default().title(...).borders(Borders::ALL).border_style(c.border_fg_style())`
+    /// pattern across all UI panels.
+    pub fn bordered_block<'a>(&self, title: &'a str) -> Block<'a> {
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(self.border_fg_style())
     }
 }
 

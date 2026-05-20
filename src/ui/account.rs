@@ -3,13 +3,14 @@ use ratatui::{
     style::Style,
     symbols,
     text::{Line, Span},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph},
+    widgets::{Axis, Chart, Dataset, GraphType, Paragraph},
     Frame,
 };
 
 use crate::app::App;
 use crate::types::Position;
 use crate::ui::charts;
+use crate::ui::formatting::format_dollar;
 use crate::ui::theme::ThemeColors;
 
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
@@ -24,18 +25,14 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
     let c = app.current_theme.colors();
-    let block = Block::default()
-        .title(" Account ")
-        .borders(Borders::ALL)
-        .border_style(c.border_fg_style());
-
+    let block = c.bordered_block(" Account ");
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if let Some(acc) = &app.account {
-        let buying_power = format!("${}", format_dollars(&acc.buying_power));
-        let cash = format!("${}", format_dollars(&acc.cash));
-        let long_val = format!("${}", format_dollars(&acc.long_market_value));
+        let buying_power = format!("${}", format_dollar(&acc.buying_power));
+        let cash = format!("${}", format_dollar(&acc.cash));
+        let long_val = format!("${}", format_dollar(&acc.long_market_value));
 
         // Day P&L
         let day_pl_str = match compute_day_pl(&acc.equity, &acc.last_equity) {
@@ -97,10 +94,7 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
     let c = app.current_theme.colors();
-    let block = Block::default()
-        .title(" Today's Equity Curve ")
-        .borders(Borders::ALL)
-        .border_style(c.border_fg_style());
+    let block = c.bordered_block(" Today's Equity Curve ");
 
     if app.equity_history.is_empty() {
         let para = Paragraph::new("  Collecting data…")
@@ -184,14 +178,6 @@ fn spacer() -> Span<'static> {
     Span::raw("   ")
 }
 
-fn format_dollars(s: &str) -> String {
-    if let Ok(v) = s.parse::<f64>() {
-        format!("{:.2}", v)
-    } else {
-        s.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,19 +226,22 @@ mod tests {
         assert_eq!(format_day_pl(-500.0, -1.0), "-$500.00 (-1.00%)");
     }
 
-    // ── format_dollars ────────────────────────────────────────────────────────
+    // ── format_dollar (from crate::ui::formatting) ────────────────────────────
 
     #[test]
     fn format_dollars_valid_float() {
-        assert_eq!(format_dollars("1000.5"), "1000.50");
-        assert_eq!(format_dollars("0"), "0.00");
-        assert_eq!(format_dollars("125432.18"), "125432.18");
+        assert_eq!(crate::ui::formatting::format_dollar("1000.5"), "1000.50");
+        assert_eq!(crate::ui::formatting::format_dollar("0"), "0.00");
+        assert_eq!(
+            crate::ui::formatting::format_dollar("125432.18"),
+            "125432.18"
+        );
     }
 
     #[test]
     fn format_dollars_non_numeric_passthrough() {
-        assert_eq!(format_dollars("N/A"), "N/A");
-        assert_eq!(format_dollars(""), "");
+        assert_eq!(crate::ui::formatting::format_dollar("N/A"), "N/A");
+        assert_eq!(crate::ui::formatting::format_dollar(""), "");
     }
 
     // ── span helpers ──────────────────────────────────────────────────────────
