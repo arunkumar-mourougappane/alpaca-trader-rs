@@ -36,6 +36,15 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
     let now = Local::now().format("%H:%M:%S ET  %Y-%m-%d").to_string();
 
+    // Right-side indicator: spinner while fetching, or "Updated HH:MM:SS" when idle.
+    let fetch_indicator = if app.pending_requests > 0 {
+        format!("  {} Fetching…", app.spinner_frame())
+    } else if let Some(updated_at) = app.last_updated {
+        format!("  Updated {}", updated_at.format("%H:%M:%S"))
+    } else {
+        String::new()
+    };
+
     let mut spans = vec![
         Span::styled(
             format!(" [{}] ", env_label),
@@ -54,6 +63,7 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(format!("   {}", now), c.dim_style()),
+        Span::styled(fetch_indicator, c.dim_style()),
     ];
 
     if app.config.dry_run {
@@ -287,6 +297,45 @@ mod tests {
         assert!(
             !output.contains("Second"),
             "should not show queued second message"
+        );
+    }
+
+    #[test]
+    fn header_shows_fetching_spinner_when_pending() {
+        let mut app = make_test_app();
+        app.pending_requests = 1;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("Fetching"),
+            "header should show 'Fetching…' while requests are in-flight; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_updated_time_when_idle_with_last_updated() {
+        let mut app = make_test_app();
+        app.pending_requests = 0;
+        app.last_updated = Some(chrono::Local::now());
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("Updated"),
+            "header should show 'Updated HH:MM:SS' when idle with last_updated set; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_no_fetch_indicator_when_idle_and_no_last_updated() {
+        let app = make_test_app();
+        assert_eq!(app.pending_requests, 0);
+        assert!(app.last_updated.is_none());
+        let output = render_header_to_string(&app);
+        assert!(
+            !output.contains("Fetching"),
+            "header must not show spinner when idle"
+        );
+        assert!(
+            !output.contains("Updated"),
+            "header must not show 'Updated' when last_updated is None"
         );
     }
 }

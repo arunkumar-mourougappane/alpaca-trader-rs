@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Local};
 use ratatui::layout::Rect;
 
 /// Maximum number of status messages held in the queue at once.
@@ -368,6 +369,18 @@ pub struct App {
     /// redraw before the next tick. Cleared by the main loop after drawing.
     pub needs_redraw: bool,
 
+    /// Number of in-flight REST requests.
+    ///
+    /// Incremented by `Event::FetchStarted`, decremented by `Event::FetchComplete`.
+    /// Non-zero while any fetch is in-flight; used to show the loading spinner.
+    pub pending_requests: u8,
+    /// Wall-clock time of the most recent complete data refresh, updated when
+    /// `pending_requests` drops to zero.
+    pub last_updated: Option<DateTime<Local>>,
+    /// Frame index advanced on every `Event::Tick` while `pending_requests > 0`.
+    /// Used to cycle through spinner frames without storing wall-clock timers.
+    pub spinner_tick: u8,
+
     /// `true` while the market-data WebSocket is connected and authenticated.
     pub market_stream_ok: bool,
     /// `true` while the account WebSocket is connected and authenticated.
@@ -414,6 +427,9 @@ impl App {
             status_queue: VecDeque::new(),
             should_quit: false,
             needs_redraw: false,
+            pending_requests: 0,
+            last_updated: None,
+            spinner_tick: 0,
             market_stream_ok: false,
             account_stream_ok: false,
             hit_areas: HitAreas::default(),
@@ -514,6 +530,35 @@ impl App {
     /// Sets a fill-notification status message using the fill TTL from user preferences.
     pub fn push_fill_notification(&mut self, text: impl Into<String>) {
         self.push_status(StatusMessage::with_ttl(text, self.prefs.fill_ttl()));
+    }
+
+    /// Increments the in-flight request counter (called when a fetch begins).
+    pub fn request_started(&mut self) {
+        self.pending_requests = self.pending_requests.saturating_add(1);
+    }
+
+    /// Decrements the in-flight request counter (called when a fetch completes).
+    ///
+    /// When the counter reaches zero, [`last_updated`](App::last_updated) is
+    /// set to the current local time.
+    pub fn request_finished(&mut self) {
+        self.pending_requests = self.pending_requests.saturating_sub(1);
+        if self.pending_requests == 0 {
+            self.last_updated = Some(Local::now());
+        }
+    }
+
+    /// Returns the current spinner frame character for the active-fetch indicator.
+    ///
+    /// Cycles through the ten braille-dot frames on each tick.
+    pub fn spinner_frame(&self) -> char {
+        const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        FRAMES[(self.spinner_tick as usize) % FRAMES.len()]
+    }
+
+    /// Advances the spinner by one frame (called on each `Event::Tick` while busy).
+    pub fn tick_spinner(&mut self) {
+        self.spinner_tick = self.spinner_tick.wrapping_add(1);
     }
 
     /// Advances to the next theme in the cycle (Default → Dark → High-contrast → Default).

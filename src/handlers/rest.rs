@@ -32,16 +32,40 @@ pub async fn run(
 }
 
 pub async fn poll_once(tx: Sender<Event>, client: Arc<AlpacaClient>) {
-    tokio::join!(poll_all(&client, &tx), poll_portfolio_history(&client, &tx));
+    tokio::join!(poll_all(&client, &tx), async {
+        let _ = tx.send(Event::FetchStarted).await;
+        poll_portfolio_history(&client, &tx).await;
+        let _ = tx.send(Event::FetchComplete).await;
+    },);
 }
 
 async fn poll_all(client: &AlpacaClient, tx: &Sender<Event>) {
     tokio::join!(
-        poll_account(client, tx),
-        poll_positions(client, tx),
-        poll_orders(client, tx),
-        poll_clock(client, tx),
-        poll_watchlist(client, tx),
+        async {
+            let _ = tx.send(Event::FetchStarted).await;
+            poll_account(client, tx).await;
+            let _ = tx.send(Event::FetchComplete).await;
+        },
+        async {
+            let _ = tx.send(Event::FetchStarted).await;
+            poll_positions(client, tx).await;
+            let _ = tx.send(Event::FetchComplete).await;
+        },
+        async {
+            let _ = tx.send(Event::FetchStarted).await;
+            poll_orders(client, tx).await;
+            let _ = tx.send(Event::FetchComplete).await;
+        },
+        async {
+            let _ = tx.send(Event::FetchStarted).await;
+            poll_clock(client, tx).await;
+            let _ = tx.send(Event::FetchComplete).await;
+        },
+        async {
+            let _ = tx.send(Event::FetchStarted).await;
+            poll_watchlist(client, tx).await;
+            let _ = tx.send(Event::FetchComplete).await;
+        },
     );
 }
 
