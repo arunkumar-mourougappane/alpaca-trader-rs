@@ -1,11 +1,12 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
+    widgets::{Cell, Paragraph, Row, Table, Tabs},
     Frame,
 };
 
 use crate::app::{App, OrdersSubTab};
+use crate::ui::formatting::{format_price, header_cell};
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
@@ -90,29 +91,24 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     if orders.is_empty() {
         let para = Paragraph::new("  No orders in this category.")
             .style(c.dim_style())
-            .block(
-                Block::default()
-                    .title(" Orders ")
-                    .borders(Borders::ALL)
-                    .border_style(c.border_fg_style()),
-            );
+            .block(c.bordered_block(" Orders "));
         frame.render_widget(para, area);
         return;
     }
 
     let mut header_cells = vec![
-        Cell::from("ID").style(c.header_style()),
-        Cell::from("Symbol").style(c.header_style()),
-        Cell::from("Side").style(c.header_style()),
-        Cell::from("Qty").style(c.header_style()),
-        Cell::from("Type").style(c.header_style()),
-        Cell::from("Limit").style(c.header_style()),
-        Cell::from("Status").style(c.header_style()),
-        Cell::from("Submitted").style(c.header_style()),
+        header_cell("ID", &c),
+        header_cell("Symbol", &c),
+        header_cell("Side", &c),
+        header_cell("Qty", &c),
+        header_cell("Type", &c),
+        header_cell("Limit", &c),
+        header_cell("Status", &c),
+        header_cell("Submitted", &c),
     ];
     if is_filled_tab {
-        header_cells.push(Cell::from("Filled Qty").style(c.header_style()));
-        header_cells.push(Cell::from("Fill Price").style(c.header_style()));
+        header_cells.push(header_cell("Filled Qty", &c));
+        header_cells.push(header_cell("Fill Price", &c));
     }
     let header = Row::new(header_cells);
 
@@ -141,7 +137,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
             let limit_str = o
                 .limit_price
                 .as_deref()
-                .map(|p: &str| format!("${:.2}", p.parse::<f64>().unwrap_or(0.0)))
+                .map(format_price)
                 .unwrap_or_else(|| "—".into());
 
             let submitted = o
@@ -171,7 +167,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
                 let fill_price_str = o
                     .filled_avg_price
                     .as_deref()
-                    .map(|p| format!("${:.2}", p.parse::<f64>().unwrap_or(0.0)))
+                    .map(format_price)
                     .unwrap_or_else(|| "—".into());
                 cells.push(Cell::from(filled_qty_str));
                 cells.push(Cell::from(fill_price_str).style(c.positive_style()));
@@ -181,10 +177,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
-    let block = Block::default()
-        .title(" Orders ")
-        .borders(Borders::ALL)
-        .border_style(c.border_fg_style());
+    let block = c.bordered_block(" Orders ");
 
     let mut constraints = vec![
         Constraint::Length(10),
@@ -212,27 +205,13 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{backend::TestBackend, Terminal};
-
     use crate::app::test_helpers::{make_order, make_test_app};
+    use crate::ui::test_helpers::render_to_string;
 
     fn render_orders_to_string(app: &mut crate::app::App) -> String {
-        let backend = TestBackend::new(100, 20);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|frame| {
-                super::render(frame, frame.area(), app);
-            })
-            .unwrap();
-        let buf = terminal.backend().buffer().clone();
-        let mut out = String::new();
-        for row in 0..buf.area.height {
-            for col in 0..buf.area.width {
-                out.push_str(buf[(col, row)].symbol());
-            }
-            out.push('\n');
-        }
-        out
+        render_to_string(100, 20, |frame| {
+            super::render(frame, frame.area(), app);
+        })
     }
 
     #[test]

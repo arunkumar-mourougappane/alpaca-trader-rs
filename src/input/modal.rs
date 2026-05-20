@@ -142,9 +142,9 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 return;
             }
             KeyCode::Char('s') => {
-                let mut state = OrderEntryState::new(symbol.clone());
-                state.side = OrderSide::Sell;
-                app.modal = Some(Modal::OrderEntry(state));
+                app.modal = Some(Modal::OrderEntry(
+                    OrderEntryState::new(symbol.clone()).with_side(OrderSide::Sell),
+                ));
                 return;
             }
             KeyCode::Char('w') => {

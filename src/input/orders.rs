@@ -1,44 +1,14 @@
-use std::time::Duration;
-
 use crossterm::event::KeyCode;
 
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrdersSubTab};
-
-const GG_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub(crate) fn handle_orders_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let orders = app.filtered_orders();
     let len = orders.len();
 
-    // Any key other than 'g' clears the pending-gg state.
-    if key.code != KeyCode::Char('g') {
-        app.pending_g_at = None;
-    }
+    super::handle_nav_key(key.code, len, &mut app.orders_state, &mut app.pending_g_at);
 
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down if len > 0 => {
-            let i = app.orders_state.selected().unwrap_or(0);
-            app.orders_state.select(Some((i + 1).min(len - 1)));
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            let i = app.orders_state.selected().unwrap_or(0);
-            app.orders_state.select(Some(i.saturating_sub(1)));
-        }
-        KeyCode::Char('g') => {
-            if app
-                .pending_g_at
-                .map(|t| t.elapsed() < GG_TIMEOUT)
-                .unwrap_or(false)
-            {
-                app.orders_state.select(Some(0));
-                app.pending_g_at = None;
-            } else {
-                app.pending_g_at = Some(std::time::Instant::now());
-            }
-        }
-        KeyCode::Char('G') if len > 0 => {
-            app.orders_state.select(Some(len - 1));
-        }
         KeyCode::Char('1') => {
             app.orders_subtab = OrdersSubTab::Open;
             app.orders_state.select(Some(0));

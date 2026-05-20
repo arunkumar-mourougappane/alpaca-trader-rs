@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::ui::formatting::header_cell;
 
 /// Format a trading volume number into a compact human-readable string.
 ///
@@ -84,11 +85,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
 
     let header = Row::new(vec![
-        Cell::from("Symbol").style(c.header_style()),
-        Cell::from("Name").style(c.header_style()),
-        Cell::from("Price").style(c.header_style()),
-        Cell::from("Change%").style(c.header_style()),
-        Cell::from("Volume").style(c.header_style()),
+        header_cell("Symbol", &c),
+        header_cell("Name", &c),
+        header_cell("Price", &c),
+        header_cell("Change%", &c),
+        header_cell("Volume", &c),
     ]);
 
     let rows: Vec<Row> = filtered
@@ -166,10 +167,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
 
     let title = format!(" Watchlist: {} ({}) ", wl.name, filtered.len());
-    let block = Block::default()
-        .title(title)
-        .borders(Borders::ALL)
-        .border_style(c.border_fg_style());
+    let block = c.bordered_block(&title);
 
     let table = Table::new(
         rows,
@@ -205,8 +203,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{backend::TestBackend, Terminal};
-
     use super::format_volume;
     use crate::app::test_helpers::{make_test_app, make_watchlist};
     use crate::types::{Snapshot, SnapshotBar, SnapshotQuote, SnapshotTrade};
@@ -234,22 +230,9 @@ mod tests {
     // ── price fallback render tests ───────────────────────────────────────────
 
     fn render_watchlist_to_string(app: &mut crate::app::App) -> String {
-        let backend = TestBackend::new(80, 20);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|frame| {
-                super::render(frame, frame.area(), app);
-            })
-            .unwrap();
-        let buf = terminal.backend().buffer().clone();
-        let mut out = String::new();
-        for row in 0..buf.area.height {
-            for col in 0..buf.area.width {
-                out.push_str(buf[(col, row)].symbol());
-            }
-            out.push('\n');
-        }
-        out
+        crate::ui::test_helpers::render_to_string(80, 20, |frame| {
+            super::render(frame, frame.area(), app);
+        })
     }
 
     #[test]

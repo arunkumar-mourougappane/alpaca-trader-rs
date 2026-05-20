@@ -1,11 +1,12 @@
 use ratatui::{
     layout::Constraint,
     style::Style,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    widgets::{Cell, Paragraph, Row, Table},
     Frame,
 };
 
 use crate::app::App;
+use crate::ui::formatting::{format_pct_ratio, format_price, header_cell};
 
 pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     let c = app.current_theme.colors();
@@ -13,24 +14,19 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     if app.positions.is_empty() {
         let para = Paragraph::new("  No open positions.")
             .style(c.dim_style())
-            .block(
-                Block::default()
-                    .title(" Positions ")
-                    .borders(Borders::ALL)
-                    .border_style(c.border_fg_style()),
-            );
+            .block(c.bordered_block(" Positions "));
         frame.render_widget(para, area);
         return;
     }
 
     let header = Row::new(vec![
-        Cell::from("Symbol").style(c.header_style()),
-        Cell::from("Qty").style(c.header_style()),
-        Cell::from("Avg Cost").style(c.header_style()),
-        Cell::from("Cur Price").style(c.header_style()),
-        Cell::from("Mkt Value").style(c.header_style()),
-        Cell::from("Unrealized P&L").style(c.header_style()),
-        Cell::from("%").style(c.header_style()),
+        header_cell("Symbol", &c),
+        header_cell("Qty", &c),
+        header_cell("Avg Cost", &c),
+        header_cell("Cur Price", &c),
+        header_cell("Mkt Value", &c),
+        header_cell("Unrealized P&L", &c),
+        header_cell("%", &c),
     ]);
 
     let mut rows: Vec<Row> = app
@@ -42,19 +38,19 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
                 .get(&p.symbol)
                 .and_then(|q| q.ap.or(q.bp))
                 .map(|v| format!("${:.2}", v))
-                .unwrap_or_else(|| format!("${}", fmt_dollar(&p.current_price)));
+                .unwrap_or_else(|| format_price(&p.current_price));
 
             let pnl = p.unrealized_pl.trim().to_string();
-            let pnl_pct = fmt_pct(&p.unrealized_plpc);
+            let pnl_pct = format_pct_ratio(&p.unrealized_plpc);
             let pnl_style = c.pnl_style(&pnl);
 
             Row::new(vec![
                 Cell::from(p.symbol.clone()).style(c.bold_style()),
                 Cell::from(p.qty.clone()),
-                Cell::from(format!("${}", fmt_dollar(&p.avg_entry_price))),
+                Cell::from(format_price(&p.avg_entry_price)),
                 Cell::from(cur_price),
-                Cell::from(format!("${}", fmt_dollar(&p.market_value))),
-                Cell::from(format!("${}", fmt_dollar(&pnl))).style(pnl_style),
+                Cell::from(format_price(&p.market_value)),
+                Cell::from(format_price(&pnl)).style(pnl_style),
                 Cell::from(pnl_pct).style(pnl_style),
             ])
         })
@@ -101,10 +97,8 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
         .style(Style::default()),
     );
 
-    let block = Block::default()
-        .title(format!(" Positions ({}) ", app.positions.len()))
-        .borders(Borders::ALL)
-        .border_style(c.border_fg_style());
+    let title = format!(" Positions ({}) ", app.positions.len());
+    let block = c.bordered_block(&title);
 
     let table = Table::new(
         rows,
@@ -126,28 +120,11 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     frame.render_stateful_widget(table, area, &mut app.positions_state);
 }
 
-fn fmt_dollar(s: &str) -> String {
-    if let Ok(v) = s.parse::<f64>() {
-        format!("{:.2}", v)
-    } else {
-        s.to_string()
-    }
-}
-
-fn fmt_pct(s: &str) -> String {
-    if let Ok(v) = s.parse::<f64>() {
-        format!("{:+.2}%", v * 100.0)
-    } else {
-        s.to_string()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use ratatui::{backend::TestBackend, Terminal};
-
     use crate::app::test_helpers::make_test_app;
     use crate::types::Position;
+    use crate::ui::test_helpers::render_to_string;
 
     fn make_position(symbol: &str, pnl: &str) -> Position {
         Position {
@@ -164,22 +141,9 @@ mod tests {
     }
 
     fn render_positions_to_string(app: &mut crate::app::App) -> String {
-        let backend = TestBackend::new(120, 20);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|frame| {
-                super::render(frame, frame.area(), app);
-            })
-            .unwrap();
-        let buf = terminal.backend().buffer().clone();
-        let mut out = String::new();
-        for row in 0..buf.area.height {
-            for col in 0..buf.area.width {
-                out.push_str(buf[(col, row)].symbol());
-            }
-            out.push('\n');
-        }
-        out
+        render_to_string(120, 20, |frame| {
+            super::render(frame, frame.area(), app);
+        })
     }
 
     #[test]
@@ -337,26 +301,29 @@ mod tests {
 
     #[test]
     fn positions_fmt_dollar_invalid_passthrough() {
-        assert_eq!(super::fmt_dollar("not-a-number"), "not-a-number");
+        assert_eq!(
+            crate::ui::formatting::format_dollar("not-a-number"),
+            "not-a-number"
+        );
     }
 
     #[test]
     fn positions_fmt_dollar_valid() {
-        assert_eq!(super::fmt_dollar("123.456"), "123.46");
+        assert_eq!(crate::ui::formatting::format_dollar("123.456"), "123.46");
     }
 
     #[test]
     fn positions_fmt_pct_valid() {
-        assert_eq!(super::fmt_pct("0.05"), "+5.00%");
+        assert_eq!(crate::ui::formatting::format_pct_ratio("0.05"), "+5.00%");
     }
 
     #[test]
     fn positions_fmt_pct_negative() {
-        assert_eq!(super::fmt_pct("-0.025"), "-2.50%");
+        assert_eq!(crate::ui::formatting::format_pct_ratio("-0.025"), "-2.50%");
     }
 
     #[test]
     fn positions_fmt_pct_invalid() {
-        assert_eq!(super::fmt_pct("n/a"), "n/a");
+        assert_eq!(crate::ui::formatting::format_pct_ratio("n/a"), "n/a");
     }
 }

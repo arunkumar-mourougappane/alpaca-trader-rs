@@ -286,6 +286,12 @@ impl OrderEntryState {
             focused_field: OrderField::Qty,
         }
     }
+
+    /// Builder method to set the order side, allowing one-liner construction.
+    pub fn with_side(mut self, side: OrderSide) -> Self {
+        self.side = side;
+        self
+    }
 }
 
 #[derive(Debug, Clone)]

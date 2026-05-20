@@ -1,11 +1,15 @@
 pub mod account;
 pub mod charts;
 pub mod dashboard;
+pub mod formatting;
 pub mod modals;
 pub mod orders;
 pub mod positions;
 pub mod theme;
 pub mod watchlist;
+
+#[cfg(test)]
+pub mod test_helpers;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},

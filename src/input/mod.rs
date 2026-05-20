@@ -14,10 +14,82 @@ pub(crate) use search::handle_search_key;
 pub(crate) use validation::validate;
 pub(crate) use watchlist::handle_watchlist_key;
 
+use std::time::{Duration, Instant};
+
+use crossterm::event::KeyCode;
+use ratatui::widgets::{ListState, TableState};
 use tokio::sync::mpsc::error::TrySendError;
 
 use crate::app::{App, StatusMessage};
 use crate::commands::Command;
+
+/// Timeout window for the `gg` (jump-to-top) vim key sequence.
+pub(crate) const GG_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Abstraction over ratatui selection states so [`handle_nav_key`] can work
+/// with both [`ListState`] and [`TableState`].
+pub(crate) trait SelectionState {
+    fn selected(&self) -> Option<usize>;
+    fn select(&mut self, index: Option<usize>);
+}
+
+impl SelectionState for ListState {
+    fn selected(&self) -> Option<usize> {
+        ListState::selected(self)
+    }
+    fn select(&mut self, index: Option<usize>) {
+        ListState::select(self, index);
+    }
+}
+
+impl SelectionState for TableState {
+    fn selected(&self) -> Option<usize> {
+        TableState::selected(self)
+    }
+    fn select(&mut self, index: Option<usize>) {
+        TableState::select(self, index);
+    }
+}
+
+/// Handle vim-style navigation keys (`j`/`k`/`Up`/`Down`/`g`/`G`) for any list or table.
+///
+/// Mutates `state` (any [`SelectionState`] such as [`ListState`] or [`TableState`]) and
+/// `pending_g` (the timestamp of the last `g` press used for `gg` detection).  Any
+/// non-navigation key resets `pending_g` so the `gg` sequence is cancelled.
+pub(crate) fn handle_nav_key(
+    key: KeyCode,
+    len: usize,
+    state: &mut impl SelectionState,
+    pending_g: &mut Option<Instant>,
+) {
+    // Any key except a fresh 'g' press cancels the gg sequence.
+    let was_pending = *pending_g;
+    *pending_g = None;
+    match key {
+        KeyCode::Char('j') | KeyCode::Down if len > 0 => {
+            let i = state.selected().unwrap_or(0);
+            state.select(Some((i + 1).min(len - 1)));
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            let i = state.selected().unwrap_or(0);
+            state.select(Some(i.saturating_sub(1)));
+        }
+        KeyCode::Char('g') => {
+            if was_pending
+                .map(|t| t.elapsed() < GG_TIMEOUT)
+                .unwrap_or(false)
+            {
+                state.select(Some(0));
+            } else {
+                *pending_g = Some(Instant::now());
+            }
+        }
+        KeyCode::Char('G') if len > 0 => {
+            state.select(Some(len - 1));
+        }
+        _ => {}
+    }
+}
 
 /// Send a command on the command channel and set the appropriate status message.
 ///
