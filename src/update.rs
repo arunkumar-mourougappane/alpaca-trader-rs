@@ -1,14 +1,18 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::app::{App, Modal, StatusMessage, Tab};
 use crate::clipboard;
+use crate::commands::Command;
 use crate::events::{Event, StreamKind};
 use crate::input::{
     handle_modal_key, handle_mouse, handle_orders_key, handle_positions_key, handle_search_key,
     handle_watchlist_key,
 };
+
+/// How long to wait before re-fetching intraday bars for an open symbol-detail modal.
+const INTRADAY_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 pub fn update(app: &mut App, event: Event) {
     match event {
@@ -52,6 +56,9 @@ pub fn update(app: &mut App, event: Event) {
         }
         Event::MarketQuote(q) => {
             app.quotes.insert(q.symbol.clone(), q);
+            // Push a streaming equity sample between REST polls so the chart
+            // reflects live price movement without extra API calls.
+            app.push_equity_from_quotes();
         }
         Event::TradeUpdate {
             order: o,
@@ -86,6 +93,10 @@ pub fn update(app: &mut App, event: Event) {
             app.snapshots = snapshots;
         }
         Event::IntradayBarsReceived { symbol, bars } => {
+            // Record fetch time before storing bars so the Tick handler can
+            // schedule the next periodic refresh from this instant.
+            app.intraday_fetched_at
+                .insert(symbol.clone(), Instant::now());
             app.intraday_bars.insert(symbol, bars);
         }
         Event::FetchStarted => app.request_started(),
@@ -103,6 +114,19 @@ pub fn update(app: &mut App, event: Event) {
                         app.status_queue.pop_front();
                     }
                     _ => break,
+                }
+            }
+            // Periodically re-fetch intraday bars while a symbol-detail modal is open.
+            if let Some(Modal::SymbolDetail(symbol)) = &app.modal.clone() {
+                let due = app
+                    .intraday_fetched_at
+                    .get(symbol)
+                    .map(|t| t.elapsed() >= INTRADAY_REFRESH_INTERVAL)
+                    .unwrap_or(false);
+                if due {
+                    let _ = app
+                        .command_tx
+                        .try_send(Command::FetchIntradayBars(symbol.clone()));
                 }
             }
         }
@@ -2853,6 +2877,215 @@ mod tests {
         assert!(
             !status.contains("✓") && !status.contains("✗") && !status.contains("~"),
             "pending_new should not push a notification, got: {status:?}"
+        );
+    }
+
+    // ── MarketQuote streaming equity ──────────────────────────────────────────
+
+    fn make_position(symbol: &str, qty: &str, price: &str) -> crate::types::Position {
+        crate::types::Position {
+            symbol: symbol.into(),
+            qty: qty.into(),
+            avg_entry_price: price.into(),
+            current_price: price.into(),
+            market_value: "0".into(),
+            unrealized_pl: "0".into(),
+            unrealized_plpc: "0".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }
+    }
+
+    #[test]
+    fn market_quote_pushes_equity_when_positions_present() {
+        let mut app = make_test_app();
+        app.account = Some(crate::types::AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position("AAPL", "10", "150.00")];
+        update(
+            &mut app,
+            Event::MarketQuote(Quote {
+                symbol: "AAPL".into(),
+                ap: Some(200.00),
+                bp: None,
+                ..Default::default()
+            }),
+        );
+        // Quote stored
+        assert!(app.quotes.contains_key("AAPL"));
+        // Equity pushed: 10 × $200 = $2000 → 200000 cents
+        assert_eq!(
+            app.equity_history,
+            vec![200_000],
+            "equity_history should have streaming sample"
+        );
+    }
+
+    #[test]
+    fn market_quote_no_equity_push_without_positions() {
+        let mut app = make_test_app();
+        // No positions — push_equity_from_quotes should skip silently
+        update(
+            &mut app,
+            Event::MarketQuote(Quote {
+                symbol: "AAPL".into(),
+                ap: Some(200.00),
+                bp: None,
+                ..Default::default()
+            }),
+        );
+        assert!(
+            app.equity_history.is_empty(),
+            "no equity sample without positions"
+        );
+    }
+
+    // ── IntradayBarsReceived fetch timestamp ──────────────────────────────────
+
+    #[test]
+    fn intraday_bars_received_records_fetched_at_timestamp() {
+        let mut app = make_test_app();
+        let before = std::time::Instant::now();
+        update(
+            &mut app,
+            Event::IntradayBarsReceived {
+                symbol: "MSFT".into(),
+                bars: vec![10_000, 10_050],
+            },
+        );
+        let after = std::time::Instant::now();
+        let ts = app
+            .intraday_fetched_at
+            .get("MSFT")
+            .expect("fetched_at should be recorded");
+        assert!(
+            *ts >= before && *ts <= after,
+            "fetched_at should be close to now"
+        );
+        // Bars also stored
+        assert_eq!(
+            app.intraday_bars.get("MSFT"),
+            Some(&vec![10_000u64, 10_050])
+        );
+    }
+
+    // ── Tick intraday refresh ─────────────────────────────────────────────────
+
+    #[test]
+    fn tick_dispatches_intraday_refresh_when_due() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let mut app = crate::app::App::new(
+            crate::config::AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: crate::config::AlpacaEnv::Paper,
+                dry_run: false,
+            },
+            crate::prefs::AppPrefs::default(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            cmd_tx,
+            symbol_tx,
+        );
+        // Open a SymbolDetail modal for AAPL
+        app.modal = Some(crate::app::Modal::SymbolDetail("AAPL".into()));
+        // Simulate a fetch that happened > 60 seconds ago
+        app.intraday_fetched_at.insert(
+            "AAPL".into(),
+            std::time::Instant::now() - std::time::Duration::from_secs(61),
+        );
+        update(&mut app, Event::Tick);
+        // A FetchIntradayBars command should have been dispatched
+        let cmd = cmd_rx.try_recv().expect("command should be dispatched");
+        assert!(
+            matches!(cmd, Command::FetchIntradayBars(s) if s == "AAPL"),
+            "expected FetchIntradayBars for AAPL"
+        );
+    }
+
+    #[test]
+    fn tick_skips_intraday_refresh_when_not_due() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let mut app = crate::app::App::new(
+            crate::config::AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: crate::config::AlpacaEnv::Paper,
+                dry_run: false,
+            },
+            crate::prefs::AppPrefs::default(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            cmd_tx,
+            symbol_tx,
+        );
+        app.modal = Some(crate::app::Modal::SymbolDetail("AAPL".into()));
+        // Fetched just now — not due yet
+        app.intraday_fetched_at
+            .insert("AAPL".into(), std::time::Instant::now());
+        update(&mut app, Event::Tick);
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no refresh command when interval not elapsed"
+        );
+    }
+
+    #[test]
+    fn tick_skips_intraday_refresh_when_no_modal() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let mut app = crate::app::App::new(
+            crate::config::AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: crate::config::AlpacaEnv::Paper,
+                dry_run: false,
+            },
+            crate::prefs::AppPrefs::default(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            cmd_tx,
+            symbol_tx,
+        );
+        // No modal open
+        app.intraday_fetched_at.insert(
+            "AAPL".into(),
+            std::time::Instant::now() - std::time::Duration::from_secs(61),
+        );
+        update(&mut app, Event::Tick);
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no refresh command without an open modal"
+        );
+    }
+
+    #[test]
+    fn tick_skips_intraday_refresh_when_never_fetched() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let mut app = crate::app::App::new(
+            crate::config::AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: crate::config::AlpacaEnv::Paper,
+                dry_run: false,
+            },
+            crate::prefs::AppPrefs::default(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            cmd_tx,
+            symbol_tx,
+        );
+        // Modal open but bars were never fetched (no entry in intraday_fetched_at)
+        app.modal = Some(crate::app::Modal::SymbolDetail("AAPL".into()));
+        update(&mut app, Event::Tick);
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no refresh command when bars have never been fetched"
         );
     }
 }
