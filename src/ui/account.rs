@@ -133,27 +133,38 @@ fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
         render_chart_crosshair(
             frame,
             area,
-            &data_points,
-            cursor_idx,
-            &c,
-            y_min,
-            y_max,
-            &app.equity_history,
+            CrosshairCtx {
+                data_points: &data_points,
+                cursor_idx,
+                c: &c,
+                y_min,
+                y_max,
+                equity_history: &app.equity_history,
+            },
         );
     }
 }
 
-/// Draw a vertical crosshair line and a floating price/time tooltip at `cursor_idx`.
-fn render_chart_crosshair(
-    frame: &mut Frame,
-    area: Rect,
-    data_points: &[(f64, f64)],
+/// Context passed to `render_chart_crosshair` to avoid too-many-arguments.
+struct CrosshairCtx<'a> {
+    data_points: &'a [(f64, f64)],
     cursor_idx: usize,
-    c: &crate::ui::theme::ThemeColors,
+    c: &'a crate::ui::theme::ThemeColors,
     y_min: f64,
     y_max: f64,
-    equity_history: &[u64],
-) {
+    equity_history: &'a [u64],
+}
+
+/// Draw a vertical crosshair line and a floating price/time tooltip at `cursor_idx`.
+fn render_chart_crosshair(frame: &mut Frame, area: Rect, ctx: CrosshairCtx<'_>) {
+    let CrosshairCtx {
+        data_points,
+        cursor_idx,
+        c,
+        y_min,
+        y_max,
+        equity_history,
+    } = ctx;
     // The Chart widget uses a 1-cell border + a y-axis label column on the left
     // and an x-axis label row at the bottom.  Approximate inner plot area:
     //   left:   area.x + 1 (border) + ~8 chars for y-axis labels
