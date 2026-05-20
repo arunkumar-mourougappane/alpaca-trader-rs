@@ -1195,4 +1195,114 @@ mod tests {
             "render() with Modal::About should display app name"
         );
     }
+
+    fn render_confirm_remove_watchlist_to_string(symbol: &str) -> String {
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_confirm_remove_watchlist(frame, area, symbol, &mut app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_confirm_remove_watchlist_shows_title() {
+        let output = render_confirm_remove_watchlist_to_string("AAPL");
+        assert!(
+            output.contains("Remove from Watchlist"),
+            "modal title should say 'Remove from Watchlist', got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_confirm_remove_watchlist_shows_symbol() {
+        let output = render_confirm_remove_watchlist_to_string("TSLA");
+        assert!(
+            output.contains("TSLA"),
+            "modal should display the symbol being removed, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_confirm_remove_watchlist_shows_yes_button() {
+        let output = render_confirm_remove_watchlist_to_string("AAPL");
+        assert!(
+            output.contains("Yes"),
+            "modal should show Yes button, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_confirm_remove_watchlist_shows_no_button() {
+        let output = render_confirm_remove_watchlist_to_string("AAPL");
+        assert!(
+            output.contains("No"),
+            "modal should show No button, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_dispatch_confirm_remove_watchlist_modal() {
+        // Exercises the Modal::ConfirmRemoveWatchlist arm in render()
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(
+                    frame,
+                    area,
+                    &Modal::ConfirmRemoveWatchlist {
+                        symbol: "NVDA".into(),
+                        watchlist_id: "wl-1".into(),
+                    },
+                    &mut app,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("NVDA"),
+            "render() with Modal::ConfirmRemoveWatchlist should display the symbol"
+        );
+    }
 }
