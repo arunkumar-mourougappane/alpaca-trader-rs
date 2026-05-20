@@ -778,10 +778,13 @@ mod tests {
     }
 
     #[test]
-    fn watchlist_d_opens_confirm() {
+    fn watchlist_d_opens_confirm_remove_watchlist() {
         let mut app = watchlist_app();
         update(&mut app, key(KeyCode::Char('d')));
-        assert!(matches!(&app.modal, Some(Modal::Confirm { .. })));
+        assert!(matches!(
+            &app.modal,
+            Some(Modal::ConfirmRemoveWatchlist { symbol, .. }) if symbol == "AAPL"
+        ));
     }
 
     #[test]
@@ -1029,15 +1032,10 @@ mod tests {
 
     #[test]
     fn confirm_remove_watchlist_sends_remove_command() {
-        use crate::app::ConfirmAction;
         let (mut app, mut cmd_rx) = app_with_rx();
-        app.modal = Some(Modal::Confirm {
-            message: "Remove?".into(),
-            action: ConfirmAction::RemoveFromWatchlist {
-                watchlist_id: "wl-id".into(),
-                symbol: "TLRY".into(),
-            },
-            confirmed: false,
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "TLRY".into(),
+            watchlist_id: "wl-id".into(),
         });
 
         update(&mut app, key(KeyCode::Char('y')));
@@ -1046,6 +1044,82 @@ mod tests {
         let cmd = cmd_rx.try_recv().expect("command should be sent");
         assert!(
             matches!(cmd, Command::RemoveFromWatchlist { symbol, .. } if symbol == "TLRY"),
+            "expected RemoveFromWatchlist command"
+        );
+    }
+
+    #[test]
+    fn confirm_remove_watchlist_enter_confirms() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "AAPL".into(),
+            watchlist_id: "wl-id".into(),
+        });
+
+        update(&mut app, key(KeyCode::Enter));
+
+        assert!(app.modal.is_none(), "Enter should close the modal");
+        let cmd = cmd_rx.try_recv().expect("command should be sent");
+        assert!(
+            matches!(cmd, Command::RemoveFromWatchlist { symbol, .. } if symbol == "AAPL"),
+            "expected RemoveFromWatchlist command on Enter"
+        );
+    }
+
+    #[test]
+    fn confirm_remove_watchlist_n_cancels() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "AAPL".into(),
+            watchlist_id: "wl-id".into(),
+        });
+
+        update(&mut app, key(KeyCode::Char('n')));
+
+        assert!(
+            app.modal.is_none(),
+            "'n' should close the modal without action"
+        );
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no command should be sent on cancel"
+        );
+    }
+
+    #[test]
+    fn confirm_remove_watchlist_esc_cancels() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "AAPL".into(),
+            watchlist_id: "wl-id".into(),
+        });
+
+        update(&mut app, key(KeyCode::Esc));
+
+        assert!(
+            app.modal.is_none(),
+            "Esc should close the modal without action"
+        );
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no command should be sent on Esc"
+        );
+    }
+
+    #[test]
+    fn watchlist_d_no_confirm_pref_sends_remove_directly() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.active_tab = Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        app.watchlist_state.select(Some(0));
+        app.prefs.safety.confirm_watchlist_remove = false;
+
+        update(&mut app, key(KeyCode::Char('d')));
+
+        assert!(app.modal.is_none(), "no modal when pref is false");
+        let cmd = cmd_rx.try_recv().expect("command should be sent directly");
+        assert!(
+            matches!(cmd, Command::RemoveFromWatchlist { symbol, .. } if symbol == "AAPL"),
             "expected RemoveFromWatchlist command"
         );
     }
@@ -2109,9 +2183,12 @@ mod tests {
         app.active_tab = Tab::Watchlist;
         app.watchlist = Some(make_watchlist(&["AAPL"]));
         app.watchlist_state.select(Some(0));
-        // Open a Confirm modal first
+        // Open a ConfirmRemoveWatchlist modal first
         update(&mut app, key(KeyCode::Char('d')));
-        assert!(matches!(&app.modal, Some(Modal::Confirm { .. })));
+        assert!(matches!(
+            &app.modal,
+            Some(Modal::ConfirmRemoveWatchlist { .. })
+        ));
         // Place confirm buttons at x=10, width=20; left half = Yes
         app.hit_areas.modal_confirm_buttons = Some(rect(10, 10, 20, 1));
 
@@ -2127,9 +2204,12 @@ mod tests {
         app.active_tab = Tab::Watchlist;
         app.watchlist = Some(make_watchlist(&["AAPL"]));
         app.watchlist_state.select(Some(0));
-        // Open a Confirm modal first
+        // Open a ConfirmRemoveWatchlist modal first
         update(&mut app, key(KeyCode::Char('d')));
-        assert!(matches!(&app.modal, Some(Modal::Confirm { .. })));
+        assert!(matches!(
+            &app.modal,
+            Some(Modal::ConfirmRemoveWatchlist { .. })
+        ));
         // Place confirm buttons at x=10, width=20; right half = No
         app.hit_areas.modal_confirm_buttons = Some(rect(10, 10, 20, 1));
 

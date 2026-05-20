@@ -24,6 +24,9 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
             action,
             confirmed,
         } => render_confirm(frame, area, message, action, *confirmed, app),
+        Modal::ConfirmRemoveWatchlist { symbol, .. } => {
+            render_confirm_remove_watchlist(frame, area, symbol, app)
+        }
         Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input, app),
     }
 }
@@ -717,6 +720,56 @@ fn render_confirm(
         Span::styled("  [ y: Yes ]", yes_style),
         Span::raw("  "),
         Span::styled("[ n: No ]", no_style),
+    ]);
+    frame.render_widget(Paragraph::new(buttons), chunks[2]);
+}
+
+/// Renders the dedicated watchlist-removal confirmation dialog:
+///
+/// ```text
+/// ┌─ Remove from Watchlist ─────────┐
+/// │                                  │
+/// │  Remove AAPL from watchlist?    │
+/// │                                  │
+/// │    [y / Enter] Yes  [n / Esc] No │
+/// └──────────────────────────────────┘
+/// ```
+fn render_confirm_remove_watchlist(frame: &mut Frame, area: Rect, symbol: &str, app: &mut App) {
+    let popup = popup_area(area, 42, 22);
+    frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
+
+    let block = Block::default()
+        .title(" Remove from Watchlist ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(c.negative_style());
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    // Store button row for mouse hit-testing
+    app.hit_areas.modal_confirm_buttons = Some(chunks[2]);
+
+    frame.render_widget(
+        Paragraph::new(format!("  Remove {} from watchlist?", symbol)).style(c.bold_style()),
+        chunks[0],
+    );
+
+    let buttons = Line::from(vec![
+        Span::styled("  [y / Enter] Yes", c.positive_style()),
+        Span::raw("  "),
+        Span::styled("[n / Esc] No", c.negative_style()),
     ]);
     frame.render_widget(Paragraph::new(buttons), chunks[2]);
 }

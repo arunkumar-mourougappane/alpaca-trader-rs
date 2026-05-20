@@ -286,11 +286,6 @@ impl OrderEntryState {
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
     CancelOrder(String),
-    RemoveFromWatchlist {
-        #[allow(dead_code)]
-        watchlist_id: String,
-        symbol: String,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -303,6 +298,14 @@ pub enum Modal {
         message: String,
         action: ConfirmAction,
         confirmed: bool,
+    },
+    /// Dedicated confirmation dialog for removing a symbol from the watchlist.
+    ///
+    /// Shows a focused modal with `[y] Yes` / `[n / Esc] No` buttons.
+    /// On confirmation the `RemoveFromWatchlist` command is dispatched.
+    ConfirmRemoveWatchlist {
+        symbol: String,
+        watchlist_id: String,
     },
     AddSymbol {
         input: String,

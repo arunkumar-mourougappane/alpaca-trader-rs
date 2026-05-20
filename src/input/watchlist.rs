@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::app::{App, ConfirmAction, Modal, OrderEntryState};
+use crate::app::{App, Modal, OrderEntryState};
 
 pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = app.watchlist.as_ref().map(|w| w.assets.len()).unwrap_or(0);
@@ -43,21 +43,17 @@ pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEven
             if let (Some(symbol), Some(wl)) =
                 (app.selected_watchlist_symbol(), app.watchlist.as_ref())
             {
-                let wl_id = wl.id.clone();
+                let watchlist_id = wl.id.clone();
                 if app.prefs.safety.confirm_watchlist_remove {
-                    app.modal = Some(Modal::Confirm {
-                        message: format!("Remove {} from watchlist?", symbol),
-                        action: ConfirmAction::RemoveFromWatchlist {
-                            watchlist_id: wl_id,
-                            symbol,
-                        },
-                        confirmed: false,
+                    app.modal = Some(Modal::ConfirmRemoveWatchlist {
+                        symbol,
+                        watchlist_id,
                     });
                 } else {
                     let _ =
                         app.command_tx
                             .try_send(crate::commands::Command::RemoveFromWatchlist {
-                                watchlist_id: wl_id,
+                                watchlist_id,
                                 symbol,
                             });
                 }
