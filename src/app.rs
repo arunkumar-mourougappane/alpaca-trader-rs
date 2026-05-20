@@ -391,6 +391,12 @@ pub struct App {
 
     /// Interactive element positions from the last rendered frame.
     pub hit_areas: HitAreas,
+
+    /// Timestamp of the first `g` keypress for `gg` (jump-to-top) detection.
+    ///
+    /// Set on the first `g`; cleared when a second `g` arrives within 500 ms
+    /// (firing jump-to-top) or when any other key clears the pending state.
+    pub pending_g_at: Option<Instant>,
 }
 
 impl App {
@@ -436,6 +442,7 @@ impl App {
             market_stream_ok: false,
             account_stream_ok: false,
             hit_areas: HitAreas::default(),
+            pending_g_at: None,
         }
     }
 

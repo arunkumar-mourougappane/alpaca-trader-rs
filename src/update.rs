@@ -786,11 +786,45 @@ mod tests {
     }
 
     #[test]
-    fn watchlist_g_jumps_to_top() {
+    fn watchlist_gg_jumps_to_top() {
         let mut app = watchlist_app();
         app.watchlist_state.select(Some(2));
         update(&mut app, key(KeyCode::Char('g')));
+        // first 'g' — sets pending, no jump yet
+        assert_eq!(app.watchlist_state.selected(), Some(2));
+        assert!(app.pending_g_at.is_some());
+        update(&mut app, key(KeyCode::Char('g')));
+        // second 'g' within timeout → jump to top
         assert_eq!(app.watchlist_state.selected(), Some(0));
+        assert!(app.pending_g_at.is_none());
+    }
+
+    #[test]
+    fn watchlist_g_single_sets_pending_no_jump() {
+        let mut app = watchlist_app();
+        app.watchlist_state.select(Some(2));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(
+            app.watchlist_state.selected(),
+            Some(2),
+            "single g must not jump"
+        );
+        assert!(app.pending_g_at.is_some());
+    }
+
+    #[test]
+    fn watchlist_g_then_other_key_clears_pending() {
+        let mut app = watchlist_app();
+        app.watchlist_state.select(Some(2));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert!(app.pending_g_at.is_some());
+        update(&mut app, key(KeyCode::Char('j'))); // any other key
+        assert!(app.pending_g_at.is_none());
+        assert_eq!(
+            app.watchlist_state.selected(),
+            Some(2),
+            "pending cleared, no jump"
+        );
     }
 
     #[test]
@@ -1963,11 +1997,36 @@ mod tests {
     }
 
     #[test]
-    fn orders_g_jumps_to_top() {
+    fn orders_gg_jumps_to_top() {
         let mut app = orders_app();
         app.orders_state.select(Some(1));
         update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(
+            app.orders_state.selected(),
+            Some(1),
+            "single g must not jump"
+        );
+        update(&mut app, key(KeyCode::Char('g')));
         assert_eq!(app.orders_state.selected(), Some(0));
+        assert!(app.pending_g_at.is_none());
+    }
+
+    #[test]
+    fn orders_g_single_sets_pending_no_jump() {
+        let mut app = orders_app();
+        app.orders_state.select(Some(1));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(app.orders_state.selected(), Some(1));
+        assert!(app.pending_g_at.is_some());
+    }
+
+    #[test]
+    fn orders_g_then_other_key_clears_pending() {
+        let mut app = orders_app();
+        app.orders_state.select(Some(1));
+        update(&mut app, key(KeyCode::Char('g')));
+        update(&mut app, key(KeyCode::Char('k')));
+        assert!(app.pending_g_at.is_none());
     }
 
     #[test]
@@ -2040,11 +2099,58 @@ mod tests {
     }
 
     #[test]
-    fn positions_g_jumps_to_top() {
+    fn positions_gg_jumps_to_top() {
         let (mut app, _rx) = positions_app();
-        app.positions_state.select(Some(0));
+        // Add a second position so we can meaningfully test jump-to-top
+        app.positions.push(crate::types::Position {
+            symbol: "TSLA".into(),
+            qty: "5".into(),
+            avg_entry_price: "200.00".into(),
+            current_price: "210.00".into(),
+            market_value: "1050.00".into(),
+            unrealized_pl: "50.00".into(),
+            unrealized_plpc: "0.05".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        });
+        app.positions_state.select(Some(1));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(
+            app.positions_state.selected(),
+            Some(1),
+            "single g must not jump"
+        );
         update(&mut app, key(KeyCode::Char('g')));
         assert_eq!(app.positions_state.selected(), Some(0));
+        assert!(app.pending_g_at.is_none());
+    }
+
+    #[test]
+    fn positions_g_single_sets_pending_no_jump() {
+        let (mut app, _rx) = positions_app();
+        app.positions.push(crate::types::Position {
+            symbol: "TSLA".into(),
+            qty: "5".into(),
+            avg_entry_price: "200.00".into(),
+            current_price: "210.00".into(),
+            market_value: "1050.00".into(),
+            unrealized_pl: "50.00".into(),
+            unrealized_plpc: "0.05".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        });
+        app.positions_state.select(Some(1));
+        update(&mut app, key(KeyCode::Char('g')));
+        assert_eq!(app.positions_state.selected(), Some(1));
+        assert!(app.pending_g_at.is_some());
+    }
+
+    #[test]
+    fn positions_g_then_other_key_clears_pending() {
+        let (mut app, _rx) = positions_app();
+        update(&mut app, key(KeyCode::Char('g')));
+        update(&mut app, key(KeyCode::Char('j')));
+        assert!(app.pending_g_at.is_none());
     }
 
     #[test]
