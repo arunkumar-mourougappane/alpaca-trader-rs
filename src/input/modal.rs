@@ -198,19 +198,6 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                 format!("Cancelling {}…", &id[..id.len().min(8)]),
                             );
                         }
-                        ConfirmAction::RemoveFromWatchlist {
-                            watchlist_id,
-                            symbol,
-                        } => {
-                            send_command(
-                                app,
-                                Command::RemoveFromWatchlist {
-                                    watchlist_id: watchlist_id.clone(),
-                                    symbol: symbol.clone(),
-                                },
-                                format!("Removing {}…", symbol),
-                            );
-                        }
                     }
                     app.modal = None;
                     return;
@@ -232,6 +219,34 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 message,
                 action,
                 confirmed,
+            }),
+        },
+
+        // Dedicated watchlist-removal confirmation modal.
+        // `y` or `Enter` confirms; `n` or `Esc` cancels.
+        Modal::ConfirmRemoveWatchlist {
+            symbol,
+            watchlist_id,
+        } => match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => {
+                send_command(
+                    app,
+                    Command::RemoveFromWatchlist {
+                        watchlist_id: watchlist_id.clone(),
+                        symbol: symbol.clone(),
+                    },
+                    format!("Removing {}…", symbol),
+                );
+                app.modal = None;
+                return;
+            }
+            KeyCode::Char('n') => {
+                // 'n' cancels; Esc is handled at the top of the function
+                None
+            }
+            _ => Some(Modal::ConfirmRemoveWatchlist {
+                symbol,
+                watchlist_id,
             }),
         },
 
