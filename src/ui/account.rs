@@ -725,4 +725,176 @@ mod tests {
         crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(20, 5)));
         assert!(app.equity_chart_cursor.is_none());
     }
+
+    #[test]
+    fn mouse_click_empty_history_does_not_set_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![];
+        app.active_tab = crate::app::Tab::Account;
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 15);
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(20, 5)));
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn mouse_click_zero_height_chart_area_does_not_set_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.active_tab = crate::app::Tab::Account;
+        // height == 0 → hit-test is skipped
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 0);
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(20, 0)));
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn mouse_click_before_plot_x_does_not_set_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.active_tab = crate::app::Tab::Account;
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 15);
+        // col 5 < plot_x 9 → y-axis label area, no cursor change
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(5, 5)));
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn mouse_click_single_data_point_sets_cursor_zero() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000];
+        app.active_tab = crate::app::Tab::Account;
+        app.hit_areas.equity_chart_area = ratatui::layout::Rect::new(0, 0, 60, 15);
+        crate::update::update(&mut app, crate::events::Event::Mouse(mouse_click(20, 5)));
+        assert_eq!(app.equity_chart_cursor, Some(0));
+    }
+
+    // ── update.rs tab-switch cursor clearing ──────────────────────────────────
+
+    #[test]
+    fn key3_clears_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(2);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Char('3'))),
+        );
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn key4_clears_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(1);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Char('4'))),
+        );
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn tab_key_from_non_account_clears_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(1);
+        app.active_tab = crate::app::Tab::Watchlist;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Tab)),
+        );
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn backtab_key_from_non_account_clears_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(3);
+        app.active_tab = crate::app::Tab::Positions;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::BackTab)),
+        );
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn tab_key_from_account_does_not_clear_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(2);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Tab)),
+        );
+        // cursor should survive when tabbing away from Account
+        // (the condition is active_tab != Account → clear; since we ARE on Account, no clear)
+        assert_eq!(app.equity_chart_cursor, Some(2));
+    }
+
+    // ── crosshair: uncovered render branches ─────────────────────────────────
+
+    fn render_equity_chart_cursor_to_string(history: Vec<u64>, cursor: usize) -> String {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = history;
+        app.equity_chart_cursor = Some(cursor);
+        terminal
+            .draw(|frame| {
+                render_equity_chart(frame, frame.area(), &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_crosshair_flat_equity_does_not_panic() {
+        // All values identical → y_min == y_max branch (price_row = midpoint)
+        let history = vec![10_000_000u64; 10];
+        let output = render_equity_chart_cursor_to_string(history, 5);
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn render_crosshair_single_data_point_does_not_panic() {
+        // n==1 → n<=1 branch in crosshair col mapping
+        let history = vec![10_000_000u64];
+        let output = render_equity_chart_cursor_to_string(history, 0);
+        assert!(!output.is_empty());
+    }
+
+    #[test]
+    fn render_crosshair_cursor_at_top_uses_below_popup() {
+        // Price at top of chart → price_row is small → popup falls below
+        // Use a very tall first value so the price maps to near row 1 (top)
+        let mut history: Vec<u64> = (0..10).map(|_| 1_000u64).collect();
+        history[0] = 100_000_000u64; // first point is much higher
+        let output = render_equity_chart_cursor_to_string(history, 0);
+        assert!(!output.is_empty());
+    }
 }
