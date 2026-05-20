@@ -1125,6 +1125,27 @@ mod tests {
     }
 
     #[test]
+    fn confirm_remove_watchlist_unhandled_key_keeps_modal_open() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "AAPL".into(),
+            watchlist_id: "wl-id".into(),
+        });
+
+        // Press an unrecognized key — modal should stay open and no command sent
+        update(&mut app, key(KeyCode::F(1)));
+
+        assert!(
+            matches!(&app.modal, Some(Modal::ConfirmRemoveWatchlist { symbol, .. }) if symbol == "AAPL"),
+            "unrecognized key should keep ConfirmRemoveWatchlist modal open"
+        );
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no command should be sent on unrecognized key"
+        );
+    }
+
+    #[test]
     fn add_symbol_enter_sends_add_command() {
         let (mut app, mut cmd_rx) = app_with_rx();
         app.modal = Some(Modal::AddSymbol {
