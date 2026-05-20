@@ -1,9 +1,9 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Position as TermPos, Rect},
     style::Style,
     symbols,
     text::{Line, Span},
-    widgets::{Axis, Chart, Dataset, GraphType, Paragraph},
+    widgets::{Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph},
     Frame,
 };
 
@@ -94,7 +94,7 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
     let c = app.current_theme.colors();
-    let block = c.bordered_block(" Today's Equity Curve ");
+    let block = c.bordered_block(" Today's Equity Curve  ←/→ to inspect ");
 
     if app.equity_history.is_empty() {
         let para = Paragraph::new("  Collecting data…")
@@ -125,6 +125,131 @@ fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
         .y_axis(Axis::default().bounds([y_min, y_max]));
 
     frame.render_widget(chart, area);
+
+    // Draw crosshair + floating tooltip if a cursor index is set.
+    if let Some(cursor_idx) = app.equity_chart_cursor {
+        let cursor_idx = cursor_idx.min(app.equity_history.len().saturating_sub(1));
+        render_chart_crosshair(
+            frame,
+            area,
+            &data_points,
+            cursor_idx,
+            &c,
+            y_min,
+            y_max,
+            &app.equity_history,
+        );
+    }
+}
+
+/// Draw a vertical crosshair line and a floating price/time tooltip at `cursor_idx`.
+fn render_chart_crosshair(
+    frame: &mut Frame,
+    area: Rect,
+    data_points: &[(f64, f64)],
+    cursor_idx: usize,
+    c: &crate::ui::theme::ThemeColors,
+    y_min: f64,
+    y_max: f64,
+    equity_history: &[u64],
+) {
+    // The Chart widget uses a 1-cell border + a y-axis label column on the left
+    // and an x-axis label row at the bottom.  Approximate inner plot area:
+    //   left:   area.x + 1 (border) + ~8 chars for y-axis labels
+    //   right:  area.x + area.width - 2 (border)
+    //   top:    area.y + 1 (border)
+    //   bottom: area.y + area.height - 2 (border + x-axis label row)
+    let plot_x = area.x + 9;
+    let plot_w = area.width.saturating_sub(11); // 9 left + 2 right border
+    let plot_y = area.y + 1;
+    let plot_h = area.height.saturating_sub(3); // 1 top + 2 bottom (border + axis row)
+
+    if plot_w == 0 || plot_h == 0 || data_points.is_empty() {
+        return;
+    }
+
+    let n = data_points.len();
+    // Map cursor index → terminal column within the plot area.
+    let col = if n <= 1 {
+        plot_x
+    } else {
+        plot_x + ((cursor_idx as f64 / (n - 1) as f64) * (plot_w - 1) as f64).round() as u16
+    };
+    let col = col.min(plot_x + plot_w - 1);
+
+    // Draw a vertical crosshair line.
+    let crosshair_style = Style::default().fg(c.accent);
+    for row in plot_y..plot_y + plot_h {
+        if let Some(cell) = frame.buffer_mut().cell_mut(TermPos { x: col, y: row }) {
+            cell.set_symbol("│").set_style(crosshair_style);
+        }
+    }
+
+    // Build tooltip text: "$12,345.67  14:37"
+    let price_dollars = equity_history[cursor_idx] as f64 / 100.0;
+    let time_str = index_to_time(cursor_idx, n);
+    let label = format!(" ${:.2}  {} ", price_dollars, time_str);
+
+    // Also draw the cursor dot on the crosshair at the price's y position.
+    let price_row = if (y_max - y_min).abs() > f64::EPSILON {
+        let frac = (data_points[cursor_idx].1 - y_min) / (y_max - y_min);
+        // y grows downward in the terminal; high price = low row index
+        let row_offset = ((1.0 - frac) * (plot_h.saturating_sub(1)) as f64).round() as u16;
+        plot_y + row_offset.min(plot_h.saturating_sub(1))
+    } else {
+        plot_y + plot_h / 2
+    };
+
+    if let Some(cell) = frame.buffer_mut().cell_mut(TermPos {
+        x: col,
+        y: price_row,
+    }) {
+        cell.set_symbol("●")
+            .set_style(Style::default().fg(c.accent));
+    }
+
+    // Render floating tooltip popup.
+    let popup_w = label.len() as u16;
+    let popup_h = 3u16;
+
+    // Position above the price point; fall back to below if not enough room.
+    let popup_y = if price_row >= area.y + popup_h {
+        price_row - popup_h
+    } else {
+        price_row + 1
+    };
+    // Horizontally centred on crosshair column, clamped to screen.
+    let popup_x = col
+        .saturating_sub(popup_w / 2)
+        .min(area.x + area.width.saturating_sub(popup_w));
+    let popup_x = popup_x.max(area.x);
+
+    let popup_rect = Rect::new(popup_x, popup_y, popup_w, popup_h);
+
+    frame.render_widget(Clear, popup_rect);
+    frame.render_widget(
+        Paragraph::new(label)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(c.border_fg_style()),
+            )
+            .style(Style::default().fg(c.accent)),
+        popup_rect,
+    );
+}
+
+/// Convert a data-point index into an approximate market-hours time string (`HH:MM`).
+///
+/// Market session runs 09:30–16:00 (390 minutes). With `n` samples, each step
+/// is `390 / (n - 1)` minutes from open.
+fn index_to_time(idx: usize, n: usize) -> String {
+    if n <= 1 {
+        return "09:30".to_string();
+    }
+    let minutes_from_open = (idx as f64 / (n - 1) as f64 * 390.0).round() as u32;
+    let total = 9 * 60 + 30 + minutes_from_open;
+    format!("{:02}:{:02}", total / 60, total % 60)
 }
 
 /// Compute Day P&L from equity and last_equity strings.
@@ -391,6 +516,144 @@ mod tests {
         assert!(
             output.contains("09:30") && output.contains("16:00"),
             "should show time labels on x-axis, got:\n{}",
+            output
+        );
+    }
+
+    // ── index_to_time ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn index_to_time_first_point_is_open() {
+        assert_eq!(index_to_time(0, 10), "09:30");
+    }
+
+    #[test]
+    fn index_to_time_last_point_is_close() {
+        // 390 minutes after 09:30 = 16:00
+        assert_eq!(index_to_time(9, 10), "16:00");
+    }
+
+    #[test]
+    fn index_to_time_midpoint() {
+        // Midpoint (idx 4 of 9 steps) ≈ 195 min after 09:30 → 12:45
+        let t = index_to_time(4, 9);
+        assert!(!t.is_empty());
+        // Just confirm it parses as HH:MM
+        let parts: Vec<&str> = t.split(':').collect();
+        assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn index_to_time_single_point() {
+        assert_eq!(index_to_time(0, 1), "09:30");
+    }
+
+    // ── cursor key handling ───────────────────────────────────────────────────
+
+    fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
+        crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn account_right_key_sets_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Right)),
+        );
+        assert_eq!(app.equity_chart_cursor, Some(1));
+    }
+
+    #[test]
+    fn account_left_key_starts_from_end() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.active_tab = crate::app::Tab::Account;
+        // With no cursor, left starts from n-1=9 then subtracts 1 → 8
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Left)),
+        );
+        assert_eq!(app.equity_chart_cursor, Some(8));
+    }
+
+    #[test]
+    fn account_left_key_clamps_at_zero() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 10];
+        app.equity_chart_cursor = Some(0);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Left)),
+        );
+        assert_eq!(app.equity_chart_cursor, Some(0));
+    }
+
+    #[test]
+    fn account_right_key_clamps_at_end() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 3];
+        app.equity_chart_cursor = Some(2);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Right)),
+        );
+        assert_eq!(app.equity_chart_cursor, Some(2));
+    }
+
+    #[test]
+    fn account_esc_clears_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(3);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Esc)),
+        );
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn switching_tab_clears_cursor() {
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = vec![100_000; 5];
+        app.equity_chart_cursor = Some(2);
+        app.active_tab = crate::app::Tab::Account;
+        crate::update::update(
+            &mut app,
+            crate::events::Event::Input(key(crossterm::event::KeyCode::Char('2'))),
+        );
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn render_equity_chart_with_cursor_does_not_panic() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_history = (0..20).map(|i| 12_500_000u64 + i * 1_000).collect();
+        app.equity_chart_cursor = Some(10);
+        terminal
+            .draw(|frame| {
+                render_equity_chart(frame, frame.area(), &app);
+            })
+            .unwrap();
+        // If we get here the render did not panic
+    }
+
+    #[test]
+    fn render_equity_chart_hint_in_title() {
+        let history: Vec<u64> = (0..5).map(|i| 10_000_000u64 + i * 500).collect();
+        let output = render_equity_chart_to_string(history);
+        assert!(
+            output.contains("←") || output.contains("→"),
+            "title should contain navigation hint arrows, got:\n{}",
             output
         );
     }

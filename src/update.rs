@@ -157,12 +157,33 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Char('A') => app.modal = Some(Modal::About),
         // '1'/'2'/'3' switch panels globally, but yield to the Orders panel so those
         // keys can switch sub-tabs (Open / Filled / Cancelled) when Orders is active.
-        KeyCode::Char('1') if app.active_tab != Tab::Orders => app.active_tab = Tab::Account,
-        KeyCode::Char('2') if app.active_tab != Tab::Orders => app.active_tab = Tab::Watchlist,
-        KeyCode::Char('3') if app.active_tab != Tab::Orders => app.active_tab = Tab::Positions,
-        KeyCode::Char('4') => app.active_tab = Tab::Orders,
-        KeyCode::Tab => app.active_tab = app.active_tab.next(),
-        KeyCode::BackTab => app.active_tab = app.active_tab.prev(),
+        KeyCode::Char('1') if app.active_tab != Tab::Orders => {
+            app.active_tab = Tab::Account;
+        }
+        KeyCode::Char('2') if app.active_tab != Tab::Orders => {
+            app.equity_chart_cursor = None;
+            app.active_tab = Tab::Watchlist;
+        }
+        KeyCode::Char('3') if app.active_tab != Tab::Orders => {
+            app.equity_chart_cursor = None;
+            app.active_tab = Tab::Positions;
+        }
+        KeyCode::Char('4') => {
+            app.equity_chart_cursor = None;
+            app.active_tab = Tab::Orders;
+        }
+        KeyCode::Tab => {
+            if app.active_tab != Tab::Account {
+                app.equity_chart_cursor = None;
+            }
+            app.active_tab = app.active_tab.next();
+        }
+        KeyCode::BackTab => {
+            if app.active_tab != Tab::Account {
+                app.equity_chart_cursor = None;
+            }
+            app.active_tab = app.active_tab.prev();
+        }
         KeyCode::Char('r') => {
             app.push_transient_status("Refreshing…");
             app.refresh_notify.notify_one();
@@ -194,10 +215,35 @@ fn copy_focused_symbol(app: &mut App) {
 
 fn handle_panel_key(app: &mut App, key: crossterm::event::KeyEvent) {
     match app.active_tab.clone() {
-        Tab::Account => {}
+        Tab::Account => handle_account_key(app, key),
         Tab::Watchlist => handle_watchlist_key(app, key),
         Tab::Positions => handle_positions_key(app, key),
         Tab::Orders => handle_orders_key(app, key),
+    }
+}
+
+/// Handle keys specific to the Account tab.
+///
+/// `←` / `h` and `→` / `l` move the equity-chart crosshair left and right
+/// one data point at a time.  `Esc` dismisses the crosshair.
+fn handle_account_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    let n = app.equity_history.len();
+    if n == 0 {
+        return;
+    }
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h') => {
+            let cur = app.equity_chart_cursor.unwrap_or(n - 1);
+            app.equity_chart_cursor = Some(cur.saturating_sub(1));
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            let cur = app.equity_chart_cursor.unwrap_or(0);
+            app.equity_chart_cursor = Some((cur + 1).min(n - 1));
+        }
+        KeyCode::Esc => {
+            app.equity_chart_cursor = None;
+        }
+        _ => {}
     }
 }
 

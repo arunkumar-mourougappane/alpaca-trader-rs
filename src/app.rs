@@ -421,6 +421,12 @@ pub struct App {
     /// arrives. The `Tick` handler uses this to schedule periodic re-fetches
     /// while a symbol-detail modal is open.
     pub intraday_fetched_at: HashMap<String, Instant>,
+
+    /// Index into [`App::equity_history`] that the crosshair cursor is pointing at.
+    ///
+    /// `None` means no crosshair is shown. Set by `←`/`→` keys while the
+    /// Account tab is active; cleared by `Esc`.
+    pub equity_chart_cursor: Option<usize>,
 }
 
 impl App {
@@ -469,6 +475,7 @@ impl App {
             pending_g_at: None,
             last_equity_stream_push: None,
             intraday_fetched_at: HashMap::new(),
+            equity_chart_cursor: None,
         }
     }
 
