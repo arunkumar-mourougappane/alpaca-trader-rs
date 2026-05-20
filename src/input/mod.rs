@@ -32,7 +32,9 @@ pub(crate) fn send_command(app: &mut App, cmd: Command, success_msg: impl Into<S
         }
         Err(TrySendError::Closed(_)) => {
             tracing::error!("command channel closed; command handler has stopped");
-            app.status_msg = StatusMessage::persistent("Command handler stopped — restart app");
+            app.push_status(StatusMessage::persistent(
+                "Command handler stopped — restart app",
+            ));
         }
     }
 }

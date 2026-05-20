@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ratatui::layout::Rect;
 
-/// A status bar message that may auto-expire.
+/// Maximum number of status messages held in the queue at once.
+const STATUS_QUEUE_CAP: usize = 5;
+
 ///
 /// Transient messages (e.g. "Order submitted", "Refreshing…") carry a TTL and are
 /// cleared automatically on the next `Tick` after they expire. Persistent messages (errors,
@@ -30,17 +32,6 @@ impl StatusMessage {
             text: text.into(),
             expires_at: None,
         }
-    }
-
-    /// Returns `true` if the message text is empty (nothing to display).
-    pub fn is_empty(&self) -> bool {
-        self.text.is_empty()
-    }
-
-    /// Clears the message text and removes any expiry.
-    pub fn clear(&mut self) {
-        self.text.clear();
-        self.expires_at = None;
     }
 }
 
@@ -371,7 +362,7 @@ pub struct App {
     pub search_query: String,
     pub searching: bool,
 
-    pub status_msg: StatusMessage,
+    pub status_queue: VecDeque<StatusMessage>,
     pub should_quit: bool,
     /// Set to `true` by the `Event::Resize` handler to request an immediate
     /// redraw before the next tick. Cleared by the main loop after drawing.
@@ -420,7 +411,7 @@ impl App {
             modal: None,
             search_query: String::new(),
             searching: false,
-            status_msg: StatusMessage::persistent("Loading…"),
+            status_queue: VecDeque::new(),
             should_quit: false,
             needs_redraw: false,
             market_stream_ok: false,
@@ -493,14 +484,36 @@ impl App {
         }
     }
 
+    /// Enqueues a status message.
+    ///
+    /// If the queue is already at [`STATUS_QUEUE_CAP`], the oldest entry is
+    /// dropped from the front to make room. Persistent (no-TTL) messages that
+    /// are already at the front are not displaced — transient messages are
+    /// appended behind them so the persistent message stays visible.
+    pub fn push_status(&mut self, msg: StatusMessage) {
+        if self.status_queue.len() >= STATUS_QUEUE_CAP {
+            self.status_queue.pop_front();
+        }
+        self.status_queue.push_back(msg);
+    }
+
+    /// Returns the text of the current (front) status message, or `""` if the
+    /// queue is empty or the front message has no text.
+    pub fn current_status_text(&self) -> &str {
+        self.status_queue
+            .front()
+            .map(|m| m.text.as_str())
+            .unwrap_or("")
+    }
+
     /// Sets a transient status message using the TTL from user preferences.
     pub fn push_transient_status(&mut self, text: impl Into<String>) {
-        self.status_msg = StatusMessage::with_ttl(text, self.prefs.status_ttl());
+        self.push_status(StatusMessage::with_ttl(text, self.prefs.status_ttl()));
     }
 
     /// Sets a fill-notification status message using the fill TTL from user preferences.
     pub fn push_fill_notification(&mut self, text: impl Into<String>) {
-        self.status_msg = StatusMessage::with_ttl(text, self.prefs.fill_ttl());
+        self.push_status(StatusMessage::with_ttl(text, self.prefs.fill_ttl()));
     }
 
     /// Advances to the next theme in the cycle (Default → Dark → High-contrast → Default).

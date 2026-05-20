@@ -70,7 +70,7 @@ pub fn update(app: &mut App, event: Event) {
                 app.orders.insert(0, o);
             }
         }
-        Event::StatusMsg(msg) => app.status_msg = StatusMessage::persistent(msg),
+        Event::StatusMsg(msg) => app.push_status(StatusMessage::persistent(msg)),
         Event::StreamConnected(kind) => match kind {
             StreamKind::Market => app.market_stream_ok = true,
             StreamKind::Account => app.account_stream_ok = true,
@@ -91,9 +91,14 @@ pub fn update(app: &mut App, event: Event) {
             app.intraday_bars.insert(symbol, bars);
         }
         Event::Tick => {
-            if let Some(exp) = app.status_msg.expires_at {
-                if exp <= Instant::now() {
-                    app.status_msg.clear();
+            // Pop the front entry if it has expired; keep popping while the
+            // next front is also expired so stale messages never block fresh ones.
+            loop {
+                match app.status_queue.front() {
+                    Some(m) if m.expires_at.is_some_and(|e| e <= Instant::now()) => {
+                        app.status_queue.pop_front();
+                    }
+                    _ => break,
                 }
             }
         }
@@ -341,7 +346,7 @@ mod tests {
     fn status_msg_updated() {
         let mut app = make_test_app();
         update(&mut app, Event::StatusMsg("hello".into()));
-        assert_eq!(app.status_msg, "hello");
+        assert_eq!(app.current_status_text(), "hello");
     }
 
     #[test]
@@ -444,10 +449,10 @@ mod tests {
     #[test]
     fn tick_is_noop() {
         let mut app = make_test_app();
-        let before_status = app.status_msg.clone();
+        let before_status = app.current_status_text().to_owned();
         update(&mut app, Event::Tick);
         assert!(!app.should_quit);
-        assert_eq!(app.status_msg, before_status);
+        assert_eq!(app.current_status_text(), before_status);
     }
 
     #[test]
@@ -455,13 +460,14 @@ mod tests {
         use std::time::{Duration, Instant};
         let mut app = make_test_app();
         // Set an already-expired transient message.
-        app.status_msg = crate::app::StatusMessage {
+        app.status_queue.clear();
+        app.status_queue.push_back(crate::app::StatusMessage {
             text: "Order submitted".into(),
             expires_at: Some(Instant::now() - Duration::from_secs(1)),
-        };
+        });
         update(&mut app, Event::Tick);
         assert!(
-            app.status_msg.is_empty(),
+            app.current_status_text().is_empty(),
             "expired transient message should be cleared"
         );
     }
@@ -471,13 +477,15 @@ mod tests {
         use std::time::{Duration, Instant};
         let mut app = make_test_app();
         // Set a transient message that expires in the far future.
-        app.status_msg = crate::app::StatusMessage {
+        app.status_queue.clear();
+        app.status_queue.push_back(crate::app::StatusMessage {
             text: "Refreshing…".into(),
             expires_at: Some(Instant::now() + Duration::from_secs(60)),
-        };
+        });
         update(&mut app, Event::Tick);
         assert_eq!(
-            app.status_msg, "Refreshing…",
+            app.current_status_text(),
+            "Refreshing…",
             "non-expired message must not be cleared"
         );
     }
@@ -485,10 +493,13 @@ mod tests {
     #[test]
     fn tick_does_not_clear_persistent_status_msg() {
         let mut app = make_test_app();
-        app.status_msg = crate::app::StatusMessage::persistent("Loading…");
+        app.status_queue.clear();
+        app.status_queue
+            .push_back(crate::app::StatusMessage::persistent("Loading…"));
         update(&mut app, Event::Tick);
         assert_eq!(
-            app.status_msg, "Loading…",
+            app.current_status_text(),
+            "Loading…",
             "persistent message must survive tick"
         );
     }
@@ -515,7 +526,67 @@ mod tests {
         );
     }
 
-    // ── Global key events ─────────────────────────────────────────────────────
+    #[test]
+    fn status_queue_multiple_messages_display_first_then_second() {
+        use crate::app::StatusMessage;
+        use std::time::{Duration, Instant};
+        let mut app = make_test_app();
+        // Push an expired transient message first, then a persistent one.
+        app.status_queue.push_back(StatusMessage {
+            text: "First".into(),
+            expires_at: Some(Instant::now() - Duration::from_secs(1)),
+        });
+        app.status_queue
+            .push_back(StatusMessage::persistent("Second"));
+        // Front is "First" (expired), so current text shows it first.
+        assert_eq!(app.current_status_text(), "First");
+        // After a tick, "First" expires and "Second" becomes current.
+        update(&mut app, Event::Tick);
+        assert_eq!(app.current_status_text(), "Second");
+    }
+
+    #[test]
+    fn status_queue_cap_drops_oldest_when_full() {
+        use crate::app::StatusMessage;
+        let mut app = make_test_app();
+        for i in 0..5 {
+            app.push_status(StatusMessage::persistent(format!("msg{i}")));
+        }
+        assert_eq!(app.status_queue.len(), 5);
+        // Pushing a 6th should drop the oldest (msg0) and keep msg1..msg5.
+        app.push_status(StatusMessage::persistent("msg5"));
+        assert_eq!(app.status_queue.len(), 5);
+        // The oldest "msg0" should be gone; the front is now "msg1".
+        assert_eq!(app.current_status_text(), "msg1");
+    }
+
+    #[test]
+    fn status_queue_tick_drains_all_expired_messages() {
+        use crate::app::StatusMessage;
+        use std::time::{Duration, Instant};
+        let mut app = make_test_app();
+        // Push three expired transient messages.
+        for i in 0..3 {
+            app.status_queue.push_back(StatusMessage {
+                text: format!("old{i}"),
+                expires_at: Some(Instant::now() - Duration::from_secs(1)),
+            });
+        }
+        app.push_status(StatusMessage::persistent("fresh"));
+        update(&mut app, Event::Tick);
+        // All expired messages should be cleared, leaving only "fresh".
+        assert_eq!(app.current_status_text(), "fresh");
+        assert_eq!(app.status_queue.len(), 1);
+    }
+
+    #[test]
+    fn push_status_first_message_becomes_current() {
+        use crate::app::StatusMessage;
+        let mut app = make_test_app();
+        assert_eq!(app.current_status_text(), "");
+        app.push_status(StatusMessage::persistent("hello"));
+        assert_eq!(app.current_status_text(), "hello");
+    }
 
     #[test]
     fn key_q_quits() {
@@ -602,7 +673,7 @@ mod tests {
     fn key_r_sets_refreshing_status() {
         let mut app = make_test_app();
         update(&mut app, key(KeyCode::Char('r')));
-        assert_eq!(app.status_msg, "Refreshing…");
+        assert_eq!(app.current_status_text(), "Refreshing…");
     }
 
     // ── Watchlist panel keys ──────────────────────────────────────────────────
@@ -878,7 +949,7 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert!(app.modal.is_none(), "modal should close after submit");
-        assert_eq!(app.status_msg, "Submitting order…");
+        assert_eq!(app.current_status_text(), "Submitting order…");
         let cmd = cmd_rx.try_recv().expect("command should be sent");
         assert!(
             matches!(cmd, Command::SubmitOrder { symbol, .. } if symbol == "AAPL"),
@@ -1063,7 +1134,8 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert_eq!(
-            app.status_msg, "System busy — please retry",
+            app.current_status_text(),
+            "System busy — please retry",
             "full channel should show busy message"
         );
     }
@@ -1190,7 +1262,8 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert_eq!(
-            app.status_msg, "Command handler stopped — restart app",
+            app.current_status_text(),
+            "Command handler stopped — restart app",
             "closed channel should show stopped message"
         );
     }
@@ -1221,7 +1294,7 @@ mod tests {
             "modal must stay open on validation failure"
         );
         assert!(
-            !app.status_msg.is_empty(),
+            !app.current_status_text().is_empty(),
             "status_msg must contain error text"
         );
     }
@@ -1236,7 +1309,7 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert!(app.modal.is_some());
-        assert!(!app.status_msg.is_empty());
+        assert!(!app.current_status_text().is_empty());
     }
 
     #[test]
@@ -1249,7 +1322,7 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert!(app.modal.is_some());
-        assert!(!app.status_msg.is_empty());
+        assert!(!app.current_status_text().is_empty());
     }
 
     #[test]
@@ -1266,7 +1339,7 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert!(app.modal.is_some());
-        assert!(!app.status_msg.is_empty());
+        assert!(!app.current_status_text().is_empty());
     }
 
     #[test]
@@ -2169,7 +2242,7 @@ mod tests {
     fn t_key_sets_status_message() {
         let mut app = make_test_app();
         update(&mut app, key(KeyCode::Char('T')));
-        let status = app.status_msg.text.as_str();
+        let status = app.current_status_text();
         assert!(
             status.contains("Theme:"),
             "Status should contain 'Theme:' after T key, got: {:?}",
