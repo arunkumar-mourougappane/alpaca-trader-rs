@@ -549,4 +549,38 @@ mod tests {
         // handle_modal_mouse falls through to other handlers and nothing changes)
         // This test just verifies no panic occurs.
     }
+
+    #[test]
+    fn click_outside_about_modal_dismisses_it() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::About);
+        app.hit_areas.modal_popup_area = Some(Rect::new(20, 5, 40, 25));
+        super::handle_mouse(&mut app, left_click(0, 0));
+        assert!(app.modal.is_none(), "click outside About should dismiss it");
+    }
+
+    #[test]
+    fn single_click_orders_row_selects_item() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.active_tab = Tab::Orders;
+        app.orders.push(Order {
+            id: "o1".into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("1".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        app.hit_areas.list_data_start_y = 4;
+        super::handle_mouse(&mut app, left_click(10, 4));
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
 }
