@@ -210,4 +210,95 @@ mod tests {
         assert_eq!(app.orders_symbol_filter, "O");
         assert!(app.modal.is_none());
     }
+
+    #[test]
+    fn unhandled_key_in_filter_mode_is_ignored() {
+        // Arrow keys and other non-text keys should be silently ignored in filter mode
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Char('f'));
+        app.orders_symbol_filter = "AB".to_string();
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::Home);
+        // filter string unchanged, mode still active
+        assert_eq!(app.orders_symbol_filter, "AB");
+        assert!(app.orders_filter_active);
+    }
+
+    #[test]
+    fn c_key_with_selected_order_opens_confirm_modal() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("order-abc-123", "new"));
+        app.orders_state.select(Some(0));
+        press(&mut app, KeyCode::Char('c'));
+        match &app.modal {
+            Some(crate::app::Modal::Confirm { action, .. }) => {
+                assert!(
+                    matches!(action, crate::app::ConfirmAction::CancelOrder(_)),
+                    "expected CancelOrder action"
+                );
+            }
+            other => panic!("expected Confirm modal, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn c_key_with_no_selection_does_nothing() {
+        let mut app = make_test_app();
+        // orders_state starts with no selection and no orders
+        press(&mut app, KeyCode::Char('c'));
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn j_key_moves_selection_down() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders.push(make_order("o2", "new"));
+        app.orders_state.select(Some(0));
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.orders_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn k_key_moves_selection_up() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders.push(make_order("o2", "new"));
+        app.orders_state.select(Some(1));
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn capital_g_jumps_to_last_row() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders.push(make_order("o2", "new"));
+        app.orders.push(make_order("o3", "new"));
+        app.orders_state.select(Some(0));
+        press(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.orders_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn shift_f_resets_selection_to_zero() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders.push(make_order("o2", "new"));
+        app.orders_state.select(Some(1));
+        app.orders_symbol_filter = "AA".to_string();
+        let event = KeyEvent::new(KeyCode::Char('F'), KeyModifiers::SHIFT);
+        super::handle_orders_key(&mut app, event);
+        assert!(app.orders_symbol_filter.is_empty());
+        assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn f_key_clears_previous_filter_before_activating() {
+        let mut app = make_test_app();
+        app.orders_symbol_filter = "OLD".to_string();
+        press(&mut app, KeyCode::Char('f'));
+        assert!(app.orders_filter_active);
+        assert!(app.orders_symbol_filter.is_empty());
+    }
 }
