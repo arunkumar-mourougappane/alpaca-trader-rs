@@ -1349,4 +1349,73 @@ mod tests {
             "render() with Modal::ConfirmRemoveWatchlist should display the symbol"
         );
     }
+
+    fn render_global_search_to_string(app: &mut App, query: &str) -> String {
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let modal = Modal::GlobalSearch {
+                    query: query.to_string(),
+                };
+                render(frame, area, &modal, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_global_search_shows_title() {
+        let mut app = make_test_app();
+        let output = render_global_search_to_string(&mut app, "");
+        assert!(
+            output.contains("Global Symbol Search"),
+            "modal should display 'Global Symbol Search' title"
+        );
+    }
+
+    #[test]
+    fn render_global_search_shows_query_text() {
+        let mut app = make_test_app();
+        let output = render_global_search_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("AAPL"),
+            "modal should display the current query"
+        );
+    }
+
+    #[test]
+    fn render_global_search_shows_instructions() {
+        let mut app = make_test_app();
+        let output = render_global_search_to_string(&mut app, "");
+        assert!(
+            output.contains("Enter ticker symbol"),
+            "modal should display entry prompt"
+        );
+        assert!(
+            output.contains("Enter"),
+            "modal footer should mention Enter key"
+        );
+        assert!(
+            output.contains("Esc"),
+            "modal footer should mention Esc key"
+        );
+    }
 }

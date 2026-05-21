@@ -1500,6 +1500,18 @@ mod tests {
     }
 
     #[test]
+    fn global_search_unhandled_key_keeps_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch { query: "MS".into() });
+        // Arrow keys are unhandled; modal should remain open with unchanged query.
+        update(&mut app, key(KeyCode::Up));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { query }) if query == "MS"),
+            "unhandled key should keep GlobalSearch open with unchanged query"
+        );
+    }
+
+    #[test]
     fn ctrl_f_opens_search_even_when_on_watchlist_tab() {
         let mut app = make_test_app();
         app.active_tab = Tab::Watchlist;
