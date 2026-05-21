@@ -476,4 +476,237 @@ mod tests {
             "AAPL (lower P&L) should appear before TSLA when sorted ascending by P&L"
         );
     }
+
+    // ── Additional sort-column coverage ───────────────────────────────────────
+
+    fn make_position_with_qty(symbol: &str, qty: &str) -> Position {
+        Position {
+            symbol: symbol.into(),
+            qty: qty.into(),
+            avg_entry_price: "100.00".into(),
+            current_price: "110.00".into(),
+            market_value: "1100.00".into(),
+            unrealized_pl: "100.00".into(),
+            unrealized_plpc: "0.10".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }
+    }
+
+    fn make_position_full(
+        symbol: &str,
+        qty: &str,
+        avg: &str,
+        mkt: &str,
+        pnl: &str,
+        pct: &str,
+    ) -> Position {
+        Position {
+            symbol: symbol.into(),
+            qty: qty.into(),
+            avg_entry_price: avg.into(),
+            current_price: "110.00".into(),
+            market_value: mkt.into(),
+            unrealized_pl: pnl.into(),
+            unrealized_plpc: pct.into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }
+    }
+
+    #[test]
+    fn positions_sort_by_qty_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position_with_qty("AAPL", "5"));
+        app.positions_sort.col = crate::app::PositionSortCol::Qty;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Qty ▲") || output.contains("Qty▲"),
+            "expected Qty ▲ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_qty_desc_orders_rows() {
+        let mut app = make_test_app();
+        app.positions.push(make_position_with_qty("AAPL", "5"));
+        app.positions.push(make_position_with_qty("TSLA", "20"));
+        app.positions_sort.col = crate::app::PositionSortCol::Qty;
+        app.positions_sort.dir = crate::app::SortDir::Desc;
+        let output = render_positions_to_string(&mut app);
+        // Descending: TSLA (20) should appear before AAPL (5)
+        let aapl_pos = output.find("AAPL").expect("AAPL should be present");
+        let tsla_pos = output.find("TSLA").expect("TSLA should be present");
+        assert!(
+            tsla_pos < aapl_pos,
+            "TSLA (qty=20) should precede AAPL (qty=5) in desc order"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_avg_cost_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::AvgCost;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Avg Cost ▲") || output.contains("Avg Cost▲"),
+            "expected Avg Cost ▲ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_avg_cost_orders_rows() {
+        let mut app = make_test_app();
+        app.positions.push(make_position_full(
+            "CHEAP", "10", "50.00", "500.00", "10.00", "0.02",
+        ));
+        app.positions.push(make_position_full(
+            "PRICEY", "10", "300.00", "3000.00", "100.00", "0.05",
+        ));
+        app.positions_sort.col = crate::app::PositionSortCol::AvgCost;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        let cheap_pos = output.find("CHEAP").expect("CHEAP should be present");
+        let pricey_pos = output.find("PRICEY").expect("PRICEY should be present");
+        assert!(
+            cheap_pos < pricey_pos,
+            "CHEAP should appear before PRICEY sorted asc by avg cost"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_market_value_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::MarketValue;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Mkt Value ▲") || output.contains("Mkt Value▲"),
+            "expected Mkt Value ▲ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_market_value_desc_orders_rows() {
+        let mut app = make_test_app();
+        app.positions.push(make_position_full(
+            "SMALL", "10", "100.00", "500.00", "10.00", "0.02",
+        ));
+        app.positions.push(make_position_full(
+            "BIG", "10", "100.00", "5000.00", "100.00", "0.10",
+        ));
+        app.positions_sort.col = crate::app::PositionSortCol::MarketValue;
+        app.positions_sort.dir = crate::app::SortDir::Desc;
+        let output = render_positions_to_string(&mut app);
+        let big_pos = output.find("BIG").expect("BIG should be present");
+        let small_pos = output.find("SMALL").expect("SMALL should be present");
+        assert!(
+            big_pos < small_pos,
+            "BIG should appear before SMALL in desc market-value order"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_pct_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::Pct;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("% ▲") || output.contains("%▲"),
+            "expected % ▲ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_pct_orders_rows() {
+        let mut app = make_test_app();
+        app.positions.push(make_position_full(
+            "LOSER", "10", "100.00", "900.00", "-100.00", "-0.10",
+        ));
+        app.positions.push(make_position_full(
+            "WINNER", "10", "100.00", "1200.00", "200.00", "0.20",
+        ));
+        app.positions_sort.col = crate::app::PositionSortCol::Pct;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        let loser_pos = output.find("LOSER").expect("LOSER should be present");
+        let winner_pos = output.find("WINNER").expect("WINNER should be present");
+        assert!(
+            loser_pos < winner_pos,
+            "LOSER (-10%) should appear before WINNER (+20%) sorted asc"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_unrealized_pl_desc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::UnrealizedPl;
+        app.positions_sort.dir = crate::app::SortDir::Desc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Unrealized P&L ▼") || output.contains("Unrealized P&L▼"),
+            "expected Unrealized P&L ▼ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_pct_desc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::Pct;
+        app.positions_sort.dir = crate::app::SortDir::Desc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("% ▼") || output.contains("%▼"),
+            "expected % ▼ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_live_quote_overrides_current_price() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        // Inject a live ask-price quote
+        app.quotes.insert(
+            "AAPL".into(),
+            Quote {
+                ap: Some(175.99),
+                bp: None,
+                ..Default::default()
+            },
+        );
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("175.99"),
+            "expected live ask price in cur-price column, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_live_quote_bid_used_when_no_ask() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.positions.push(make_position("MSFT", "50.00"));
+        app.quotes.insert(
+            "MSFT".into(),
+            Quote {
+                ap: None,
+                bp: Some(299.50),
+                ..Default::default()
+            },
+        );
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("299.50"),
+            "expected live bid price in cur-price column, got: {output}"
+        );
+    }
 }
