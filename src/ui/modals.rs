@@ -1395,6 +1395,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_symbol_detail_crosshair_out_of_bounds_shows_static_label() {
+        // Crosshair index beyond the bar slice falls back to the static label
+        // (guards the inner-else branch on bars.get(ci) and the ci < bars.len() chart guard).
+        let mut app = make_test_app();
+        app.intraday_bars.insert("AAPL".into(), vec![15000, 15100]);
+        app.symbol_detail_crosshair = Some(99); // out of bounds
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Intraday"),
+            "out-of-bounds crosshair should fall back to static label; got:\n{}",
+            output
+        );
+    }
+
     fn render_order_entry_to_string(app: &mut App, state: crate::app::OrderEntryState) -> String {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
