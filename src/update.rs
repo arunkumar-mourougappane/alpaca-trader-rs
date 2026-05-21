@@ -3339,6 +3339,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tick_dispatches_intraday_refresh_for_position_detail_modal() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(4);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let mut app = crate::app::App::new(
+            crate::config::AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: crate::config::AlpacaEnv::Paper,
+                dry_run: false,
+            },
+            crate::prefs::AppPrefs::default(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            cmd_tx,
+            symbol_tx,
+        );
+        app.modal = Some(crate::app::Modal::PositionDetail {
+            symbol: "TSLA".into(),
+        });
+        app.intraday_fetched_at.insert(
+            "TSLA".into(),
+            std::time::Instant::now() - std::time::Duration::from_secs(61),
+        );
+        update(&mut app, Event::Tick);
+        let cmd = cmd_rx.try_recv().expect("command should be dispatched");
+        assert!(
+            matches!(cmd, Command::FetchIntradayBars(s) if s == "TSLA"),
+            "expected FetchIntradayBars for TSLA"
+        );
+    }
+
     // ── p key / equity range toggle ───────────────────────────────────────────
 
     fn make_app_with_cmd() -> (App, tokio::sync::mpsc::Receiver<Command>) {
