@@ -2533,4 +2533,51 @@ mod tests {
             "expected Esc:Close in footer, got: {output}"
         );
     }
+
+    #[test]
+    fn render_position_detail_negative_pl_renders_value() {
+        let mut app = make_test_app();
+        app.positions.push(crate::types::Position {
+            symbol: "AAPL".into(),
+            qty: "10".into(),
+            avg_entry_price: "150.00".into(),
+            current_price: "130.00".into(),
+            market_value: "1300.00".into(),
+            unrealized_pl: "-200.00".into(),
+            unrealized_plpc: "-0.133".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        });
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("-200.00"),
+            "expected negative P/L value in output, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_market_order_shows_mkt() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.orders.push(crate::types::Order {
+            id: "ord-mkt".into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("3".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("mkt"),
+            "expected 'mkt' for market order with no limit price, got: {output}"
+        );
+    }
 }
