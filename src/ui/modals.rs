@@ -14,6 +14,20 @@ use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField};
 use crate::ui::{charts, popup_area};
 
 pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
+    // Register the popup bounding box so the mouse handler can dismiss the modal
+    // when the user clicks outside it.
+    app.hit_areas.modal_popup_area = Some(match modal {
+        Modal::Help => popup_area(area, 50, 70),
+        Modal::About => popup_area(area, 50, 60),
+        Modal::OrderEntry(_) => popup_area(area, 45, 65),
+        Modal::SymbolDetail(_) => popup_area(area, 55, 88),
+        Modal::Confirm { .. } => popup_area(area, 40, 25),
+        Modal::ConfirmRemoveWatchlist { .. } => popup_area(area, 42, 22),
+        Modal::AddSymbol { .. } => popup_area(area, 35, 20),
+        Modal::GlobalSearch { .. } => popup_area(area, 35, 20),
+        Modal::PositionDetail { .. } => popup_area(area, 60, 90),
+    });
+
     match modal {
         Modal::Help => render_help(frame, area, app),
         Modal::About => render_about(frame, area, app),
