@@ -2032,12 +2032,14 @@ mod tests {
     }
 
     #[test]
-    fn positions_s_opens_sell_short_order_entry() {
+    fn positions_s_cycles_sort_column() {
         let (mut app, _rx) = positions_app();
+        assert_eq!(app.positions_sort.col, crate::app::PositionSortCol::None);
         update(&mut app, key(KeyCode::Char('s')));
-        assert!(
-            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL" && s.side == crate::app::OrderSide::SellShort),
-            "s key in positions should open SELL SHORT order entry for selected symbol"
+        assert_eq!(
+            app.positions_sort.col,
+            crate::app::PositionSortCol::Symbol,
+            "s key in positions should cycle sort column to Symbol"
         );
     }
 

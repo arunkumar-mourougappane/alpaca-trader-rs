@@ -5,8 +5,18 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, PositionSortCol, SortDir};
 use crate::ui::formatting::{format_pct_ratio, format_price, header_cell};
+
+/// Return a header label with an ▲/▼ sort indicator appended when `active` is true.
+fn sorted_header(label: &str, active: bool, dir: SortDir) -> String {
+    if active {
+        let arrow = if dir == SortDir::Asc { " ▲" } else { " ▼" };
+        format!("{label}{arrow}")
+    } else {
+        label.to_string()
+    }
+}
 
 pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     let c = app.current_theme.colors();
@@ -19,18 +29,66 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
         return;
     }
 
+    let sort_col = app.positions_sort.col;
+    let sort_dir = app.positions_sort.dir;
+
+    let active = |col: PositionSortCol| sort_col == col;
+    let h_symbol = sorted_header("Symbol", active(PositionSortCol::Symbol), sort_dir);
+    let h_qty = sorted_header("Qty", active(PositionSortCol::Qty), sort_dir);
+    let h_avg = sorted_header("Avg Cost", active(PositionSortCol::AvgCost), sort_dir);
+    let h_mkt = sorted_header("Mkt Value", active(PositionSortCol::MarketValue), sort_dir);
+    let h_pnl = sorted_header(
+        "Unrealized P&L",
+        active(PositionSortCol::UnrealizedPl),
+        sort_dir,
+    );
+    let h_pct = sorted_header("%", active(PositionSortCol::Pct), sort_dir);
     let header = Row::new(vec![
-        header_cell("Symbol", &c),
-        header_cell("Qty", &c),
-        header_cell("Avg Cost", &c),
+        header_cell(&h_symbol, &c),
+        header_cell(&h_qty, &c),
+        header_cell(&h_avg, &c),
         header_cell("Cur Price", &c),
-        header_cell("Mkt Value", &c),
-        header_cell("Unrealized P&L", &c),
-        header_cell("%", &c),
+        header_cell(&h_mkt, &c),
+        header_cell(&h_pnl, &c),
+        header_cell(&h_pct, &c),
     ]);
 
-    let mut rows: Vec<Row> = app
-        .positions
+    // Sort a clone of the positions slice.
+    let mut sorted: Vec<_> = app.positions.iter().collect();
+    match sort_col {
+        PositionSortCol::None => {}
+        PositionSortCol::Symbol => sorted.sort_by(|a, b| a.symbol.cmp(&b.symbol)),
+        PositionSortCol::Qty => sorted.sort_by(|a, b| {
+            let av = a.qty.parse::<f64>().unwrap_or(0.0);
+            let bv = b.qty.parse::<f64>().unwrap_or(0.0);
+            av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        PositionSortCol::AvgCost => sorted.sort_by(|a, b| {
+            let av = a.avg_entry_price.parse::<f64>().unwrap_or(0.0);
+            let bv = b.avg_entry_price.parse::<f64>().unwrap_or(0.0);
+            av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        PositionSortCol::MarketValue => sorted.sort_by(|a, b| {
+            let av = a.market_value.parse::<f64>().unwrap_or(0.0);
+            let bv = b.market_value.parse::<f64>().unwrap_or(0.0);
+            av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        PositionSortCol::UnrealizedPl => sorted.sort_by(|a, b| {
+            let av = a.unrealized_pl.trim().parse::<f64>().unwrap_or(0.0);
+            let bv = b.unrealized_pl.trim().parse::<f64>().unwrap_or(0.0);
+            av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        PositionSortCol::Pct => sorted.sort_by(|a, b| {
+            let av = a.unrealized_plpc.parse::<f64>().unwrap_or(0.0);
+            let bv = b.unrealized_plpc.parse::<f64>().unwrap_or(0.0);
+            av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal)
+        }),
+    }
+    if sort_dir == SortDir::Desc {
+        sorted.reverse();
+    }
+
+    let mut rows: Vec<Row> = sorted
         .iter()
         .map(|p| {
             let cur_price = app
@@ -325,5 +383,97 @@ mod tests {
     #[test]
     fn positions_fmt_pct_invalid() {
         assert_eq!(crate::ui::formatting::format_pct_ratio("n/a"), "n/a");
+    }
+
+    // ── Sort indicator tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn positions_sort_by_symbol_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("MSFT", "50.00"));
+        app.positions.push(make_position("AAPL", "100.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::Symbol;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        // Header should contain the ▲ indicator next to Symbol
+        assert!(
+            output.contains("Symbol ▲") || output.contains("Symbol▲"),
+            "expected ascending sort indicator on Symbol, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sort_by_symbol_desc_shows_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        app.positions.push(make_position("MSFT", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::Symbol;
+        app.positions_sort.dir = crate::app::SortDir::Desc;
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("Symbol ▼") || output.contains("Symbol▼"),
+            "expected descending sort indicator on Symbol, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sorted_by_symbol_asc_orders_rows_alphabetically() {
+        let mut app = make_test_app();
+        // Push in reverse-alphabetical order
+        app.positions.push(make_position("TSLA", "100.00"));
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::Symbol;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL should be in output");
+        let tsla_pos = output.find("TSLA").expect("TSLA should be in output");
+        assert!(
+            aapl_pos < tsla_pos,
+            "AAPL should appear before TSLA when sorted ascending by symbol"
+        );
+    }
+
+    #[test]
+    fn positions_sorted_by_symbol_desc_reverses_order() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions.push(make_position("TSLA", "100.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::Symbol;
+        app.positions_sort.dir = crate::app::SortDir::Desc;
+        let output = render_positions_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL should be in output");
+        let tsla_pos = output.find("TSLA").expect("TSLA should be in output");
+        assert!(
+            tsla_pos < aapl_pos,
+            "TSLA should appear before AAPL when sorted descending by symbol"
+        );
+    }
+
+    #[test]
+    fn positions_no_sort_shows_no_indicator() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL", "100.00"));
+        // Default sort is None
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            !output.contains('▲') && !output.contains('▼'),
+            "no sort indicator expected when sort col is None, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_sorted_by_unrealized_pl_asc() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("TSLA", "200.00"));
+        app.positions.push(make_position("AAPL", "50.00"));
+        app.positions_sort.col = crate::app::PositionSortCol::UnrealizedPl;
+        app.positions_sort.dir = crate::app::SortDir::Asc;
+        let output = render_positions_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL should be in output");
+        let tsla_pos = output.find("TSLA").expect("TSLA should be in output");
+        assert!(
+            aapl_pos < tsla_pos,
+            "AAPL (lower P&L) should appear before TSLA when sorted ascending by P&L"
+        );
     }
 }
