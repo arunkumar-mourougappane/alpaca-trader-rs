@@ -120,9 +120,9 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
             " j/k:Navigate  Enter:Detail  o:Order  a:Add  d:Remove  c:Copy  /:Search  T:Theme  A:About  ?:Help  q:Quit"
         }
         Tab::Positions => {
-            " j/k:Navigate  Enter:Detail  o:Close  s:Short  c:Copy  T:Theme  A:About  ?:Help  q:Quit"
+            " j/k:Navigate  Enter:Detail  o:Order  c:Copy  s:Sort  S:SortDir  T:Theme  A:About  ?:Help  q:Quit"
         }
-        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
+        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  s:Sort  S:SortDir  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
     };
 
     let status = if app.current_status_text().is_empty() {
