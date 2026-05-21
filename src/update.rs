@@ -196,6 +196,17 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Char('c') if app.active_tab != Tab::Orders => {
             copy_focused_symbol(app);
         }
+        // Global symbol search: Ctrl-F from any tab, or '/' from non-Watchlist tabs.
+        KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.modal = Some(Modal::GlobalSearch {
+                query: String::new(),
+            });
+        }
+        KeyCode::Char('/') if app.active_tab != Tab::Watchlist => {
+            app.modal = Some(Modal::GlobalSearch {
+                query: String::new(),
+            });
+        }
         _ => handle_panel_key(app, key),
     }
 }
@@ -1337,6 +1348,166 @@ mod tests {
         update(&mut app, key(KeyCode::Enter));
 
         assert!(cmd_rx.try_recv().is_err(), "no command for empty input");
+    }
+
+    // ── GlobalSearch modal ────────────────────────────────────────────────────
+
+    #[test]
+    fn ctrl_f_opens_global_search_modal() {
+        let mut app = make_test_app();
+        update(&mut app, ctrl(KeyCode::Char('f')));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { query }) if query.is_empty()),
+            "Ctrl-F should open GlobalSearch with empty query"
+        );
+    }
+
+    #[test]
+    fn slash_opens_global_search_on_account_tab() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        update(&mut app, key(KeyCode::Char('/')));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { .. })),
+            "'/' on Account tab should open GlobalSearch"
+        );
+    }
+
+    #[test]
+    fn slash_opens_global_search_on_positions_tab() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Positions;
+        update(&mut app, key(KeyCode::Char('/')));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { .. })),
+            "'/' on Positions tab should open GlobalSearch"
+        );
+    }
+
+    #[test]
+    fn slash_opens_global_search_on_orders_tab() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Orders;
+        update(&mut app, key(KeyCode::Char('/')));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { .. })),
+            "'/' on Orders tab should open GlobalSearch"
+        );
+    }
+
+    #[test]
+    fn slash_does_not_open_global_search_on_watchlist_tab() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        update(&mut app, key(KeyCode::Char('/')));
+        assert!(
+            !matches!(&app.modal, Some(Modal::GlobalSearch { .. })),
+            "'/' on Watchlist tab must NOT open GlobalSearch (it activates watchlist search)"
+        );
+    }
+
+    #[test]
+    fn global_search_char_key_appends_uppercase() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch {
+            query: String::new(),
+        });
+        update(&mut app, key(KeyCode::Char('a')));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { query }) if query == "A"),
+            "char should be uppercased and appended"
+        );
+    }
+
+    #[test]
+    fn global_search_backspace_removes_last_char() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch { query: "AA".into() });
+        update(&mut app, key(KeyCode::Backspace));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { query }) if query == "A"),
+            "Backspace should remove last character"
+        );
+    }
+
+    #[test]
+    fn global_search_esc_dismisses_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch {
+            query: "GOO".into(),
+        });
+        update(&mut app, key(KeyCode::Esc));
+        assert!(app.modal.is_none(), "Esc should close GlobalSearch");
+    }
+
+    #[test]
+    fn global_search_enter_with_query_opens_symbol_detail() {
+        let (mut app, _rx) = app_with_rx();
+        app.modal = Some(Modal::GlobalSearch {
+            query: "GOOG".into(),
+        });
+        update(&mut app, key(KeyCode::Enter));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "GOOG"),
+            "Enter should transition GlobalSearch → SymbolDetail"
+        );
+    }
+
+    #[test]
+    fn global_search_enter_dispatches_fetch_intraday_bars() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::GlobalSearch {
+            query: "TSLA".into(),
+        });
+        update(&mut app, key(KeyCode::Enter));
+        let cmd = cmd_rx
+            .try_recv()
+            .expect("FetchIntradayBars command should be dispatched");
+        assert!(
+            matches!(cmd, Command::FetchIntradayBars(s) if s == "TSLA"),
+            "expected FetchIntradayBars for TSLA"
+        );
+    }
+
+    #[test]
+    fn global_search_enter_with_empty_query_closes_modal() {
+        let (mut app, mut cmd_rx) = app_with_rx();
+        app.modal = Some(Modal::GlobalSearch {
+            query: String::new(),
+        });
+        update(&mut app, key(KeyCode::Enter));
+        assert!(
+            app.modal.is_none(),
+            "Enter on empty query should close modal"
+        );
+        assert!(
+            cmd_rx.try_recv().is_err(),
+            "no command should be sent for empty query"
+        );
+    }
+
+    #[test]
+    fn global_search_backspace_on_empty_query_is_noop() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch {
+            query: String::new(),
+        });
+        update(&mut app, key(KeyCode::Backspace));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { query }) if query.is_empty()),
+            "Backspace on empty query should keep modal open with empty query"
+        );
+    }
+
+    #[test]
+    fn ctrl_f_opens_search_even_when_on_watchlist_tab() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        update(&mut app, ctrl(KeyCode::Char('f')));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { .. })),
+            "Ctrl-F should open GlobalSearch regardless of active tab"
+        );
     }
 
     #[test]

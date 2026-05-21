@@ -28,6 +28,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
             render_confirm_remove_watchlist(frame, area, symbol, app)
         }
         Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input, app),
+        Modal::GlobalSearch { query } => render_global_search(frame, area, query, app),
     }
 }
 
@@ -67,6 +68,7 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         ("q / Ctrl-C", "Quit"),
         ("?", "This help screen"),
         ("A", "About this app"),
+        ("Ctrl-F / /", "Global symbol search"),
     ];
 
     let header = Row::new(vec![
@@ -812,6 +814,48 @@ fn render_add_symbol(frame: &mut Frame, area: Rect, input: &str, app: &App) {
 
     frame.render_widget(
         Paragraph::new("  Enter:Add  Esc:Cancel").style(c.dim_style()),
+        chunks[2],
+    );
+}
+
+fn render_global_search(frame: &mut Frame, area: Rect, query: &str, app: &App) {
+    let popup = popup_area(area, 35, 20);
+    frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
+
+    let block = Block::default()
+        .title(" Global Symbol Search ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(c.accent_style());
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new("  Enter ticker symbol:").style(c.dim_style()),
+        chunks[0],
+    );
+
+    let input_line = Line::from(vec![
+        Span::raw("  "),
+        Span::styled(query.to_string(), c.bold_style()),
+        Span::styled("▋", c.accent_style()),
+    ]);
+    frame.render_widget(Paragraph::new(input_line), chunks[1]);
+
+    frame.render_widget(
+        Paragraph::new("  Enter:Open  Esc:Cancel").style(c.dim_style()),
         chunks[2],
     );
 }

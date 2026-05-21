@@ -286,6 +286,28 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 watchlist_id,
             }),
         },
+
+        Modal::GlobalSearch { mut query } => match key.code {
+            KeyCode::Char(c) => {
+                query.push(c.to_ascii_uppercase());
+                Some(Modal::GlobalSearch { query })
+            }
+            KeyCode::Backspace => {
+                query.pop();
+                Some(Modal::GlobalSearch { query })
+            }
+            KeyCode::Enter => {
+                if query.is_empty() {
+                    None
+                } else {
+                    let _ = app
+                        .command_tx
+                        .try_send(Command::FetchIntradayBars(query.clone()));
+                    Some(Modal::SymbolDetail(query))
+                }
+            }
+            _ => Some(Modal::GlobalSearch { query }),
+        },
     };
 
     app.modal = new_modal;
