@@ -98,10 +98,19 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     let orders = app.filtered_orders();
     let is_filled_tab = app.orders_subtab == OrdersSubTab::Filled;
 
+    // Build block title — show filter state in the title.
+    let block_title = if app.orders_filter_active {
+        format!(" Orders / Filter: {}_ ", app.orders_symbol_filter)
+    } else if !app.orders_symbol_filter.is_empty() {
+        format!(" Orders [{}] ", app.orders_symbol_filter)
+    } else {
+        " Orders ".to_string()
+    };
+
     if orders.is_empty() {
         let para = Paragraph::new("  No orders in this category.")
             .style(c.dim_style())
-            .block(c.bordered_block(" Orders "));
+            .block(c.bordered_block(&block_title));
         frame.render_widget(para, area);
         return;
     }
@@ -215,7 +224,7 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
-    let block = c.bordered_block(" Orders ");
+    let block = c.bordered_block(&block_title);
 
     let mut constraints = vec![
         Constraint::Length(10),
@@ -893,6 +902,68 @@ mod tests {
         assert!(
             output.contains("Open (1)"),
             "held status should count in Open subtab, got: {output}"
+        );
+    }
+
+    // ── Symbol filter render tests ─────────────────────────────────────────────
+
+    #[test]
+    fn orders_filter_active_shows_filter_prompt_in_title() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_filter_active = true;
+        app.orders_symbol_filter = "AAP".to_string();
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Filter: AAP"),
+            "expected 'Filter: AAP' in title when active, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_filter_inactive_with_value_shows_bracket_notation() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_filter_active = false;
+        app.orders_symbol_filter = "TSLA".to_string();
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("[TSLA]"),
+            "expected '[TSLA]' bracket notation in title when filter set, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_filter_narrows_displayed_rows() {
+        let mut app = make_test_app();
+        app.orders.push(make_order_full("o1", "AAPL", "buy", "new"));
+        app.orders.push(make_order_full("o2", "TSLA", "buy", "new"));
+        app.orders_symbol_filter = "TSLA".to_string();
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("TSLA"),
+            "TSLA should be visible when filter is TSLA, got: {output}"
+        );
+        assert!(
+            !output.contains("AAPL"),
+            "AAPL should be filtered out, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_no_filter_shows_all_rows() {
+        let mut app = make_test_app();
+        app.orders.push(make_order_full("o1", "AAPL", "buy", "new"));
+        app.orders.push(make_order_full("o2", "TSLA", "buy", "new"));
+        app.orders_symbol_filter = String::new();
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("AAPL"),
+            "AAPL should be visible, got: {output}"
+        );
+        assert!(
+            output.contains("TSLA"),
+            "TSLA should be visible, got: {output}"
         );
     }
 }

@@ -3,6 +3,29 @@ use crossterm::event::KeyCode;
 use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrdersSubTab};
 
 pub(crate) fn handle_orders_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    // While the filter input is active, intercept all keys for text editing.
+    if app.orders_filter_active {
+        match key.code {
+            KeyCode::Esc => {
+                app.orders_filter_active = false;
+                app.orders_symbol_filter.clear();
+                app.orders_state.select(Some(0));
+            }
+            KeyCode::Enter => {
+                app.orders_filter_active = false;
+                app.orders_state.select(Some(0));
+            }
+            KeyCode::Backspace => {
+                app.orders_symbol_filter.pop();
+            }
+            KeyCode::Char(c) => {
+                app.orders_symbol_filter.push(c.to_ascii_uppercase());
+            }
+            _ => {}
+        }
+        return;
+    }
+
     let orders = app.filtered_orders();
     let len = orders.len();
 
@@ -32,6 +55,16 @@ pub(crate) fn handle_orders_key(app: &mut App, key: crossterm::event::KeyEvent) 
                     confirmed: false,
                 });
             }
+        }
+        KeyCode::Char('f') => {
+            app.orders_filter_active = true;
+            app.orders_symbol_filter.clear();
+        }
+        KeyCode::Char('F') => {
+            // Clear any active symbol filter.
+            app.orders_symbol_filter.clear();
+            app.orders_filter_active = false;
+            app.orders_state.select(Some(0));
         }
         KeyCode::Char('s') => {
             app.orders_sort.col = app.orders_sort.col.cycle();
@@ -97,5 +130,84 @@ mod tests {
         assert_eq!(app.orders_subtab, crate::app::OrdersSubTab::Cancelled);
         press(&mut app, KeyCode::Char('1'));
         assert_eq!(app.orders_subtab, crate::app::OrdersSubTab::Open);
+    }
+
+    #[test]
+    fn f_key_activates_filter_mode() {
+        let mut app = make_test_app();
+        assert!(!app.orders_filter_active);
+        press(&mut app, KeyCode::Char('f'));
+        assert!(app.orders_filter_active);
+        assert!(app.orders_symbol_filter.is_empty());
+    }
+
+    #[test]
+    fn chars_typed_in_filter_mode_build_filter_string() {
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Char('p'));
+        press(&mut app, KeyCode::Char('l'));
+        assert_eq!(app.orders_symbol_filter, "AAPL");
+    }
+
+    #[test]
+    fn backspace_removes_last_char_in_filter_mode() {
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Char('b'));
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(app.orders_symbol_filter, "A");
+    }
+
+    #[test]
+    fn enter_confirms_filter_and_exits_input_mode() {
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Enter);
+        assert!(!app.orders_filter_active);
+        assert_eq!(app.orders_symbol_filter, "A");
+    }
+
+    #[test]
+    fn esc_clears_filter_and_exits_input_mode() {
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.orders_filter_active);
+        assert!(app.orders_symbol_filter.is_empty());
+    }
+
+    #[test]
+    fn shift_f_clears_active_filter() {
+        let mut app = make_test_app();
+        app.orders_symbol_filter = "AAPL".to_string();
+        let event = KeyEvent::new(KeyCode::Char('F'), KeyModifiers::SHIFT);
+        super::handle_orders_key(&mut app, event);
+        assert!(app.orders_symbol_filter.is_empty());
+        assert!(!app.orders_filter_active);
+    }
+
+    #[test]
+    fn filter_mode_does_not_consume_normal_keys_when_inactive() {
+        // 'o' should open order modal when NOT in filter mode
+        let mut app = make_test_app();
+        assert!(!app.orders_filter_active);
+        press(&mut app, KeyCode::Char('o'));
+        assert!(app.modal.is_some());
+    }
+
+    #[test]
+    fn filter_mode_blocks_normal_key_handling() {
+        // When filter is active, 'o' should be appended to the filter string, not open modal
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Char('f'));
+        press(&mut app, KeyCode::Char('o'));
+        assert_eq!(app.orders_symbol_filter, "O");
+        assert!(app.modal.is_none());
     }
 }

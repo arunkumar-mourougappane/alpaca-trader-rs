@@ -594,6 +594,18 @@ pub struct App {
 
     /// Active sort column and direction for the Orders table.
     pub orders_sort: SortState<OrderSortCol>,
+
+    /// Symbol prefix filter applied to the Orders table.
+    ///
+    /// Empty string means no filter is active. When non-empty, only orders
+    /// whose symbol contains this string (case-insensitive) are shown.
+    pub orders_symbol_filter: String,
+
+    /// Whether the Orders table is currently in filter-input mode.
+    ///
+    /// While `true`, printable key-presses are appended to `orders_symbol_filter`
+    /// instead of being handled as navigation or action shortcuts.
+    pub orders_filter_active: bool,
 }
 
 impl App {
@@ -646,10 +658,13 @@ impl App {
             equity_chart_cursor: None,
             positions_sort: SortState::default(),
             orders_sort: SortState::default(),
+            orders_symbol_filter: String::new(),
+            orders_filter_active: false,
         }
     }
 
     pub fn filtered_orders(&self) -> Vec<&Order> {
+        let filter = self.orders_symbol_filter.to_uppercase();
         self.orders
             .iter()
             .filter(|o| match self.orders_subtab {
@@ -667,6 +682,7 @@ impl App {
                     )
                 }
             })
+            .filter(|o| filter.is_empty() || o.symbol.to_uppercase().contains(&filter))
             .collect()
     }
 
@@ -994,6 +1010,54 @@ mod tests {
         let mut app = make_test_app();
         app.orders_subtab = OrdersSubTab::Open;
         assert!(app.filtered_orders().is_empty());
+    }
+
+    #[test]
+    fn filtered_orders_symbol_filter_narrows_results() {
+        let mut app = make_test_app();
+        app.orders = vec![
+            make_order("1", "new"), // symbol = AAPL
+            make_order("2", "new"), // symbol = AAPL
+        ];
+        // Override second order symbol via a custom Order
+        app.orders[1].symbol = "TSLA".into();
+        app.orders_subtab = OrdersSubTab::Open;
+        app.orders_symbol_filter = "AAPL".to_string();
+        let result = app.filtered_orders();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].symbol, "AAPL");
+    }
+
+    #[test]
+    fn filtered_orders_symbol_filter_is_case_insensitive() {
+        let mut app = make_test_app();
+        app.orders = vec![make_order("1", "new")]; // symbol = AAPL
+        app.orders_subtab = OrdersSubTab::Open;
+        app.orders_symbol_filter = "aapl".to_string();
+        assert_eq!(app.filtered_orders().len(), 1);
+    }
+
+    #[test]
+    fn filtered_orders_symbol_filter_empty_shows_all() {
+        let mut app = make_test_app();
+        app.orders = vec![make_order("1", "new"), make_order("2", "new")];
+        app.orders[1].symbol = "TSLA".into();
+        app.orders_subtab = OrdersSubTab::Open;
+        app.orders_symbol_filter = String::new();
+        assert_eq!(app.filtered_orders().len(), 2);
+    }
+
+    #[test]
+    fn filtered_orders_symbol_filter_prefix_match() {
+        let mut app = make_test_app();
+        app.orders = vec![make_order("1", "new"), make_order("2", "new")];
+        app.orders[1].symbol = "AMZN".into();
+        app.orders_subtab = OrdersSubTab::Open;
+        app.orders_symbol_filter = "AA".to_string();
+        // "AAPL" contains "AA", "AMZN" does not
+        let result = app.filtered_orders();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].symbol, "AAPL");
     }
 
     // ── push_equity ───────────────────────────────────────────────────────────

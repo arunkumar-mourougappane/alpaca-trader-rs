@@ -64,6 +64,8 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         ("/", "Search / filter watchlist"),
         ("s", "Cycle sort column (Positions / Orders)"),
         ("S", "Toggle sort direction ▲/▼ (Positions / Orders)"),
+        ("f", "Filter orders by symbol prefix"),
+        ("F", "Clear orders symbol filter"),
         ("", ""),
         ("GLOBAL", ""),
         ("T", "Cycle theme (Default → Dark → High-contrast)"),

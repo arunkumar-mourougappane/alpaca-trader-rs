@@ -122,7 +122,7 @@ pub fn render_status(frame: &mut Frame, area: Rect, app: &App) {
         Tab::Positions => {
             " j/k:Navigate  Enter:Detail  o:Order  c:Copy  s:Sort  S:SortDir  T:Theme  A:About  ?:Help  q:Quit"
         }
-        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  s:Sort  S:SortDir  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
+        Tab::Orders => " j/k:Navigate  o:New  c:Cancel  f:Filter  F:ClearFilter  s:Sort  S:SortDir  1-3:Filter  T:Theme  A:About  ?:Help  q:Quit",
     };
 
     let status = if app.current_status_text().is_empty() {
