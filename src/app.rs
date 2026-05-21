@@ -506,6 +506,9 @@ pub struct HitAreas {
     /// Full area of the equity chart block on the Account tab.
     /// Used to hit-test mouse clicks and map column → data-point index.
     pub equity_chart_area: Rect,
+    /// Bounding box of the currently rendered modal popup.
+    /// A left-click outside this area dismisses the modal.
+    pub modal_popup_area: Option<Rect>,
 }
 
 pub struct App {
@@ -571,6 +574,13 @@ pub struct App {
 
     /// Interactive element positions from the last rendered frame.
     pub hit_areas: HitAreas,
+
+    /// Tracks the last left-click's (row, time) for double-click detection.
+    ///
+    /// A second click on the same terminal row within
+    /// [`DOUBLE_CLICK_INTERVAL`] is treated as a double-click and opens
+    /// the detail modal (equivalent to pressing `Enter`).
+    pub last_click: Option<(u16, Instant)>,
 
     /// Timestamp of the first `g` keypress for `gg` (jump-to-top) detection.
     ///
@@ -660,6 +670,7 @@ impl App {
             market_stream_ok: false,
             account_stream_ok: false,
             hit_areas: HitAreas::default(),
+            last_click: None,
             pending_g_at: None,
             last_equity_stream_push: None,
             intraday_fetched_at: HashMap::new(),

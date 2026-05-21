@@ -110,3 +110,18 @@ pub(crate) fn send_command(app: &mut App, cmd: Command, success_msg: impl Into<S
         }
     }
 }
+
+/// Simulate pressing `Enter` on the active tab.
+///
+/// Used by the mouse double-click handler to open the detail modal for the
+/// currently selected row without duplicating the per-tab Enter logic.
+pub(crate) fn handle_key_as_enter(app: &mut App) {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    match app.active_tab {
+        crate::app::Tab::Watchlist => watchlist::handle_watchlist_key(app, enter),
+        crate::app::Tab::Positions => positions::handle_positions_key(app, enter),
+        crate::app::Tab::Orders => orders::handle_orders_key(app, enter),
+        crate::app::Tab::Account => {}
+    }
+}
