@@ -392,6 +392,91 @@ impl EquityRange {
     }
 }
 
+/// Sort direction used by [`SortState`].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SortDir {
+    /// Ascending order (A → Z, lowest → highest).
+    #[default]
+    Asc,
+    /// Descending order (Z → A, highest → lowest).
+    Desc,
+}
+
+/// Sortable column in the Positions table.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum PositionSortCol {
+    /// No explicit sort; positions are shown in API-returned order.
+    #[default]
+    None,
+    Symbol,
+    Qty,
+    AvgCost,
+    MarketValue,
+    UnrealizedPl,
+    Pct,
+}
+
+impl PositionSortCol {
+    /// Advance to the next column in the cycle, wrapping back to `None`.
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::None => Self::Symbol,
+            Self::Symbol => Self::Qty,
+            Self::Qty => Self::AvgCost,
+            Self::AvgCost => Self::MarketValue,
+            Self::MarketValue => Self::UnrealizedPl,
+            Self::UnrealizedPl => Self::Pct,
+            Self::Pct => Self::None,
+        }
+    }
+}
+
+/// Sortable column in the Orders table.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum OrderSortCol {
+    /// No explicit sort; orders are shown in API-returned order.
+    #[default]
+    None,
+    Symbol,
+    Side,
+    Type,
+    Status,
+    Submitted,
+}
+
+impl OrderSortCol {
+    /// Advance to the next column in the cycle, wrapping back to `None`.
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::None => Self::Symbol,
+            Self::Symbol => Self::Side,
+            Self::Side => Self::Type,
+            Self::Type => Self::Status,
+            Self::Status => Self::Submitted,
+            Self::Submitted => Self::None,
+        }
+    }
+}
+
+/// Sort state for a table: which column is active and what direction.
+#[derive(Debug, Clone, Default)]
+pub struct SortState<C: Default + Copy + PartialEq> {
+    /// The currently active sort column.
+    pub col: C,
+    /// Sort direction.
+    pub dir: SortDir,
+}
+
+impl<C: Default + Copy + PartialEq> SortState<C> {
+    /// Toggle between ascending and descending.
+    pub fn toggle_dir(&mut self) {
+        self.dir = match self.dir {
+            SortDir::Asc => SortDir::Desc,
+            SortDir::Desc => SortDir::Asc,
+        };
+    }
+}
+
 /// Screen areas of interactive elements, populated by the renderer each frame.
 /// Used by the mouse event handler to map click coordinates to actions.
 #[derive(Default, Clone, Debug)]
@@ -503,6 +588,12 @@ pub struct App {
     /// `None` means no crosshair is shown. Set by `←`/`→` keys while the
     /// Account tab is active; cleared by `Esc`.
     pub equity_chart_cursor: Option<usize>,
+
+    /// Active sort column and direction for the Positions table.
+    pub positions_sort: SortState<PositionSortCol>,
+
+    /// Active sort column and direction for the Orders table.
+    pub orders_sort: SortState<OrderSortCol>,
 }
 
 impl App {
@@ -553,6 +644,8 @@ impl App {
             last_equity_stream_push: None,
             intraday_fetched_at: HashMap::new(),
             equity_chart_cursor: None,
+            positions_sort: SortState::default(),
+            orders_sort: SortState::default(),
         }
     }
 
@@ -1292,5 +1385,68 @@ mod tests {
             app.equity_history.is_empty(),
             "push_equity_from_quotes must not append when range != OneDay"
         );
+    }
+
+    // ── SortState / PositionSortCol / OrderSortCol ───────────────────────────
+
+    #[test]
+    fn position_sort_col_cycles_through_all_variants() {
+        let mut col = PositionSortCol::None;
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::Symbol);
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::Qty);
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::AvgCost);
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::MarketValue);
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::UnrealizedPl);
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::Pct);
+        col = col.cycle();
+        assert_eq!(col, PositionSortCol::None, "should wrap back to None");
+    }
+
+    #[test]
+    fn order_sort_col_cycles_through_all_variants() {
+        let mut col = OrderSortCol::None;
+        col = col.cycle();
+        assert_eq!(col, OrderSortCol::Symbol);
+        col = col.cycle();
+        assert_eq!(col, OrderSortCol::Side);
+        col = col.cycle();
+        assert_eq!(col, OrderSortCol::Type);
+        col = col.cycle();
+        assert_eq!(col, OrderSortCol::Status);
+        col = col.cycle();
+        assert_eq!(col, OrderSortCol::Submitted);
+        col = col.cycle();
+        assert_eq!(col, OrderSortCol::None, "should wrap back to None");
+    }
+
+    #[test]
+    fn sort_state_toggle_dir_flips_asc_to_desc() {
+        let mut state: SortState<PositionSortCol> = SortState::default();
+        assert_eq!(state.dir, SortDir::Asc);
+        state.toggle_dir();
+        assert_eq!(state.dir, SortDir::Desc);
+    }
+
+    #[test]
+    fn sort_state_toggle_dir_flips_desc_to_asc() {
+        let mut state: SortState<PositionSortCol> = SortState {
+            col: PositionSortCol::Symbol,
+            dir: SortDir::Desc,
+        };
+        state.toggle_dir();
+        assert_eq!(state.dir, SortDir::Asc);
+    }
+
+    #[test]
+    fn sort_state_default_is_no_sort_ascending() {
+        let state: SortState<PositionSortCol> = SortState::default();
+        assert_eq!(state.col, PositionSortCol::None);
+        assert_eq!(state.dir, SortDir::Asc);
     }
 }

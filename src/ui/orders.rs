@@ -5,8 +5,18 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, OrdersSubTab};
+use crate::app::{App, OrderSortCol, OrdersSubTab, SortDir};
 use crate::ui::formatting::{format_price, header_cell};
+
+/// Return a header label with an ▲/▼ sort indicator appended when `active` is true.
+fn sorted_header(label: &str, active: bool, dir: SortDir) -> String {
+    if active {
+        let arrow = if dir == SortDir::Asc { " ▲" } else { " ▼" };
+        format!("{label}{arrow}")
+    } else {
+        label.to_string()
+    }
+}
 
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
@@ -96,15 +106,25 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
+    let sort_col = app.orders_sort.col;
+    let sort_dir = app.orders_sort.dir;
+    let active = |col: OrderSortCol| sort_col == col;
+
+    let h_symbol = sorted_header("Symbol", active(OrderSortCol::Symbol), sort_dir);
+    let h_side = sorted_header("Side", active(OrderSortCol::Side), sort_dir);
+    let h_type = sorted_header("Type", active(OrderSortCol::Type), sort_dir);
+    let h_status = sorted_header("Status", active(OrderSortCol::Status), sort_dir);
+    let h_submitted = sorted_header("Submitted", active(OrderSortCol::Submitted), sort_dir);
+
     let mut header_cells = vec![
         header_cell("ID", &c),
-        header_cell("Symbol", &c),
-        header_cell("Side", &c),
+        header_cell(&h_symbol, &c),
+        header_cell(&h_side, &c),
         header_cell("Qty", &c),
-        header_cell("Type", &c),
+        header_cell(&h_type, &c),
         header_cell("Limit", &c),
-        header_cell("Status", &c),
-        header_cell("Submitted", &c),
+        header_cell(&h_status, &c),
+        header_cell(&h_submitted, &c),
     ];
     if is_filled_tab {
         header_cells.push(header_cell("Filled Qty", &c));
@@ -112,7 +132,25 @@ fn render_table(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     let header = Row::new(header_cells);
 
-    let rows: Vec<Row> = orders
+    // Sort orders.
+    let mut sorted_orders = orders;
+    match sort_col {
+        OrderSortCol::None => {}
+        OrderSortCol::Symbol => sorted_orders.sort_by(|a, b| a.symbol.cmp(&b.symbol)),
+        OrderSortCol::Side => sorted_orders.sort_by(|a, b| a.side.cmp(&b.side)),
+        OrderSortCol::Type => sorted_orders.sort_by(|a, b| a.order_type.cmp(&b.order_type)),
+        OrderSortCol::Status => sorted_orders.sort_by(|a, b| a.status.cmp(&b.status)),
+        OrderSortCol::Submitted => sorted_orders.sort_by(|a, b| {
+            let at = a.submitted_at.as_deref().unwrap_or("");
+            let bt = b.submitted_at.as_deref().unwrap_or("");
+            at.cmp(bt)
+        }),
+    }
+    if sort_dir == SortDir::Desc {
+        sorted_orders.reverse();
+    }
+
+    let rows: Vec<Row> = sorted_orders
         .iter()
         .map(|o| {
             let short_id = if o.id.len() >= 8 {
@@ -412,6 +450,108 @@ mod tests {
         assert!(
             !output.contains("Fill Price"),
             "Cancelled tab should not show Fill Price column"
+        );
+    }
+
+    // ── Sort indicator / sorting tests ────────────────────────────────────────
+
+    fn make_order_with_symbol(id: &str, symbol: &str) -> crate::types::Order {
+        crate::types::Order {
+            id: id.into(),
+            symbol: symbol.into(),
+            side: "buy".into(),
+            qty: Some("5".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        }
+    }
+
+    #[test]
+    fn orders_no_sort_shows_no_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            !output.contains('▲') && !output.contains('▼'),
+            "no indicator expected when sort col is None, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_symbol_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Symbol;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Symbol ▲") || output.contains("Symbol▲"),
+            "expected ascending indicator on Symbol, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_symbol_desc_shows_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Symbol;
+        app.orders_sort.dir = crate::app::SortDir::Desc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Symbol ▼") || output.contains("Symbol▼"),
+            "expected descending indicator on Symbol, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sorted_by_symbol_asc_orders_rows_alphabetically() {
+        let mut app = make_test_app();
+        app.orders.push(make_order_with_symbol("o1", "TSLA"));
+        app.orders.push(make_order_with_symbol("o2", "AAPL"));
+        app.orders_sort.col = crate::app::OrderSortCol::Symbol;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        let output = render_orders_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL should appear");
+        let tsla_pos = output.find("TSLA").expect("TSLA should appear");
+        assert!(
+            aapl_pos < tsla_pos,
+            "AAPL should appear before TSLA sorted ascending"
+        );
+    }
+
+    #[test]
+    fn orders_sorted_by_symbol_desc_reverses_order() {
+        let mut app = make_test_app();
+        app.orders.push(make_order_with_symbol("o1", "AAPL"));
+        app.orders.push(make_order_with_symbol("o2", "TSLA"));
+        app.orders_sort.col = crate::app::OrderSortCol::Symbol;
+        app.orders_sort.dir = crate::app::SortDir::Desc;
+        let output = render_orders_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL should appear");
+        let tsla_pos = output.find("TSLA").expect("TSLA should appear");
+        assert!(
+            tsla_pos < aapl_pos,
+            "TSLA should appear before AAPL sorted descending"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_status_shows_status_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Status;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Status ▲") || output.contains("Status▲"),
+            "expected ascending indicator on Status, got: {output}"
         );
     }
 }
