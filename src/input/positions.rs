@@ -18,7 +18,7 @@ pub(crate) fn handle_positions_key(app: &mut App, key: crossterm::event::KeyEven
                 let _ = app
                     .command_tx
                     .try_send(crate::commands::Command::FetchIntradayBars(symbol.clone()));
-                app.modal = Some(Modal::SymbolDetail(symbol));
+                app.modal = Some(Modal::PositionDetail { symbol });
             }
         }
         KeyCode::Char('o') => {
@@ -104,5 +104,64 @@ mod tests {
         app.positions_state.select(Some(0));
         press(&mut app, KeyCode::Char('o'));
         assert!(app.modal.is_some(), "expected modal after pressing o");
+    }
+
+    #[test]
+    fn enter_key_opens_position_detail_modal() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.positions_state.select(Some(0));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(&app.modal, Some(crate::app::Modal::PositionDetail { symbol }) if symbol == "AAPL"),
+            "expected PositionDetail modal for AAPL, got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn enter_key_with_no_selection_does_nothing() {
+        let mut app = make_test_app();
+        press(&mut app, KeyCode::Enter);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn j_key_moves_selection_down() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.positions.push(make_position("TSLA"));
+        app.positions_state.select(Some(0));
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.positions_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn k_key_moves_selection_up() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.positions.push(make_position("TSLA"));
+        app.positions_state.select(Some(1));
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.positions_state.selected(), Some(0));
+    }
+
+    #[test]
+    fn capital_g_jumps_to_last_row() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.positions.push(make_position("TSLA"));
+        app.positions.push(make_position("NVDA"));
+        app.positions_state.select(Some(0));
+        press(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.positions_state.selected(), Some(2));
+    }
+
+    #[test]
+    fn unhandled_key_does_nothing() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        press(&mut app, KeyCode::Char('z'));
+        assert!(app.modal.is_none());
     }
 }

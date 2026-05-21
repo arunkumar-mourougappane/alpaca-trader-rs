@@ -331,6 +331,14 @@ pub enum Modal {
         /// The symbol characters typed so far (uppercased).
         query: String,
     },
+    /// Dedicated position detail view for a held position.
+    ///
+    /// Shows an intraday chart, position P/L summary, and related open orders
+    /// for the symbol. `Esc` dismisses; `o` opens a new order for the symbol.
+    PositionDetail {
+        /// Ticker symbol whose position is being viewed.
+        symbol: String,
+    },
 }
 
 /// Date range for the equity-history chart.

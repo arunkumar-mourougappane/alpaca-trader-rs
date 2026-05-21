@@ -308,7 +308,68 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             }
             _ => Some(Modal::GlobalSearch { query }),
         },
+
+        Modal::PositionDetail { symbol } => match key.code {
+            KeyCode::Char('o') => {
+                app.modal = Some(Modal::OrderEntry(OrderEntryState::new(symbol)));
+                return;
+            }
+            _ => Some(Modal::PositionDetail { symbol }),
+        },
     };
 
     app.modal = new_modal;
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use crate::app::test_helpers::make_test_app;
+    use crate::app::Modal;
+
+    fn press(app: &mut crate::app::App, code: KeyCode) {
+        let event = KeyEvent::new(code, KeyModifiers::NONE);
+        super::handle_modal_key(app, event);
+    }
+
+    // ── PositionDetail modal ───────────────────────────────────────────────────
+
+    #[test]
+    fn esc_closes_position_detail_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Esc);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn o_key_in_position_detail_opens_order_entry() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Char('o'));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "AAPL"),
+            "expected OrderEntry modal for AAPL, got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn unhandled_key_keeps_position_detail_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "TSLA".into(),
+        });
+        press(&mut app, KeyCode::Char('z'));
+        assert!(
+            matches!(&app.modal, Some(Modal::PositionDetail { symbol }) if symbol == "TSLA"),
+            "expected PositionDetail to stay open, got: {:?}",
+            app.modal
+        );
+    }
 }
