@@ -324,6 +324,65 @@ pub enum Modal {
     },
 }
 
+/// Date range for the equity-history chart.
+///
+/// Controls both the API query parameters (`period` / `timeframe`) sent to
+/// Alpaca and the x-axis labels shown in the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EquityRange {
+    /// Intraday (current trading day), 1-minute bars.
+    #[default]
+    OneDay,
+    /// Past week, hourly bars.
+    OneWeek,
+    /// Past month, daily bars.
+    OneMonth,
+    /// Year-to-date, daily bars.
+    Ytd,
+}
+
+impl EquityRange {
+    /// Cycle to the next range in order: 1D → 1W → 1M → YTD → 1D.
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::OneDay => Self::OneWeek,
+            Self::OneWeek => Self::OneMonth,
+            Self::OneMonth => Self::Ytd,
+            Self::Ytd => Self::OneDay,
+        }
+    }
+
+    /// Short label shown in the chart title (e.g., `"1D"`, `"1W"`).
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OneDay => "1D",
+            Self::OneWeek => "1W",
+            Self::OneMonth => "1M",
+            Self::Ytd => "YTD",
+        }
+    }
+
+    /// `(period, timeframe)` query parameters for the Alpaca portfolio history API.
+    pub fn api_params(self) -> (&'static str, &'static str) {
+        match self {
+            Self::OneDay => ("1D", "1Min"),
+            Self::OneWeek => ("1W", "1H"),
+            Self::OneMonth => ("1M", "1D"),
+            Self::Ytd => ("YTD", "1D"),
+        }
+    }
+
+    /// `[start_label, end_label]` for the chart x-axis.
+    pub fn x_labels(self) -> [&'static str; 2] {
+        match self {
+            Self::OneDay => ["09:30", "16:00"],
+            Self::OneWeek => ["Mon", "Fri"],
+            Self::OneMonth => ["Day 1", "Day 30"],
+            Self::Ytd => ["Jan", "Today"],
+        }
+    }
+}
+
 /// Screen areas of interactive elements, populated by the renderer each frame.
 /// Used by the mouse event handler to map click coordinates to actions.
 #[derive(Default, Clone, Debug)]
@@ -367,6 +426,11 @@ pub struct App {
     pub snapshots: HashMap<String, Snapshot>,
     pub clock: Option<MarketClock>,
     pub equity_history: Vec<u64>,
+    /// Active date range displayed in the equity chart.
+    ///
+    /// Determines both the x-axis labels and the API parameters used when
+    /// re-fetching history after the user cycles the range with `p`.
+    pub equity_range: EquityRange,
     /// Intraday 1-minute close prices in cents, keyed by ticker symbol.
     pub intraday_bars: HashMap<String, Vec<u64>>,
 
@@ -457,6 +521,7 @@ impl App {
             snapshots: HashMap::new(),
             clock: None,
             equity_history: Vec::new(),
+            equity_range: EquityRange::OneDay,
             intraday_bars: HashMap::new(),
             active_tab: Tab::Account,
             watchlist_state: TableState::default(),
@@ -556,6 +621,9 @@ impl App {
     }
 
     pub fn push_equity(&mut self) {
+        if self.equity_range != EquityRange::OneDay {
+            return;
+        }
         if let Some(account) = &self.account {
             if let Ok(v) = account.equity.parse::<f64>() {
                 self.equity_history.push((v * 100.0) as u64);
@@ -580,6 +648,10 @@ impl App {
     /// avoid flooding `equity_history` when quotes arrive in rapid succession.
     /// Skips silently when there are no open positions (nothing to compute).
     pub fn push_equity_from_quotes(&mut self) {
+        // Only meaningful for intraday; other ranges are static snapshots.
+        if self.equity_range != EquityRange::OneDay {
+            return;
+        }
         // Throttle: skip if we pushed a streaming sample too recently.
         if let Some(last) = self.last_equity_stream_push {
             if last.elapsed() < EQUITY_STREAM_INTERVAL {
@@ -1104,5 +1176,112 @@ mod tests {
         app.watchlist = Some(make_watchlist(&["AAPL"]));
         // no selection
         assert_eq!(app.focused_symbol(), None);
+    }
+
+    // ── EquityRange ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn equity_range_default_is_one_day() {
+        let app = make_test_app();
+        assert_eq!(app.equity_range, EquityRange::OneDay);
+    }
+
+    #[test]
+    fn equity_range_cycle_one_day_to_week() {
+        assert_eq!(EquityRange::OneDay.cycle(), EquityRange::OneWeek);
+    }
+
+    #[test]
+    fn equity_range_cycle_week_to_month() {
+        assert_eq!(EquityRange::OneWeek.cycle(), EquityRange::OneMonth);
+    }
+
+    #[test]
+    fn equity_range_cycle_month_to_ytd() {
+        assert_eq!(EquityRange::OneMonth.cycle(), EquityRange::Ytd);
+    }
+
+    #[test]
+    fn equity_range_cycle_ytd_wraps_to_one_day() {
+        assert_eq!(EquityRange::Ytd.cycle(), EquityRange::OneDay);
+    }
+
+    #[test]
+    fn equity_range_label_values() {
+        assert_eq!(EquityRange::OneDay.label(), "1D");
+        assert_eq!(EquityRange::OneWeek.label(), "1W");
+        assert_eq!(EquityRange::OneMonth.label(), "1M");
+        assert_eq!(EquityRange::Ytd.label(), "YTD");
+    }
+
+    #[test]
+    fn equity_range_api_params_one_day() {
+        assert_eq!(EquityRange::OneDay.api_params(), ("1D", "1Min"));
+    }
+
+    #[test]
+    fn equity_range_api_params_one_week() {
+        assert_eq!(EquityRange::OneWeek.api_params(), ("1W", "1H"));
+    }
+
+    #[test]
+    fn equity_range_api_params_one_month() {
+        assert_eq!(EquityRange::OneMonth.api_params(), ("1M", "1D"));
+    }
+
+    #[test]
+    fn equity_range_api_params_ytd() {
+        assert_eq!(EquityRange::Ytd.api_params(), ("YTD", "1D"));
+    }
+
+    #[test]
+    fn equity_range_x_labels_one_day() {
+        assert_eq!(EquityRange::OneDay.x_labels(), ["09:30", "16:00"]);
+    }
+
+    #[test]
+    fn equity_range_x_labels_one_week() {
+        assert_eq!(EquityRange::OneWeek.x_labels(), ["Mon", "Fri"]);
+    }
+
+    #[test]
+    fn equity_range_x_labels_one_month() {
+        assert_eq!(EquityRange::OneMonth.x_labels(), ["Day 1", "Day 30"]);
+    }
+
+    #[test]
+    fn equity_range_x_labels_ytd() {
+        assert_eq!(EquityRange::Ytd.x_labels(), ["Jan", "Today"]);
+    }
+
+    #[test]
+    fn push_equity_is_noop_when_range_is_not_one_day() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            equity: "1000.00".into(),
+            ..Default::default()
+        });
+        app.equity_range = EquityRange::OneWeek;
+        app.push_equity();
+        assert!(
+            app.equity_history.is_empty(),
+            "push_equity must not append when range != OneDay"
+        );
+    }
+
+    #[test]
+    fn push_equity_from_quotes_is_noop_when_range_is_not_one_day() {
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            cash: "0.00".into(),
+            ..Default::default()
+        });
+        app.positions = vec![make_position_with_price("AAPL", "10", "150.00")];
+        app.equity_range = EquityRange::OneMonth;
+        app.push_equity_from_quotes();
+        assert!(
+            app.equity_history.is_empty(),
+            "push_equity_from_quotes must not append when range != OneDay"
+        );
     }
 }

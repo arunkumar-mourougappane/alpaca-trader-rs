@@ -227,6 +227,20 @@ fn handle_panel_key(app: &mut App, key: crossterm::event::KeyEvent) {
 /// `←` / `h` and `→` / `l` move the equity-chart crosshair left and right
 /// one data point at a time.  `Esc` dismisses the crosshair.
 fn handle_account_key(app: &mut App, key: crossterm::event::KeyEvent) {
+    // Range toggle works regardless of whether history is loaded.
+    if key.code == KeyCode::Char('p') {
+        app.equity_range = app.equity_range.cycle();
+        app.equity_history.clear();
+        app.equity_chart_cursor = None;
+        let (period, timeframe) = app.equity_range.api_params();
+        let _ = app.command_tx.try_send(Command::FetchPortfolioHistory {
+            period: period.to_string(),
+            timeframe: timeframe.to_string(),
+        });
+        app.push_transient_status(format!("Equity range: {}", app.equity_range.label()));
+        return;
+    }
+
     let n = app.equity_history.len();
     if n == 0 {
         return;
@@ -3132,6 +3146,143 @@ mod tests {
         assert!(
             cmd_rx.try_recv().is_err(),
             "no refresh command when bars have never been fetched"
+        );
+    }
+
+    // ── p key / equity range toggle ───────────────────────────────────────────
+
+    fn make_app_with_cmd() -> (App, tokio::sync::mpsc::Receiver<Command>) {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel(8);
+        let (symbol_tx, _) = tokio::sync::watch::channel(vec![]);
+        let app = App::new(
+            crate::config::AlpacaConfig {
+                base_url: "http://localhost".into(),
+                key: "k".into(),
+                secret: "s".into(),
+                env: crate::config::AlpacaEnv::Paper,
+                dry_run: false,
+            },
+            crate::prefs::AppPrefs::default(),
+            std::sync::Arc::new(tokio::sync::Notify::new()),
+            cmd_tx,
+            symbol_tx,
+        );
+        (app, cmd_rx)
+    }
+
+    #[test]
+    fn p_key_cycles_equity_range_from_one_day_to_one_week() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history = vec![1, 2, 3];
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(app.equity_range, crate::app::EquityRange::OneWeek);
+    }
+
+    #[test]
+    fn p_key_clears_equity_history_on_range_change() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history = vec![1, 2, 3];
+        update(&mut app, key(KeyCode::Char('p')));
+        assert!(
+            app.equity_history.is_empty(),
+            "history should be cleared when range changes"
+        );
+    }
+
+    #[test]
+    fn p_key_clears_crosshair_cursor_on_range_change() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history = vec![1, 2, 3];
+        app.equity_chart_cursor = Some(2);
+        update(&mut app, key(KeyCode::Char('p')));
+        assert!(
+            app.equity_chart_cursor.is_none(),
+            "cursor should be cleared when range changes"
+        );
+    }
+
+    #[test]
+    fn p_key_dispatches_fetch_portfolio_history_command() {
+        let (mut app, mut cmd_rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history = vec![1, 2, 3];
+        update(&mut app, key(KeyCode::Char('p')));
+        let cmd = cmd_rx
+            .try_recv()
+            .expect("FetchPortfolioHistory command should be dispatched");
+        assert!(
+            matches!(
+                cmd,
+                Command::FetchPortfolioHistory { period, timeframe }
+                    if period == "1W" && timeframe == "1H"
+            ),
+            "command should carry the new range's API params"
+        );
+    }
+
+    #[test]
+    fn p_key_dispatches_correct_params_for_ytd() {
+        let (mut app, mut cmd_rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_range = crate::app::EquityRange::OneMonth;
+        app.equity_history = vec![1];
+        update(&mut app, key(KeyCode::Char('p')));
+        let cmd = cmd_rx.try_recv().expect("command dispatched");
+        assert!(
+            matches!(
+                cmd,
+                Command::FetchPortfolioHistory { period, timeframe }
+                    if period == "YTD" && timeframe == "1D"
+            ),
+            "expected YTD/1D params"
+        );
+    }
+
+    #[test]
+    fn p_key_sets_status_message_with_new_range_label() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history = vec![1];
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(app.current_status_text(), "Equity range: 1W");
+    }
+
+    #[test]
+    fn p_key_cycles_all_four_ranges() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history = vec![1];
+        assert_eq!(app.equity_range, crate::app::EquityRange::OneDay);
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(app.equity_range, crate::app::EquityRange::OneWeek);
+        app.equity_history = vec![1];
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(app.equity_range, crate::app::EquityRange::OneMonth);
+        app.equity_history = vec![1];
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(app.equity_range, crate::app::EquityRange::Ytd);
+        app.equity_history = vec![1];
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(
+            app.equity_range,
+            crate::app::EquityRange::OneDay,
+            "should wrap back to 1D"
+        );
+    }
+
+    #[test]
+    fn p_key_on_empty_history_is_handled_gracefully() {
+        let (mut app, mut cmd_rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        // equity_history is empty; p key should still cycle and dispatch command
+        update(&mut app, key(KeyCode::Char('p')));
+        assert_eq!(app.equity_range, crate::app::EquityRange::OneWeek);
+        assert!(
+            cmd_rx.try_recv().is_ok(),
+            "command should still be dispatched"
         );
     }
 }

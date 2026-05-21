@@ -95,7 +95,11 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
     let c = app.current_theme.colors();
-    let block = c.bordered_block(" Today's Equity Curve  ←/→ to inspect ");
+    let title = format!(
+        " Equity Curve [{}]  ←/→ to inspect  p to cycle range ",
+        app.equity_range.label()
+    );
+    let block = c.bordered_block(title.as_str());
 
     if app.equity_history.is_empty() {
         let para = Paragraph::new("  Collecting data…")
@@ -116,12 +120,14 @@ fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
         .style(Style::default().fg(line_color))
         .data(&data_points);
 
+    let [x_start, x_end] = app.equity_range.x_labels();
+
     let chart = Chart::new(vec![dataset])
         .block(block)
         .x_axis(
             Axis::default()
                 .bounds([0.0, (n - 1.0).max(0.0)])
-                .labels(["09:30", "16:00"]),
+                .labels([x_start, x_end]),
         )
         .y_axis(Axis::default().bounds([y_min, y_max]));
 

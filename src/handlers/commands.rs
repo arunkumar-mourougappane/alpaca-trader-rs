@@ -171,6 +171,21 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
                 }
             }
         }
+
+        Command::FetchPortfolioHistory { period, timeframe } => {
+            info!(period = %period, timeframe = %timeframe, "fetching portfolio history");
+            match client.get_portfolio_history(&period, &timeframe).await {
+                Ok(h) => {
+                    let data: Vec<f64> = h.equity.into_iter().flatten().collect();
+                    if !data.is_empty() {
+                        let _ = tx.send(Event::PortfolioHistoryLoaded(data)).await;
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e, "portfolio history fetch failed");
+                }
+            }
+        }
     }
 }
 
