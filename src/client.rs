@@ -224,14 +224,22 @@ impl AlpacaClient {
             .context("DELETE /watchlists/{id}/{symbol} parse failed")
     }
 
-    /// Fetch intraday portfolio equity history (`GET /account/portfolio/history`).
+    /// Fetch portfolio equity history (`GET /account/portfolio/history`).
     ///
-    /// Requests 1-minute bars for the current trading day. Equity values are
-    /// `None` for buckets when the market was closed.
-    pub async fn get_portfolio_history(&self) -> Result<PortfolioHistory> {
+    /// `period` and `timeframe` map directly to the Alpaca API query parameters.
+    /// Typical combinations:
+    /// - `("1D",  "1Min")` — intraday 1-minute bars (default)
+    /// - `("1W",  "1H")`  — past week, hourly bars
+    /// - `("1M",  "1D")`  — past month, daily bars
+    /// - `("YTD", "1D")`  — year-to-date, daily bars
+    pub async fn get_portfolio_history(
+        &self,
+        period: &str,
+        timeframe: &str,
+    ) -> Result<PortfolioHistory> {
         self.http
             .get(self.url("/account/portfolio/history"))
-            .query(&[("timeframe", "1Min"), ("period", "1D")])
+            .query(&[("timeframe", timeframe), ("period", period)])
             .headers(self.auth_headers()?)
             .send()
             .await
@@ -597,7 +605,7 @@ mod tests {
             .await;
 
         let client = AlpacaClient::new(paper_config(server.uri()));
-        let history = client.get_portfolio_history().await.unwrap();
+        let history = client.get_portfolio_history("1D", "1Min").await.unwrap();
         assert_eq!(history.equity.len(), 3);
         assert_eq!(history.equity[0], Some(100000.0));
         assert_eq!(history.equity[2], None);

@@ -160,7 +160,7 @@ async fn poll_snapshots(client: &AlpacaClient, tx: &Sender<Event>, symbols: &[St
 }
 
 async fn poll_portfolio_history(client: &AlpacaClient, tx: &Sender<Event>) {
-    match client.get_portfolio_history().await {
+    match client.get_portfolio_history("1D", "1Min").await {
         Ok(h) => {
             let data: Vec<f64> = h.equity.into_iter().flatten().collect();
             if !data.is_empty() {

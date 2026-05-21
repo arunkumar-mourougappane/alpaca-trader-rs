@@ -38,4 +38,11 @@ pub enum Command {
     },
     /// Fetch intraday (1-minute) bars for the given ticker to populate the sparkline.
     FetchIntradayBars(String),
+    /// Fetch portfolio equity history for the given Alpaca API parameters.
+    FetchPortfolioHistory {
+        /// Alpaca `period` query param (e.g., `"1D"`, `"1W"`, `"1M"`, `"YTD"`).
+        period: String,
+        /// Alpaca `timeframe` query param (e.g., `"1Min"`, `"1H"`, `"1D"`).
+        timeframe: String,
+    },
 }
