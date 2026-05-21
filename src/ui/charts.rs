@@ -31,6 +31,15 @@ pub fn y_bounds(data: &[(f64, f64)]) -> [f64; 2] {
     }
 }
 
+/// Return the market-session time label for a 1-minute intraday bar index.
+///
+/// Bar 0 = 09:30, bar 1 = 09:31, … Bar index maps to minutes elapsed since
+/// market open. The result is formatted as `"HH:MM"`.
+pub fn bar_time_label(index: usize) -> String {
+    let total_minutes = 9 * 60 + 30 + index as u32;
+    format!("{:02}:{:02}", total_minutes / 60, total_minutes % 60)
+}
+
 /// Choose a line `Color` based on trend using the provided [`ThemeColors`]:
 /// `positive` when last ≥ first, `negative` otherwise.
 pub fn trend_color(data: &[(f64, f64)], colors: &ThemeColors) -> Color {
@@ -133,5 +142,29 @@ mod tests {
         let c = Theme::Dark.colors();
         let data = vec![(0.0, 100.0), (1.0, 110.0)];
         assert_eq!(trend_color(&data, &c), c.positive);
+    }
+
+    // ── bar_time_label ────────────────────────────────────────────────────────
+
+    #[test]
+    fn bar_time_label_index_zero_is_market_open() {
+        assert_eq!(bar_time_label(0), "09:30");
+    }
+
+    #[test]
+    fn bar_time_label_index_30_is_ten_hundred() {
+        assert_eq!(bar_time_label(30), "10:00");
+    }
+
+    #[test]
+    fn bar_time_label_index_390_is_market_close() {
+        // 390 minutes after 09:30 = 16:00 (6.5 trading hours)
+        assert_eq!(bar_time_label(390), "16:00");
+    }
+
+    #[test]
+    fn bar_time_label_crosses_hour_boundary() {
+        // index 30 = 10:00, index 31 = 10:01
+        assert_eq!(bar_time_label(31), "10:01");
     }
 }
