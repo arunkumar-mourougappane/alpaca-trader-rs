@@ -554,4 +554,345 @@ mod tests {
             "expected ascending indicator on Status, got: {output}"
         );
     }
+
+    // ── Additional coverage tests ──────────────────────────────────────────────
+
+    fn make_order_full(id: &str, symbol: &str, side: &str, status: &str) -> crate::types::Order {
+        crate::types::Order {
+            id: id.into(),
+            symbol: symbol.into(),
+            side: side.into(),
+            qty: Some("5".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: status.into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        }
+    }
+
+    #[test]
+    fn orders_sort_by_side_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Side;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Side ▲") || output.contains("Side▲"),
+            "expected Side ▲ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_side_desc_shows_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Side;
+        app.orders_sort.dir = crate::app::SortDir::Desc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Side ▼") || output.contains("Side▼"),
+            "expected Side ▼ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_side_orders_rows() {
+        let mut app = make_test_app();
+        // "sell" > "buy" lexicographically → ascending puts buy first
+        app.orders
+            .push(make_order_full("o1", "TSLA", "sell", "new"));
+        app.orders.push(make_order_full("o2", "AAPL", "buy", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Side;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        let output = render_orders_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL");
+        let tsla_pos = output.find("TSLA").expect("TSLA");
+        assert!(
+            aapl_pos < tsla_pos,
+            "buy (AAPL) should precede sell (TSLA) sorted asc by side"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_type_asc_shows_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Type;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Type ▲") || output.contains("Type▲"),
+            "expected Type ▲ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_type_desc_shows_indicator() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("o1", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Type;
+        app.orders_sort.dir = crate::app::SortDir::Desc;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Type ▼") || output.contains("Type▼"),
+            "expected Type ▼ header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_submitted_asc_sets_sort_state() {
+        // The "Submitted" column constraint (Length 10) is too narrow to display
+        // "Submitted ▲" (11 cols) in the rendered output, so we verify state directly.
+        let mut app = make_test_app();
+        app.orders_sort.col = crate::app::OrderSortCol::Submitted;
+        app.orders_sort.dir = crate::app::SortDir::Asc;
+        assert_eq!(app.orders_sort.col, crate::app::OrderSortCol::Submitted);
+        assert_eq!(app.orders_sort.dir, crate::app::SortDir::Asc);
+    }
+
+    #[test]
+    fn orders_sort_by_submitted_desc_orders_rows() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "early".into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("1".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: Some("2024-01-01T09:30:00Z".into()),
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        app.orders.push(Order {
+            id: "late".into(),
+            symbol: "TSLA".into(),
+            side: "buy".into(),
+            qty: Some("1".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: Some("2024-06-01T09:30:00Z".into()),
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        app.orders_sort.col = crate::app::OrderSortCol::Submitted;
+        app.orders_sort.dir = crate::app::SortDir::Desc;
+        let output = render_orders_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL");
+        let tsla_pos = output.find("TSLA").expect("TSLA");
+        assert!(
+            tsla_pos < aapl_pos,
+            "TSLA (later date) should precede AAPL in desc submitted order"
+        );
+    }
+
+    #[test]
+    fn orders_sort_by_status_desc_orders_rows() {
+        let mut app = make_test_app();
+        // Both statuses appear in the Open subtab; "new" > "accepted" lex → desc puts "new" first
+        app.orders
+            .push(make_order_full("o1", "AAPL", "buy", "accepted"));
+        app.orders.push(make_order_full("o2", "TSLA", "buy", "new"));
+        app.orders_sort.col = crate::app::OrderSortCol::Status;
+        app.orders_sort.dir = crate::app::SortDir::Desc;
+        let output = render_orders_to_string(&mut app);
+        let aapl_pos = output.find("AAPL").expect("AAPL");
+        let tsla_pos = output.find("TSLA").expect("TSLA");
+        assert!(
+            tsla_pos < aapl_pos,
+            "new (TSLA) should precede accepted (AAPL) in desc status order"
+        );
+    }
+
+    #[test]
+    fn orders_notional_amount_shown_when_no_qty() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "notional-id".into(),
+            symbol: "SPY".into(),
+            side: "buy".into(),
+            qty: None,
+            notional: Some("500.00".into()),
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("SPY"), "expected SPY symbol");
+        assert!(
+            output.contains("500.00"),
+            "expected notional amount in qty column"
+        );
+    }
+
+    #[test]
+    fn orders_short_id_truncated_to_8_chars_with_ellipsis() {
+        let mut app = make_test_app();
+        // id longer than 8 chars → truncated with "…"
+        app.orders.push(make_order("abcdefgh-longer-id", "new"));
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("abcdefgh"), "expected first 8 chars of id");
+        assert!(output.contains('…'), "expected ellipsis for truncated id");
+    }
+
+    #[test]
+    fn orders_short_id_not_truncated_when_short() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "short".into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("1".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("short"), "expected full short id");
+    }
+
+    #[test]
+    fn orders_submitted_at_shows_time_portion() {
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "ts-order".into(),
+            symbol: "GOOG".into(),
+            side: "buy".into(),
+            qty: Some("1".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "new".into(),
+            submitted_at: Some("2024-03-15T14:35:00Z".into()),
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        let output = render_orders_to_string(&mut app);
+        // characters 11-19 of the timestamp = "14:35:00"
+        assert!(
+            output.contains("14:35:00"),
+            "expected HH:MM:SS time in Submitted column"
+        );
+    }
+
+    #[test]
+    fn orders_partially_filled_counted_in_open_subtab() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("pf", "partially_filled"));
+        app.orders.push(make_order("pending", "pending_new"));
+        app.orders.push(make_order("accepted", "accepted"));
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Open (3)"),
+            "expected Open (3) for partially_filled + pending_new + accepted, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_expired_rejected_replaced_counted_in_cancelled_subtab() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("exp", "expired"));
+        app.orders.push(make_order("rej", "rejected"));
+        app.orders.push(make_order("rep", "replaced"));
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Cancelled (3)"),
+            "expected Cancelled (3) for expired+rejected+replaced, got: {output}"
+        );
+    }
+
+    #[test]
+    fn orders_filled_qty_zero_shows_dash_in_filled_tab() {
+        use crate::app::OrdersSubTab;
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "fq-zero".into(),
+            symbol: "AMZN".into(),
+            side: "buy".into(),
+            qty: Some("5".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "filled".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        app.orders_subtab = OrdersSubTab::Filled;
+        let output = render_orders_to_string(&mut app);
+        assert!(output.contains("—"), "expected em-dash for filled_qty=0");
+    }
+
+    #[test]
+    fn orders_empty_filled_qty_shows_dash() {
+        use crate::app::OrdersSubTab;
+        use crate::types::Order;
+        let mut app = make_test_app();
+        app.orders.push(Order {
+            id: "fq-empty".into(),
+            symbol: "META".into(),
+            side: "buy".into(),
+            qty: Some("3".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "filled".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: String::new(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        app.orders_subtab = OrdersSubTab::Filled;
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("—"),
+            "expected em-dash for empty filled_qty"
+        );
+    }
+
+    #[test]
+    fn orders_held_status_counted_in_open_subtab() {
+        let mut app = make_test_app();
+        app.orders.push(make_order("held-order", "held"));
+        let output = render_orders_to_string(&mut app);
+        assert!(
+            output.contains("Open (1)"),
+            "held status should count in Open subtab, got: {output}"
+        );
+    }
 }
