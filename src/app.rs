@@ -606,6 +606,14 @@ pub struct App {
     /// Account tab is active; cleared by `Esc`.
     pub equity_chart_cursor: Option<usize>,
 
+    /// Index into the intraday bars of the currently open [`Modal::SymbolDetail`]
+    /// that the crosshair is pointing at.
+    ///
+    /// `None` means no crosshair is shown. Activated by `←`/`→` while
+    /// `Modal::SymbolDetail` is open; cleared by `Esc` (first `Esc` clears
+    /// the crosshair, second `Esc` closes the modal).
+    pub symbol_detail_crosshair: Option<usize>,
+
     /// Active sort column and direction for the Positions table.
     pub positions_sort: SortState<PositionSortCol>,
 
@@ -674,6 +682,7 @@ impl App {
             last_equity_stream_push: None,
             intraday_fetched_at: HashMap::new(),
             equity_chart_cursor: None,
+            symbol_detail_crosshair: None,
             positions_sort: SortState::default(),
             orders_sort: SortState::default(),
             orders_symbol_filter: String::new(),

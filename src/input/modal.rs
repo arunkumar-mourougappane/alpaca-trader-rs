@@ -8,7 +8,15 @@ use crate::commands::Command;
 
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
     if key.code == KeyCode::Esc {
+        // First Esc clears an active crosshair; second Esc closes the modal.
+        if matches!(app.modal, Some(Modal::SymbolDetail(_)))
+            && app.symbol_detail_crosshair.is_some()
+        {
+            app.symbol_detail_crosshair = None;
+            return;
+        }
         app.modal = None;
+        app.symbol_detail_crosshair = None;
         return;
     }
 
@@ -171,6 +179,34 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         )
                     };
                     send_command(app, cmd, msg);
+                }
+                Some(Modal::SymbolDetail(symbol))
+            }
+            KeyCode::Left => {
+                let len = app
+                    .intraday_bars
+                    .get(symbol.as_str())
+                    .map(|b| b.len())
+                    .unwrap_or(0);
+                if len > 0 {
+                    app.symbol_detail_crosshair = Some(match app.symbol_detail_crosshair {
+                        Some(i) => i.saturating_sub(1),
+                        None => len - 1,
+                    });
+                }
+                Some(Modal::SymbolDetail(symbol))
+            }
+            KeyCode::Right => {
+                let len = app
+                    .intraday_bars
+                    .get(symbol.as_str())
+                    .map(|b| b.len())
+                    .unwrap_or(0);
+                if len > 0 {
+                    app.symbol_detail_crosshair = Some(match app.symbol_detail_crosshair {
+                        Some(i) => (i + 1).min(len - 1),
+                        None => 0,
+                    });
                 }
                 Some(Modal::SymbolDetail(symbol))
             }
@@ -398,6 +434,114 @@ mod tests {
         assert!(
             matches!(&app.modal, Some(Modal::PositionDetail { symbol }) if symbol == "TSLA"),
             "expected PositionDetail to stay open, got: {:?}",
+            app.modal
+        );
+    }
+
+    // ── SymbolDetail crosshair ────────────────────────────────────────────────
+
+    fn setup_symbol_detail_with_bars(bars: Vec<u64>) -> crate::app::App {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        app.intraday_bars.insert("AAPL".into(), bars);
+        app
+    }
+
+    #[test]
+    fn left_key_initialises_crosshair_at_last_bar() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.symbol_detail_crosshair, Some(2));
+    }
+
+    #[test]
+    fn right_key_initialises_crosshair_at_first_bar() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        press(&mut app, KeyCode::Right);
+        assert_eq!(app.symbol_detail_crosshair, Some(0));
+    }
+
+    #[test]
+    fn left_key_moves_crosshair_left() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(2);
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.symbol_detail_crosshair, Some(1));
+    }
+
+    #[test]
+    fn right_key_moves_crosshair_right() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(0);
+        press(&mut app, KeyCode::Right);
+        assert_eq!(app.symbol_detail_crosshair, Some(1));
+    }
+
+    #[test]
+    fn left_key_clamps_at_zero() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(0);
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.symbol_detail_crosshair, Some(0));
+    }
+
+    #[test]
+    fn right_key_clamps_at_last_bar() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(2);
+        press(&mut app, KeyCode::Right);
+        assert_eq!(app.symbol_detail_crosshair, Some(2));
+    }
+
+    #[test]
+    fn left_key_with_no_bars_does_nothing() {
+        let mut app = setup_symbol_detail_with_bars(vec![]);
+        press(&mut app, KeyCode::Left);
+        assert!(app.symbol_detail_crosshair.is_none());
+    }
+
+    #[test]
+    fn right_key_with_no_bars_does_nothing() {
+        let mut app = setup_symbol_detail_with_bars(vec![]);
+        press(&mut app, KeyCode::Right);
+        assert!(app.symbol_detail_crosshair.is_none());
+    }
+
+    #[test]
+    fn esc_clears_active_crosshair_without_closing_modal() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(1);
+        press(&mut app, KeyCode::Esc);
+        assert!(
+            app.symbol_detail_crosshair.is_none(),
+            "first Esc should clear crosshair"
+        );
+        assert!(
+            matches!(app.modal, Some(Modal::SymbolDetail(_))),
+            "modal should still be open after first Esc; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn esc_closes_symbol_detail_when_no_crosshair_active() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200, 300]);
+        assert!(app.symbol_detail_crosshair.is_none());
+        press(&mut app, KeyCode::Esc);
+        assert!(
+            app.modal.is_none(),
+            "Esc with no crosshair should close modal; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn unhandled_key_keeps_symbol_detail_open() {
+        let mut app = setup_symbol_detail_with_bars(vec![100, 200]);
+        press(&mut app, KeyCode::Char('z'));
+        assert!(
+            matches!(app.modal, Some(Modal::SymbolDetail(_))),
+            "unhandled key should keep SymbolDetail open; got: {:?}",
             app.modal
         );
     }

@@ -576,13 +576,28 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     );
 
     // ── Intraday line chart ───────────────────────────────────────────────────
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(
-            "  ── Intraday ──",
-            c.dim_style(),
-        )])),
-        chunks[5],
-    );
+    // When a crosshair is active, replace the static "── Intraday ──" label
+    // with a price/time tooltip for the highlighted bar.
+    let crosshair = app.symbol_detail_crosshair;
+    let intraday_label: Line =
+        if let (Some(ci), Some(bars)) = (crosshair, app.intraday_bars.get(symbol)) {
+            if let Some(&price_cents) = bars.get(ci) {
+                let price = price_cents as f64 / 100.0;
+                let time = charts::bar_time_label(ci);
+                Line::from(vec![
+                    Span::styled("  ", c.dim_style()),
+                    Span::styled(time, c.accent_style()),
+                    Span::styled("  $", c.dim_style()),
+                    Span::styled(format!("{:.2}", price), c.bold_style()),
+                    Span::styled("  ←→ to move  Esc to clear", c.dim_style()),
+                ])
+            } else {
+                Line::from(vec![Span::styled("  ── Intraday ──", c.dim_style())])
+            }
+        } else {
+            Line::from(vec![Span::styled("  ── Intraday ──", c.dim_style())])
+        };
+    frame.render_widget(Paragraph::new(intraday_label), chunks[5]);
 
     match app.intraday_bars.get(symbol) {
         None => {
@@ -608,7 +623,29 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                 .style(Style::default().fg(line_color))
                 .data(&data_points);
 
-            let chart = Chart::new(vec![dataset])
+            // When a crosshair is active, add a vertical line Dataset at that index.
+            let crosshair_pts: Vec<(f64, f64)>;
+            let mut datasets = vec![dataset];
+            if let Some(ci) = crosshair {
+                if ci < bars.len() {
+                    let x = ci as f64;
+                    crosshair_pts = (0..=16)
+                        .map(|j| {
+                            let y = y_min + (y_max - y_min) * j as f64 / 16.0;
+                            (x, y)
+                        })
+                        .collect();
+                    datasets.push(
+                        Dataset::default()
+                            .marker(symbols::Marker::Braille)
+                            .graph_type(GraphType::Scatter)
+                            .style(Style::default().fg(c.accent))
+                            .data(&crosshair_pts),
+                    );
+                }
+            }
+
+            let chart = Chart::new(datasets)
                 .x_axis(
                     Axis::default()
                         .bounds([0.0, (n - 1.0).max(0.0)])
@@ -679,7 +716,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
     // ── Footer ───────────────────────────────────────────────────────────────
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
-            format!("  o:Buy  s:Sell  {}  Esc:Close", wl_label),
+            format!("  o:Buy  s:Sell  {}  ←→:Chart  Esc:Close", wl_label),
             c.dim_style(),
         )])),
         chunks[12],
@@ -1296,6 +1333,65 @@ mod tests {
         assert!(
             output.contains("185.45"),
             "should display midpoint price from quote"
+        );
+    }
+
+    // ── SymbolDetail crosshair rendering ──────────────────────────────────────
+
+    #[test]
+    fn render_symbol_detail_footer_shows_arrow_hint() {
+        let mut app = make_test_app();
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("←→:Chart"),
+            "footer should contain crosshair hint; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_static_intraday_label_without_crosshair() {
+        let mut app = make_test_app();
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15100, 15200]);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Intraday"),
+            "should show static Intraday label when no crosshair; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_time_and_price_when_crosshair_active() {
+        let mut app = make_test_app();
+        // 3 bars: 09:30, 09:31, 09:32; bar at index 1 = $151.00
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15100, 15100, 15200]);
+        app.symbol_detail_crosshair = Some(1);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("09:31"),
+            "tooltip should show time for bar 1 (09:31); got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("151.00"),
+            "tooltip should show price $151.00 for bar 1; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_crosshair_at_index_zero_shows_market_open() {
+        let mut app = make_test_app();
+        app.intraday_bars.insert("AAPL".into(), vec![17000, 17100]);
+        app.symbol_detail_crosshair = Some(0);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("09:30"),
+            "crosshair at 0 should show 09:30; got:\n{}",
+            output
         );
     }
 
