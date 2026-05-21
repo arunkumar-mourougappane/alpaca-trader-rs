@@ -577,9 +577,8 @@ pub struct App {
 
     /// Tracks the last left-click's (row, time) for double-click detection.
     ///
-    /// A second click on the same terminal row within
-    /// [`DOUBLE_CLICK_INTERVAL`] is treated as a double-click and opens
-    /// the detail modal (equivalent to pressing `Enter`).
+    /// A second click on the same terminal row within 400 ms is treated as a
+    /// double-click and opens the detail modal (equivalent to pressing `Enter`).
     pub last_click: Option<(u16, Instant)>,
 
     /// Timestamp of the first `g` keypress for `gg` (jump-to-top) detection.
