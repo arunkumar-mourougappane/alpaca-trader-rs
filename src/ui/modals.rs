@@ -2594,4 +2594,50 @@ mod tests {
             "expected 'mkt' for market order with no limit price, got: {output}"
         );
     }
+
+    #[test]
+    fn render_dispatch_position_detail_modal() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("TSLA"));
+        let backend = TestBackend::new(160, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(
+                    frame,
+                    area,
+                    &Modal::PositionDetail {
+                        symbol: "TSLA".into(),
+                    },
+                    &mut app,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("TSLA"),
+            "render() with Modal::PositionDetail should display the symbol"
+        );
+        assert!(
+            app.hit_areas.modal_popup_area.is_some(),
+            "render() should set modal_popup_area for PositionDetail"
+        );
+    }
 }

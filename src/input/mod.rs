@@ -125,3 +125,27 @@ pub(crate) fn handle_key_as_enter(app: &mut App) {
         crate::app::Tab::Account => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::app::test_helpers::make_test_app;
+    use crate::app::Tab;
+
+    #[test]
+    fn handle_key_as_enter_orders_tab_is_noop() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Orders;
+        // Enter on Orders with no selection should not crash and not open a modal.
+        super::handle_key_as_enter(&mut app);
+        assert!(app.modal.is_none());
+    }
+
+    #[test]
+    fn handle_key_as_enter_account_tab_is_noop() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        // Account tab has no Enter action; should be a no-op.
+        super::handle_key_as_enter(&mut app);
+        assert!(app.modal.is_none());
+    }
+}
