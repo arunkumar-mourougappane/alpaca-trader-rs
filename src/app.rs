@@ -322,6 +322,15 @@ pub enum Modal {
         input: String,
         watchlist_id: String,
     },
+    /// Floating search input for looking up any ticker symbol globally.
+    ///
+    /// User types a symbol and presses `Enter` to open [`Modal::SymbolDetail`]
+    /// for that symbol (fetching intraday bars) without adding it to the watchlist.
+    /// `Esc` dismisses without action.
+    GlobalSearch {
+        /// The symbol characters typed so far (uppercased).
+        query: String,
+    },
 }
 
 /// Date range for the equity-history chart.
