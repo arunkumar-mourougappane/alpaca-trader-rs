@@ -1418,4 +1418,686 @@ mod tests {
             "modal footer should mention Esc key"
         );
     }
+
+    // ── render_help ───────────────────────────────────────────────────────────
+
+    fn render_help_to_string() -> String {
+        let app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_help(frame, area, &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_help_shows_title() {
+        let output = render_help_to_string();
+        assert!(
+            output.contains("Keyboard Shortcuts"),
+            "help modal should show 'Keyboard Shortcuts' title"
+        );
+    }
+
+    #[test]
+    fn render_help_shows_navigation_section() {
+        let output = render_help_to_string();
+        assert!(
+            output.contains("NAVIGATION"),
+            "help modal should show NAVIGATION section"
+        );
+    }
+
+    #[test]
+    fn render_help_shows_actions_section() {
+        let output = render_help_to_string();
+        assert!(
+            output.contains("ACTIONS"),
+            "help modal should show ACTIONS section"
+        );
+    }
+
+    #[test]
+    fn render_help_shows_global_section() {
+        let output = render_help_to_string();
+        assert!(
+            output.contains("GLOBAL"),
+            "help modal should show GLOBAL section"
+        );
+    }
+
+    #[test]
+    fn render_help_shows_close_hint() {
+        let output = render_help_to_string();
+        assert!(
+            output.contains("Press any key to close"),
+            "help modal should show close hint"
+        );
+    }
+
+    #[test]
+    fn render_help_shows_global_search_shortcut() {
+        let output = render_help_to_string();
+        assert!(
+            output.contains("Ctrl-F"),
+            "help modal should list the Ctrl-F global search shortcut"
+        );
+    }
+
+    #[test]
+    fn render_dispatch_help_modal() {
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(frame, area, &Modal::Help, &mut app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("Keyboard Shortcuts"),
+            "render() with Modal::Help should show shortcuts title"
+        );
+    }
+
+    // ── render_confirm ────────────────────────────────────────────────────────
+
+    fn render_confirm_to_string(message: &str, confirmed: bool) -> String {
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_confirm(
+                    frame,
+                    area,
+                    message,
+                    &ConfirmAction::CancelOrder("id".into()),
+                    confirmed,
+                    &mut app,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_confirm_shows_title() {
+        let output = render_confirm_to_string("Cancel order?", false);
+        assert!(
+            output.contains("Confirm"),
+            "confirm modal should show 'Confirm' title"
+        );
+    }
+
+    #[test]
+    fn render_confirm_shows_message() {
+        let output = render_confirm_to_string("Cancel order?", false);
+        assert!(
+            output.contains("Cancel order"),
+            "confirm modal should display the message"
+        );
+    }
+
+    #[test]
+    fn render_confirm_shows_yes_and_no_buttons() {
+        let output = render_confirm_to_string("Are you sure?", true);
+        assert!(
+            output.contains("Yes"),
+            "confirm modal should show Yes button"
+        );
+        assert!(output.contains("No"), "confirm modal should show No button");
+    }
+
+    #[test]
+    fn render_confirm_not_confirmed_shows_no_highlighted() {
+        // confirmed=false means NO is highlighted (reversed style)
+        let output = render_confirm_to_string("Are you sure?", false);
+        assert!(
+            output.contains("No"),
+            "No button should be present when confirmed=false"
+        );
+    }
+
+    #[test]
+    fn render_confirm_confirmed_shows_yes_highlighted() {
+        // confirmed=true means YES is highlighted (reversed style)
+        let output = render_confirm_to_string("Proceed?", true);
+        assert!(
+            output.contains("Yes"),
+            "Yes button should be present when confirmed=true"
+        );
+    }
+
+    #[test]
+    fn render_dispatch_confirm_modal() {
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(
+                    frame,
+                    area,
+                    &Modal::Confirm {
+                        message: "Delete?".into(),
+                        action: ConfirmAction::CancelOrder("id".into()),
+                        confirmed: false,
+                    },
+                    &mut app,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("Confirm"),
+            "render() with Modal::Confirm should show Confirm title"
+        );
+    }
+
+    // ── render_add_symbol ─────────────────────────────────────────────────────
+
+    fn render_add_symbol_to_string(input: &str) -> String {
+        let app = make_test_app();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_add_symbol(frame, area, input, &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_add_symbol_shows_title() {
+        let output = render_add_symbol_to_string("");
+        assert!(
+            output.contains("Add Symbol"),
+            "add-symbol modal should show 'Add Symbol' title"
+        );
+    }
+
+    #[test]
+    fn render_add_symbol_shows_input() {
+        let output = render_add_symbol_to_string("MSFT");
+        assert!(
+            output.contains("MSFT"),
+            "add-symbol modal should display the current input"
+        );
+    }
+
+    #[test]
+    fn render_add_symbol_shows_hints() {
+        let output = render_add_symbol_to_string("");
+        assert!(
+            output.contains("Enter"),
+            "add-symbol modal should show Enter hint"
+        );
+        assert!(
+            output.contains("Esc"),
+            "add-symbol modal should show Esc hint"
+        );
+    }
+
+    #[test]
+    fn render_dispatch_add_symbol_modal() {
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(
+                    frame,
+                    area,
+                    &Modal::AddSymbol {
+                        input: "GOOG".into(),
+                        watchlist_id: "wl-1".into(),
+                    },
+                    &mut app,
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("GOOG"),
+            "render() with Modal::AddSymbol should display the input symbol"
+        );
+    }
+
+    // ── render_order_entry additional branches ────────────────────────────────
+
+    #[test]
+    fn render_order_entry_market_order_shows_na_price() {
+        use crate::app::OrderEntryState;
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.market_order = true;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("N/A"),
+            "market order should show N/A for price field"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_limit_order_shows_price_field() {
+        use crate::app::OrderEntryState;
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.market_order = false;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Price"),
+            "limit order should show Price field"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_market_closed_day_shows_warning() {
+        use crate::app::OrderEntryState;
+        use crate::types::MarketClock;
+        let mut app = make_test_app();
+        app.clock = Some(MarketClock {
+            is_open: false,
+            next_open: "2026-01-01T09:30:00Z".into(),
+            next_close: "2026-01-01T16:00:00Z".into(),
+            timestamp: "2026-01-01T08:00:00Z".into(),
+        });
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.gtc_order = false; // DAY order + market closed → warning
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Market closed"),
+            "should show market-closed warning when market is closed and order is DAY"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_market_closed_gtc_no_warning() {
+        use crate::app::OrderEntryState;
+        use crate::types::MarketClock;
+        let mut app = make_test_app();
+        app.clock = Some(MarketClock {
+            is_open: false,
+            next_open: "2026-01-01T09:30:00Z".into(),
+            next_close: "2026-01-01T16:00:00Z".into(),
+            timestamp: "2026-01-01T08:00:00Z".into(),
+        });
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.gtc_order = true; // GTC order → no warning even when market closed
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            !output.contains("Market closed"),
+            "GTC order should not show market-closed warning"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_shows_buying_power_from_account() {
+        use crate::app::OrderEntryState;
+        use crate::types::AccountInfo;
+        let mut app = make_test_app();
+        app.account = Some(AccountInfo {
+            buying_power: "50000.00".into(),
+            ..Default::default()
+        });
+        let state = OrderEntryState::new("AAPL".into());
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("50000"),
+            "order entry should display buying power from account"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_shows_dash_when_no_account() {
+        use crate::app::OrderEntryState;
+        let mut app = make_test_app();
+        app.account = None;
+        let state = OrderEntryState::new("TSLA".into());
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Buying Power"),
+            "order entry should show Buying Power label even without account"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_shows_estimated_total_when_filled() {
+        use crate::app::OrderEntryState;
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.qty_input = "10".into();
+        state.price_input = "150.00".into();
+        state.market_order = false;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("1500.00"),
+            "order entry should display estimated total (qty × price)"
+        );
+    }
+
+    #[test]
+    fn render_dispatch_order_entry_modal() {
+        use crate::app::OrderEntryState;
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let state = OrderEntryState::new("NVDA".into());
+                render(frame, area, &Modal::OrderEntry(state), &mut app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("New Order"),
+            "render() with Modal::OrderEntry should show 'New Order' title"
+        );
+    }
+
+    // ── render_symbol_detail with snapshot data ───────────────────────────────
+
+    #[test]
+    fn render_symbol_detail_shows_ohlcv_values_from_snapshot() {
+        use crate::types::{Snapshot, SnapshotBar};
+        let mut app = make_test_app();
+        app.snapshots.insert(
+            "AAPL".into(),
+            Snapshot {
+                daily_bar: Some(SnapshotBar {
+                    o: 180.0,
+                    h: 195.0,
+                    l: 178.0,
+                    c: 190.0,
+                    v: 1_500_000.0,
+                }),
+                prev_daily_bar: Some(SnapshotBar {
+                    o: 179.0,
+                    h: 182.0,
+                    l: 177.0,
+                    c: 185.0,
+                    v: 1_200_000.0,
+                }),
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("180"),
+            "should display open price from snapshot"
+        );
+        assert!(
+            output.contains("195"),
+            "should display high price from snapshot"
+        );
+        assert!(
+            output.contains("178"),
+            "should display low price from snapshot"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_positive_change_from_snapshot() {
+        use crate::types::{Snapshot, SnapshotBar};
+        let mut app = make_test_app();
+        app.snapshots.insert(
+            "AAPL".into(),
+            Snapshot {
+                daily_bar: Some(SnapshotBar {
+                    o: 180.0,
+                    h: 195.0,
+                    l: 178.0,
+                    c: 190.0,
+                    v: 1_000_000.0,
+                }),
+                prev_daily_bar: Some(SnapshotBar {
+                    c: 185.0,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        // 190/185 → +2.70%
+        assert!(
+            output.contains("+"),
+            "positive change should be shown with + sign"
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_negative_change_from_snapshot() {
+        use crate::types::{Snapshot, SnapshotBar};
+        let mut app = make_test_app();
+        app.snapshots.insert(
+            "MSFT".into(),
+            Snapshot {
+                daily_bar: Some(SnapshotBar {
+                    o: 390.0,
+                    h: 395.0,
+                    l: 382.0,
+                    c: 385.0,
+                    v: 900_000.0,
+                }),
+                prev_daily_bar: Some(SnapshotBar {
+                    c: 400.0,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "MSFT");
+        // 385/400 → -3.75%
+        assert!(
+            output.contains("-"),
+            "negative change should be shown with - sign"
+        );
+    }
+
+    #[test]
+    fn render_dispatch_symbol_detail_modal() {
+        let mut app = make_test_app();
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render(frame, area, &Modal::SymbolDetail("AAPL".into()), &mut app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("AAPL"),
+            "render() with Modal::SymbolDetail should display the symbol"
+        );
+    }
+
+    // ── Helper unit tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn estimate_total_returns_dash_when_qty_zero() {
+        use crate::app::OrderEntryState;
+        let mut state = OrderEntryState::new("X".into());
+        state.qty_input = "0".into();
+        state.price_input = "100.0".into();
+        assert_eq!(estimate_total(&state), "—");
+    }
+
+    #[test]
+    fn estimate_total_returns_dash_when_price_zero() {
+        use crate::app::OrderEntryState;
+        let mut state = OrderEntryState::new("X".into());
+        state.qty_input = "5".into();
+        state.price_input = "0".into();
+        assert_eq!(estimate_total(&state), "—");
+    }
+
+    #[test]
+    fn estimate_total_computes_correctly() {
+        use crate::app::OrderEntryState;
+        let mut state = OrderEntryState::new("X".into());
+        state.qty_input = "3".into();
+        state.price_input = "25.50".into();
+        assert_eq!(estimate_total(&state), "$76.50");
+    }
+
+    #[test]
+    fn estimate_total_returns_dash_when_unparseable() {
+        use crate::app::OrderEntryState;
+        let mut state = OrderEntryState::new("X".into());
+        state.qty_input = "abc".into();
+        state.price_input = "100".into();
+        assert_eq!(estimate_total(&state), "—");
+    }
+
+    #[test]
+    fn flag_returns_checkmark_for_true() {
+        assert_eq!(flag(true), "✓");
+    }
+
+    #[test]
+    fn flag_returns_cross_for_false() {
+        assert_eq!(flag(false), "✗");
+    }
 }
