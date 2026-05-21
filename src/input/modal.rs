@@ -19,13 +19,8 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
     };
 
     let new_modal = match modal {
-        Modal::Help => {
-            if key.code != KeyCode::Esc {
-                None
-            } else {
-                Some(Modal::Help)
-            }
-        }
+        // Esc is already handled above; any other key also closes the help overlay.
+        Modal::Help => None,
 
         Modal::About => None,
 
@@ -331,6 +326,40 @@ mod tests {
     fn press(app: &mut crate::app::App, code: KeyCode) {
         let event = KeyEvent::new(code, KeyModifiers::NONE);
         super::handle_modal_key(app, event);
+    }
+
+    // ── Help modal ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn esc_closes_help_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.modal.is_none(), "Esc should close the Help modal");
+    }
+
+    #[test]
+    fn any_key_closes_help_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "any key should close Help; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn question_mark_closes_help_modal_when_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        press(&mut app, KeyCode::Char('?'));
+        assert!(
+            app.modal.is_none(),
+            "? should dismiss Help when already open; got: {:?}",
+            app.modal
+        );
     }
 
     // ── PositionDetail modal ───────────────────────────────────────────────────

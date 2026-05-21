@@ -779,6 +779,25 @@ mod tests {
     }
 
     #[test]
+    fn key_question_mark_toggles_help_closed_when_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        update(&mut app, key(KeyCode::Char('?')));
+        assert!(
+            app.modal.is_none(),
+            "second ? should dismiss the Help overlay"
+        );
+    }
+
+    #[test]
+    fn help_modal_any_key_closes() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        update(&mut app, key(KeyCode::Enter));
+        assert!(app.modal.is_none(), "any key should close Help modal");
+    }
+
+    #[test]
     fn key_uppercase_a_opens_about() {
         let mut app = make_test_app();
         update(&mut app, key(KeyCode::Char('A')));
