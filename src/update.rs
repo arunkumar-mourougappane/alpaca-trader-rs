@@ -116,11 +116,16 @@ pub fn update(app: &mut App, event: Event) {
                     _ => break,
                 }
             }
-            // Periodically re-fetch intraday bars while a symbol-detail modal is open.
-            if let Some(Modal::SymbolDetail(symbol)) = &app.modal.clone() {
+            // Periodically re-fetch intraday bars while a symbol/position-detail modal is open.
+            let detail_symbol = match &app.modal {
+                Some(Modal::SymbolDetail(s)) => Some(s.clone()),
+                Some(Modal::PositionDetail { symbol }) => Some(symbol.clone()),
+                _ => None,
+            };
+            if let Some(symbol) = detail_symbol {
                 let due = app
                     .intraday_fetched_at
-                    .get(symbol)
+                    .get(&symbol)
                     .map(|t| t.elapsed() >= INTRADAY_REFRESH_INTERVAL)
                     .unwrap_or(false);
                 if due {
@@ -1993,12 +1998,12 @@ mod tests {
     }
 
     #[test]
-    fn positions_enter_opens_symbol_detail_and_dispatches_fetch() {
+    fn positions_enter_opens_position_detail_and_dispatches_fetch() {
         let (mut app, mut cmd_rx) = positions_app();
         update(&mut app, key(KeyCode::Enter));
         assert!(
-            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
-            "Enter on a position should open SymbolDetail for that symbol"
+            matches!(&app.modal, Some(Modal::PositionDetail { symbol }) if symbol == "AAPL"),
+            "Enter on a position should open PositionDetail for that symbol"
         );
         let cmd = cmd_rx
             .try_recv()

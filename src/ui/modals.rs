@@ -29,6 +29,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
         }
         Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input, app),
         Modal::GlobalSearch { query } => render_global_search(frame, area, query, app),
+        Modal::PositionDetail { symbol } => render_position_detail(frame, area, symbol, app),
     }
 }
 
@@ -52,7 +53,10 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         ("1/2/3/4 or Tab", "Switch panels"),
         ("j / k  or ↑/↓", "Move cursor"),
         ("g / G", "Top / Bottom"),
-        ("Enter", "Open detail"),
+        (
+            "Enter",
+            "Open detail (position: detail view / other: symbol chart)",
+        ),
         ("Esc", "Close / Cancel"),
         ("", ""),
         ("ACTIONS", ""),
@@ -899,6 +903,217 @@ fn estimate_total(state: &OrderEntryState) -> String {
     } else {
         "—".into()
     }
+}
+
+fn render_position_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
+    let popup = popup_area(area, 60, 90);
+    frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
+
+    let asset = app
+        .watchlist
+        .as_ref()
+        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol));
+    let name = asset.map(|a| a.name.as_str()).unwrap_or(symbol);
+
+    let block = Block::default()
+        .title(format!(" {} — {} ", symbol, name))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(c.accent_style());
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    // ── Outer vertical split: chart (top 50%) + detail row (bottom 50%) ───────
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),      // label
+            Constraint::Percentage(50), // intraday chart
+            Constraint::Min(0),         // position summary + orders
+            Constraint::Length(1),      // footer
+        ])
+        .split(inner);
+
+    // ── Chart label ──────────────────────────────────────────────────────────
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(
+            "  ── Intraday ──",
+            c.dim_style(),
+        )])),
+        outer[0],
+    );
+
+    // ── Intraday chart ────────────────────────────────────────────────────────
+    match app.intraday_bars.get(symbol) {
+        None => {
+            frame.render_widget(Paragraph::new("  Loading…").style(c.dim_style()), outer[1]);
+        }
+        Some(bars) if bars.is_empty() => {
+            frame.render_widget(
+                Paragraph::new("  No intraday data available").style(c.dim_style()),
+                outer[1],
+            );
+        }
+        Some(bars) => {
+            let data_points = charts::price_points(bars);
+            let n = data_points.len() as f64;
+            let [y_min, y_max] = charts::y_bounds(&data_points);
+            let line_color = charts::trend_color(&data_points, &c);
+
+            let dataset = Dataset::default()
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::default().fg(line_color))
+                .data(&data_points);
+
+            let chart = Chart::new(vec![dataset])
+                .x_axis(
+                    Axis::default()
+                        .bounds([0.0, (n - 1.0).max(0.0)])
+                        .labels(["09:30", "16:00"]),
+                )
+                .y_axis(Axis::default().bounds([y_min, y_max]));
+
+            frame.render_widget(chart, outer[1]);
+        }
+    }
+
+    // ── Bottom split: position summary (left) + open orders (right) ──────────
+    let bottom = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(outer[2]);
+
+    // ── Position summary ─────────────────────────────────────────────────────
+    let pos = app.positions.iter().find(|p| p.symbol == symbol);
+    let summary_lines: Vec<Line> = if let Some(p) = pos {
+        let pl: f64 = p.unrealized_pl.parse().unwrap_or(0.0);
+        let pl_style = if pl >= 0.0 {
+            c.positive_style()
+        } else {
+            c.negative_style()
+        };
+        let plpc: f64 = p.unrealized_plpc.parse().unwrap_or(0.0);
+        vec![
+            Line::from(vec![
+                Span::styled("  Qty        ", c.dim_style()),
+                Span::styled(p.qty.clone(), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Avg Cost   ", c.dim_style()),
+                Span::styled(format!("${}", p.avg_entry_price), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Cur Price  ", c.dim_style()),
+                Span::styled(format!("${}", p.current_price), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Mkt Value  ", c.dim_style()),
+                Span::styled(format!("${}", p.market_value), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Unreal P/L ", c.dim_style()),
+                Span::styled(format!("${:.2}", pl), pl_style),
+            ]),
+            Line::from(vec![
+                Span::styled("  P/L %      ", c.dim_style()),
+                Span::styled(format!("{:+.2}%", plpc * 100.0), pl_style),
+            ]),
+            Line::from(vec![
+                Span::styled("  Side       ", c.dim_style()),
+                Span::styled(p.side.clone(), c.bold_style()),
+            ]),
+        ]
+    } else {
+        vec![Line::from(Span::styled(
+            "  No position data",
+            c.dim_style(),
+        ))]
+    };
+
+    let summary_block = Block::default()
+        .title(" Position ")
+        .borders(Borders::ALL)
+        .border_style(c.dim_style());
+    let summary_inner = summary_block.inner(bottom[0]);
+    frame.render_widget(summary_block, bottom[0]);
+    frame.render_widget(Paragraph::new(summary_lines), summary_inner);
+
+    // ── Related open orders ───────────────────────────────────────────────────
+    let open_orders: Vec<&crate::types::Order> = app
+        .orders
+        .iter()
+        .filter(|o| {
+            o.symbol == symbol
+                && matches!(
+                    o.status.as_str(),
+                    "new" | "pending_new" | "accepted" | "held" | "partially_filled"
+                )
+        })
+        .collect();
+
+    let orders_block = Block::default()
+        .title(" Open Orders ")
+        .borders(Borders::ALL)
+        .border_style(c.dim_style());
+    let orders_inner = orders_block.inner(bottom[1]);
+    frame.render_widget(orders_block, bottom[1]);
+
+    if open_orders.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled("  No open orders", c.dim_style())),
+            orders_inner,
+        );
+    } else {
+        let rows: Vec<Row> = open_orders
+            .iter()
+            .map(|o| {
+                let qty = o.qty.as_deref().unwrap_or("—");
+                let price = o
+                    .limit_price
+                    .as_deref()
+                    .map(|p| format!("${p}"))
+                    .unwrap_or_else(|| "mkt".into());
+                Row::new(vec![
+                    Cell::from(o.side.clone()),
+                    Cell::from(qty.to_string()),
+                    Cell::from(price),
+                    Cell::from(o.status.clone()),
+                ])
+            })
+            .collect();
+
+        let header = Row::new(vec![
+            Cell::from(Span::styled("Side", c.dim_style())),
+            Cell::from(Span::styled("Qty", c.dim_style())),
+            Cell::from(Span::styled("Price", c.dim_style())),
+            Cell::from(Span::styled("Status", c.dim_style())),
+        ]);
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(5),
+                Constraint::Length(6),
+                Constraint::Length(8),
+                Constraint::Min(6),
+            ],
+        )
+        .header(header);
+
+        frame.render_widget(table, orders_inner);
+    }
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![Span::styled(
+            "  o:Order  Esc:Close",
+            c.dim_style(),
+        )])),
+        outer[3],
+    );
 }
 
 #[cfg(test)]
@@ -2103,5 +2318,219 @@ mod tests {
     #[test]
     fn flag_returns_cross_for_false() {
         assert_eq!(flag(false), "✗");
+    }
+
+    // ── render_position_detail tests ──────────────────────────────────────────
+
+    fn make_position(symbol: &str) -> crate::types::Position {
+        crate::types::Position {
+            symbol: symbol.into(),
+            qty: "10".into(),
+            avg_entry_price: "100.00".into(),
+            current_price: "115.00".into(),
+            market_value: "1150.00".into(),
+            unrealized_pl: "150.00".into(),
+            unrealized_plpc: "0.15".into(),
+            side: "long".into(),
+            asset_class: "us_equity".into(),
+        }
+    }
+
+    fn render_position_detail_to_string(app: &mut App, symbol: &str) -> String {
+        let backend = TestBackend::new(160, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_position_detail(frame, area, symbol, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_position_detail_shows_symbol_in_title() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("AAPL"),
+            "expected AAPL in title, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_asset_name_when_available() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("AAPL Corp"),
+            "expected asset name in title, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_loading_when_no_bars() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        // no entry in intraday_bars → "Loading…"
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Loading"),
+            "expected Loading, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_no_data_when_bars_empty() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.intraday_bars.insert("AAPL".into(), vec![]);
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("No intraday data"),
+            "expected no-data message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_renders_chart_with_bars() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15100, 15050]);
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        // chart x-axis labels
+        assert!(
+            output.contains("09:30") || output.contains("16:00"),
+            "expected chart time labels, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_position_summary() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(output.contains("Qty"), "expected Qty label, got: {output}");
+        assert!(
+            output.contains("Avg Cost"),
+            "expected Avg Cost label, got: {output}"
+        );
+        assert!(
+            output.contains("Mkt Value"),
+            "expected Mkt Value label, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_no_position_data_when_missing() {
+        // Symbol has no matching entry in app.positions
+        let mut app = make_test_app();
+        let output = render_position_detail_to_string(&mut app, "NVDA");
+        assert!(
+            output.contains("No position data"),
+            "expected no-position message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_no_open_orders_when_empty() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("No open orders"),
+            "expected no-orders message, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_open_orders_table() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.orders.push(crate::types::Order {
+            id: "ord-1".into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("5".into()),
+            notional: None,
+            order_type: "limit".into(),
+            limit_price: Some("110.00".into()),
+            status: "new".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "0".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("buy"),
+            "expected order side 'buy', got: {output}"
+        );
+        assert!(
+            output.contains("Side"),
+            "expected Side column header, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_filters_non_open_orders() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        // filled orders should NOT appear in the open-orders pane
+        app.orders.push(crate::types::Order {
+            id: "ord-filled".into(),
+            symbol: "AAPL".into(),
+            side: "buy".into(),
+            qty: Some("5".into()),
+            notional: None,
+            order_type: "market".into(),
+            limit_price: None,
+            status: "filled".into(),
+            submitted_at: None,
+            filled_at: None,
+            filled_qty: "5".into(),
+            filled_avg_price: None,
+            time_in_force: "day".into(),
+        });
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("No open orders"),
+            "filled orders should not appear in open-orders pane, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_footer_actions() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(output.contains("o:Order"), "expected footer, got: {output}");
+        assert!(
+            output.contains("Esc:Close"),
+            "expected Esc:Close in footer, got: {output}"
+        );
     }
 }
