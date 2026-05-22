@@ -126,7 +126,7 @@ Every screen shares this outer chrome:
 │  b7c1…     NVDA    BUY      5   MARKET  —          PENDING    09:28:44      │
 │  f2d9…     INTC    SELL   100   LIMIT    $25.50    PENDING    09:15:02      │
 │                                                                              │
-│ o:New Order  c:Cancel Selected  Enter:Detail  1-3:Filter Tab                │
+│ o:New Order  c:Cancel  f:Filter  F:Clear  s/S:Sort  1/2/3:Sub-tabs          │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -134,6 +134,8 @@ Every screen shares this outer chrome:
 - BUY: green; SELL: red
 - Limit column shows `—` for MARKET orders
 - `c` cancels the highlighted order with a confirmation prompt
+- `f` opens an inline filter bar; type a ticker to filter the visible rows; `Enter` or `Esc` closes it; `F` clears the filter from normal mode
+- `s` / `S` cycle the sort column / toggle direction (same as Positions)
 - Order state updates arrive from `Event::TradeUpdate` via the account WebSocket stream
 
 ---
@@ -172,7 +174,7 @@ Triggered by `o` from any panel. Pre-fills Symbol if a row is selected.
 
 ## Modal — Symbol Detail
 
-Triggered by `Enter` on a Watchlist or Positions row.
+Triggered by `Enter` on a **Watchlist** row.
 
 ```
 ╔═ AMD — Advanced Micro Devices ═══════════╗
@@ -201,6 +203,33 @@ Triggered by `Enter` on a Watchlist or Positions row.
 
 ---
 
+## Modal — Position Detail
+
+Triggered by `Enter` on a **Positions** row.
+
+```
+╔═ AMD — Position Detail ══════════════════╗
+║                                          ║
+║  Qty       50       Avg Cost  $138.20    ║
+║  Cur Price $142.85  Mkt Value $7,142.50  ║
+║  Unrealized P&L     +$232.50  (+3.36%)   ║
+║                                          ║
+║  ── Intraday ──────────────────────────  ║
+║  ⠀⠀⠀⢀⣀⠤⠤⢄⡀⠀⠀⠀⣀⡠⠔⠒⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ║
+║  ⡠⠒⠉⠀⠀⠀⠀⠀⠈⠑⠒⠊⠀⠀⠀⠀⠀⠀⠀⠀⠙⠒⠤⣀⣀⡠⠔⠉⠁⠀  ║
+║  09:30                             16:00 ║
+║                                          ║
+║  o:New Order                        Esc  ║
+╚══════════════════════════════════════════╝
+```
+
+- Distinct from **Symbol Detail** — shows held-position metrics (Qty, Avg Cost, Unrealized P&L) rather than asset metadata
+- Intraday chart fetched via `Command::FetchIntradayBars` on open; same `Chart` widget as Symbol Detail
+- `o` opens Order Entry pre-filled with the position's symbol (SELL side)
+- `Esc` dismisses; no `s`, `w` actions (those belong to Symbol Detail only)
+
+---
+
 ## Modal — Help Overlay
 
 Triggered by `?` from any context.
@@ -214,7 +243,7 @@ Triggered by `?` from any context.
 ║  4 or Tab            Switch panels       ║
 ║  j / k  or ↑/↓    Move cursor           ║
 ║  gg / G            Top / Bottom          ║
-║  Enter             Open detail           ║
+║  Enter             Open detail (Watchlist/Positions)║
 ║  Esc               Close / Cancel        ║
 ║                                          ║
 ║  ACTIONS                                 ║
@@ -251,7 +280,7 @@ Triggered by `A` (uppercase) from any context. Displays app metadata, author inf
 ```
 ╔═ About alpaca-trader-rs ══════════════════╗
 ║                                           ║
-║   alpaca-trader-rs  v0.4.0                ║
+║   alpaca-trader-rs  v0.6.0                ║
 ║                                           ║
 ║   Alpaca Markets TUI trading terminal     ║
 ║   and async REST client library.          ║
@@ -323,7 +352,7 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `k` / `↑` | Move cursor up one row |
 | `g` | Jump to first row |
 | `G` | Jump to last row |
-| `Enter` | Open Symbol Detail modal for selected row |
+| `Enter` | Open detail modal for selected row (Symbol Detail on Watchlist; Position Detail on Positions) |
 
 ### Watchlist Panel
 
@@ -340,7 +369,7 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `o` | Open Order Entry pre-filled: selected symbol + SELL |
 | `s` | Cycle sort column (Symbol → Qty → Avg Cost → Cur Price → Mkt Value → P&L → None) |
 | `S` | Toggle sort direction (Asc ↔ Desc) |
-| `Enter` | Open Position Detail modal for selected row |
+| `Enter` | Open Position Detail modal for selected row (intraday chart + P&L) |
 
 ### Account Panel
 
@@ -371,6 +400,22 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `↑` / `↓` | Cycle values in dropdown fields (Side, Type) |
 | `Enter` | Advance to next field; submit when Submit button is focused |
 | `Esc` | Close modal without submitting |
+
+### Symbol Detail Modal (Watchlist)
+
+| Key | Action |
+|-----|--------|
+| `o` | Open Order Entry pre-filled with symbol (BUY) |
+| `s` | Open Order Entry pre-filled with symbol (SELL) |
+| `w` | Toggle symbol in/out of the active watchlist |
+| `Esc` | Close modal |
+
+### Position Detail Modal (Positions)
+
+| Key | Action |
+|-----|--------|
+| `o` | Open Order Entry pre-filled with symbol (SELL) |
+| `Esc` | Close modal |
 
 ---
 
