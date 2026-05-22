@@ -2,13 +2,14 @@
 
 Test coverage strategy, mock patterns, crate rationale, and test case inventory for `alpaca-trader-rs`.
 
-**Current state: 101 tests implemented and passing** (`cargo test`).
+**Current state: 800 tests implemented and passing** (`cargo test`).
 
 | Binary | Count | Scope |
 |---|---|---|
-| `lib` | 20 | `types`, `config` — serde, enum methods, env var parsing |
-| `bin` | 67 | `app`, `update`, `handlers/rest` — state logic, keyboard dispatch, REST polling |
-| `tests/client_tests.rs` | 14 | `AlpacaClient` — all 11 HTTP methods via wiremock |
+| `lib` (unit + UI) | 670 | `types`, `config`, `app`, `update`, `input/*`, `ui/*` — state logic, keyboard dispatch, render coverage |
+| `bin` (integration) | 100 | `AlpacaClient` — all HTTP methods via wiremock |
+| `bin` (doc tests) | 29 | Inline `# Example` blocks in public API docs |
+| `bin` (smoke) | 1 | Basic smoke test |
 
 ---
 
@@ -62,9 +63,30 @@ alpaca-trader-rs/
     ├── config.rs           ← #[cfg(test)] mod tests { }
     ├── app.rs              ← #[cfg(test)] mod tests { }
     ├── update.rs           ← #[cfg(test)] mod tests { }
-    └── handlers/
-        ├── rest.rs         ← #[cfg(test)] mod tests { }
-        └── input.rs        ← #[cfg(test)] mod tests { }
+    ├── prefs.rs            ← #[cfg(test)] mod tests { }
+    ├── credentials.rs      ← #[cfg(test)] mod tests { }
+    ├── handlers/
+    │   ├── rest.rs         ← #[cfg(test)] mod tests { }
+    │   └── input.rs        ← #[cfg(test)] mod tests { }
+    ├── input/
+    │   ├── mod.rs          ← #[cfg(test)] mod tests { }
+    │   ├── modal.rs        ← #[cfg(test)] mod tests { }
+    │   ├── mouse.rs        ← #[cfg(test)] mod tests { }
+    │   ├── orders.rs       ← #[cfg(test)] mod tests { }
+    │   ├── positions.rs    ← #[cfg(test)] mod tests { }
+    │   ├── search.rs       ← #[cfg(test)] mod tests { }
+    │   ├── validation.rs   ← #[cfg(test)] mod tests { }
+    │   └── watchlist.rs    ← #[cfg(test)] mod tests { }
+    └── ui/
+        ├── account.rs      ← #[cfg(test)] mod tests { }
+        ├── charts.rs       ← #[cfg(test)] mod tests { }
+        ├── dashboard.rs    ← #[cfg(test)] mod tests { }
+        ├── formatting.rs   ← #[cfg(test)] mod tests { }
+        ├── modals.rs       ← #[cfg(test)] mod tests { }
+        ├── orders.rs       ← #[cfg(test)] mod tests { }
+        ├── positions.rs    ← #[cfg(test)] mod tests { }
+        ├── theme.rs        ← #[cfg(test)] mod tests { }
+        └── watchlist.rs    ← #[cfg(test)] mod tests { }
 ```
 
 `client_tests.rs` lives in `tests/` (Rust integration test directory) so it links against the compiled library crate. All other test modules are inline `#[cfg(test)]` blocks.

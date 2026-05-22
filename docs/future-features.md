@@ -69,16 +69,7 @@ Add a scrollable news section at the bottom of the Symbol Detail modal, populate
 Support Alpaca's multiple named watchlists. Use `[`/`]` to cycle between watchlists; the panel header shows the active watchlist name.
 
 - **API**: `GET /v2/watchlists` returns all lists; `GET /v2/watchlists/{id}` for symbols
-- **Paper mode**: falls back to local-file watchlist (see issue #59)
 - **Files**: `src/ui/watchlist.rs`, `src/app.rs`, `src/handlers/rest.rs`
-
----
-
-### Local-File Watchlist Fallback for Paper Mode
-When running in paper mode, the Alpaca watchlist API is unavailable. Store and load a watchlist from a local JSON file (`~/.config/alpaca-trader/watchlist.json`) so the panel is usable regardless of environment.
-
-- **Related**: issue #59 (paper mode watchlist silent failure)
-- **Files**: `src/handlers/rest.rs`, `src/ui/watchlist.rs`, new `src/local_watchlist.rs`
 
 ---
 
@@ -122,17 +113,17 @@ Filter the full universe of tradeable symbols by criteria (price range, volume, 
 
 ## Related Issues
 
-| Issue | Title |
-|-------|-------|
-| [#51](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/51) | Header: PRE-MARKET / AFTER-HOURS state detection |
-| [#52](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/52) | Account panel: Day P&L, Open P&L, Account #, equity sparkline |
-| [#53](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/53) | Watchlist: columns (Volume not Ask/Bid), Change%, color-coding |
-| [#54](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/54) | Symbol Detail modal: OHLCV, sparkline, w:Toggle Watchlist |
-| [#55](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/55) | Positions: `s` key for SELL SHORT + status bar hint |
-| [#56](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/56) | Order Entry: ↑/↓ cycling for dropdown fields |
-| [#57](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/57) | About modal with app/author metadata |
-| [#58](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/58) | Replace filled Sparkline with no-fill Chart + Braille line |
-| [#59](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/59) | Bug: watchlist silently fails in paper trading mode |
-| [#60](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/60) | `--dry-run` flag to simulate order submissions |
-| [#61](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/61) | Persist user preferences to `~/.config/alpaca-trader/config.toml` |
-| [#62](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/62) | Theme switching (default / dark / high-contrast) via `T` key |
+| Issue | Title | Status |
+|-------|-------|--------|
+| [#51](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/51) | Header: PRE-MARKET / AFTER-HOURS state detection | Open |
+| [#52](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/52) | Account panel: Day P&L, Open P&L, Account #, equity sparkline | Open |
+| [#53](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/53) | Watchlist: columns (Volume not Ask/Bid), Change%, color-coding | Open |
+| [#54](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/54) | Symbol Detail modal: OHLCV, sparkline, w:Toggle Watchlist | Open |
+| [#55](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/55) | Positions: `s` key for column sorting | ✅ Implemented (#82) |
+| [#56](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/56) | Order Entry: ↑/↓ cycling for dropdown fields | Open |
+| [#57](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/57) | About modal with app/author metadata | ✅ Implemented |
+| [#58](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/58) | Replace filled Sparkline with no-fill Chart + Braille line | ✅ Implemented |
+| [#59](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/59) | Bug: watchlist silently fails in paper trading mode | ✅ Fixed |
+| [#60](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/60) | `--dry-run` flag to simulate order submissions | ✅ Implemented |
+| [#61](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/61) | Persist user preferences to `~/.config/alpaca-trader/config.toml` | ✅ Implemented |
+| [#62](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/62) | Theme switching (default / dark / high-contrast) via `T` key | ✅ Implemented |
