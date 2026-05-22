@@ -7,6 +7,18 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.7.1] — 2026-05-22
+
+Patch release fixing TUI sluggishness during market hours. No new features or breaking changes.
+
+### Fixed
+
+- **Event queue drain before render** (`src/main.rs`) — the main loop previously called `terminal.draw()` on every single event, including every `MarketQuote` from the WebSocket stream. During market hours with many subscribed symbols, this caused continuous full re-renders that starved keyboard input. Added a non-blocking drain loop after processing the first event so all queued events are consumed in one pass before the next render. N quote events between frames now costs 1 render instead of N, keeping keyboard input responsive at high quote volumes. (Closes #143)
+
+[0.7.1]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.7.0...v0.7.1
+
+---
+
 ## [0.7.0] — 2026-05-21
 
 Adds interactive chart crosshairs, a keyboard shortcut help overlay, global symbol search, equity-range toggling, column sorting, an orders symbol filter, position detail modal, double-click support, and PDT/day-trade account metrics. Extensive documentation overhaul covering architecture, UI mockups, account management design, and library reference. Test count grows from **541 → 800**.
