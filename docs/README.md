@@ -68,6 +68,7 @@ The TUI header will show **[PAPER]** to confirm you are in simulation mode.
 
 | Document | Description |
 |---|---|
+| [account-management.md](account-management.md) | Design spec for in-app credential entry, multi-profile support, and settings modal |
 | [library.md](library.md) | Full library API reference and usage examples |
 | [credentials-setup.md](credentials-setup.md) | How to get and configure Alpaca API keys for paper and live trading |
 | [architecture.md](architecture.md) | System design, data flow, crate choices, and module layout |
