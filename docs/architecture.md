@@ -56,15 +56,32 @@ alpaca-trader-rs/
 │   ├── main.rs             # Binary entry point: runtime setup, main loop
 │   ├── app.rs              # App state — the TEA Model
 │   ├── update.rs           # update(state, event) — the TEA Update function
+│   ├── commands.rs         # Command enum: mutation requests from input to REST handler
+│   ├── prefs.rs            # AppPrefs: user preferences persisted to config.toml
+│   ├── credentials.rs      # 4-tier credential resolution (env → keychain → prompt)
+│   ├── clipboard.rs        # Cross-platform clipboard write helper
+│   ├── logging.rs          # File + syslog tracing subscriber setup
+│   ├── input/
+│   │   ├── mod.rs          # Shared nav helper (j/k/g/G) and key() / ctrl() factories
+│   │   ├── modal.rs        # Key handler for all modal states
+│   │   ├── mouse.rs        # Mouse event → hit-area dispatch
+│   │   ├── orders.rs       # handle_orders_key: sort, filter, sub-tabs, cancel
+│   │   ├── positions.rs    # handle_positions_key: sort, order entry, detail modal
+│   │   ├── search.rs       # Inline watchlist search and global search modal
+│   │   ├── validation.rs   # Pre-submit order validation (qty, price, buying power)
+│   │   └── watchlist.rs    # handle_watchlist_key: add, remove, navigate
 │   └── ui/
 │       ├── mod.rs          # render(frame, app) — the TEA View function
+│       ├── account.rs      # Account summary + equity sparkline + daytrade/PDT info
+│       ├── charts.rs       # Shared braille line-chart renderer and crosshair logic
 │       ├── dashboard.rs    # Header, tab bar, status bar layout
-│       ├── account.rs      # Account summary + sparkline
-│       ├── watchlist.rs    # Watchlist table
-│       ├── positions.rs    # Positions table
-│       ├── orders.rs       # Orders table + sub-tabs
-│       ├── modals.rs       # Order entry, symbol detail, help, confirmation
-│       └── theme.rs        # Color palette and styles
+│       ├── formatting.rs   # Currency, percentage, and volume formatting helpers
+│       ├── modals.rs       # All modals: OrderEntry, SymbolDetail, PositionDetail, Help, etc.
+│       ├── orders.rs       # Orders table + sub-tabs + sort/filter indicators
+│       ├── positions.rs    # Positions table + P&L footer + sort indicators
+│       ├── test_helpers.rs # Shared render-test utilities (terminal fixture, etc.)
+│       ├── theme.rs        # Color palette and styles (default / dark / high-contrast)
+│       └── watchlist.rs    # Watchlist table + inline search bar
 │
 ├── docs/                   # Full documentation
 ├── .env.example
@@ -191,17 +208,55 @@ All producers clone a `tokio::sync::mpsc::Sender<Event>`. The main loop holds th
 
 ```rust
 pub struct App {
+    // Config & preferences
+    pub config: AlpacaConfig,
+    pub prefs: AppPrefs,
+    pub current_theme: Theme,
+
+    // Data state
     pub account: Option<AccountInfo>,
     pub positions: Vec<Position>,
     pub orders: Vec<Order>,
     pub quotes: HashMap<String, Quote>,
     pub watchlist: Option<Watchlist>,
+    pub snapshots: HashMap<String, Snapshot>,
     pub clock: Option<MarketClock>,
+    pub equity_history: Vec<u64>,
+    pub equity_range: EquityRange,
+    pub intraday_bars: HashMap<String, Vec<u64>>,
+
+    // UI selection state
     pub active_tab: Tab,
-    pub selected_row: usize,
+    pub watchlist_state: TableState,
+    pub positions_state: TableState,
+    pub orders_state: TableState,
+    pub orders_subtab: OrdersSubTab,
     pub modal: Option<Modal>,
-    pub status: StatusMessage,
+
+    // Sort + filter state
+    pub positions_sort: SortState<PositionSortCol>,
+    pub orders_sort: SortState<OrderSortCol>,
+    pub orders_symbol_filter: String,
+    pub orders_filter_active: bool,
+
+    // Search
+    pub search_query: String,
+    pub searching: bool,
+
+    // Crosshair cursors
+    pub equity_chart_cursor: Option<usize>,
+    pub symbol_detail_crosshair: Option<usize>,
+
+    // Status / control
+    pub status_queue: VecDeque<StatusMessage>,
     pub should_quit: bool,
+    pub last_updated: Option<DateTime<Local>>,
+    pub spinner_tick: u8,
+
+    // Channels
+    pub command_tx: mpsc::Sender<Command>,
+    pub symbol_tx: watch::Sender<Vec<String>>,
+    pub refresh_notify: Arc<Notify>,
 }
 ```
 
@@ -222,15 +277,23 @@ pub enum Event {
     OrdersUpdated(Vec<Order>),
     ClockUpdated(MarketClock),
     WatchlistUpdated(Watchlist),
+    WatchlistUnavailable,
+    SnapshotsUpdated(HashMap<String, Snapshot>),
+    PortfolioHistoryLoaded(Vec<f64>),
+    IntradayBarsReceived { symbol: String, bars: Vec<u64> },
+    FetchStarted,
+    FetchComplete,
 
     // WebSocket streaming
     MarketQuote(Quote),
-    MarketBar(Bar),
-    TradeUpdate(TradeUpdate),
+    TradeUpdate { order: Order, event_type: String },
+    StreamConnected(StreamKind),
+    StreamDisconnected(StreamKind),
 
     // Control
     Tick,   // 250 ms UI refresh tick
     Quit,
+    StatusMsg(String),
 }
 ```
 

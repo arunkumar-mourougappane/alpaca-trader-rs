@@ -102,7 +102,7 @@ Every screen shares this outer chrome:
 │  ─────────────────────────────────────────────────────────────────────────  │
 │  Total Long: $21,202.50    Total Unrealized: +$322.50  (+1.54%)            │
 │                                                                              │
-│ o:Close  s:Short  Enter:Detail                                              │
+│ o:Order  s/S:Sort  Enter:Detail                                             │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -110,7 +110,7 @@ Every screen shares this outer chrome:
 - Unrealized P&L and % columns: green / red
 - Footer totals recalculate on every price update
 - `o` opens Order Entry pre-filled with current symbol + SELL
-- `s` opens Order Entry pre-filled with current symbol + SELL SHORT
+- `s` cycles the sort column; `S` toggles sort direction (Asc/Desc)
 
 ---
 
@@ -213,7 +213,7 @@ Triggered by `?` from any context.
 ║  1/2/3 (Orders tab)  Switch sub-tabs     ║
 ║  4 or Tab            Switch panels       ║
 ║  j / k  or ↑/↓    Move cursor           ║
-║  g / G             Top / Bottom          ║
+║  gg / G            Top / Bottom          ║
 ║  Enter             Open detail           ║
 ║  Esc               Close / Cancel        ║
 ║                                          ║
@@ -223,10 +223,18 @@ Triggered by `?` from any context.
 ║  a    Add symbol to watchlist            ║
 ║  d    Remove symbol from watchlist       ║
 ║  r    Force refresh                      ║
-║  /    Search / filter                    ║
+║  s/S  Cycle / toggle sort column/dir     ║
+║  f    Filter orders by symbol            ║
+║  p    Toggle equity range (1D/1W/1M/YTD) ║
+║  Ctrl-F / /  Global symbol search        ║
+║                                          ║
+║  ACCOUNT CHART                           ║
+║  ←/h / →/l  Move crosshair              ║
+║  Esc         Clear crosshair             ║
 ║                                          ║
 ║  GLOBAL                                  ║
 ║  q / Ctrl-C   Quit                       ║
+║  T            Cycle theme                ║
 ║  ?            This help screen           ║
 ║  A            About this app             ║
 ║                                          ║
@@ -301,8 +309,10 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `Tab` / `Shift-Tab` | Cycle tabs forward / backward |
 | `q` / `Ctrl-C` | Quit |
 | `r` | Force REST re-poll |
+| `T` | Cycle theme (default → dark → high-contrast) |
 | `?` | Toggle help overlay |
 | `A` | Open About modal |
+| `Ctrl-F` / `/` (non-Watchlist) | Open global symbol search modal |
 | `Esc` | Close any open modal |
 
 ### List Navigation (Watchlist, Positions, Orders)
@@ -328,7 +338,18 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | Key | Action |
 |-----|--------|
 | `o` | Open Order Entry pre-filled: selected symbol + SELL |
-| `s` | Open Order Entry pre-filled: selected symbol + SELL SHORT |
+| `s` | Cycle sort column (Symbol → Qty → Avg Cost → Cur Price → Mkt Value → P&L → None) |
+| `S` | Toggle sort direction (Asc ↔ Desc) |
+| `Enter` | Open Position Detail modal for selected row |
+
+### Account Panel
+
+| Key | Action |
+|-----|--------|
+| `p` | Cycle equity-chart range (1D → 1W → 1M → YTD) |
+| `←` / `h` | Move equity-chart crosshair left one data point |
+| `→` / `l` | Move equity-chart crosshair right one data point |
+| `Esc` | Clear equity-chart crosshair |
 
 ### Orders Panel
 
@@ -337,6 +358,10 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `o` | Open Order Entry (blank) |
 | `c` | Cancel selected order (confirmation prompt) |
 | `1` / `2` / `3` | Switch sub-tabs: Open / Filled / Cancelled |
+| `f` | Enter symbol-filter mode; type to filter orders by ticker |
+| `F` | Clear active symbol filter |
+| `s` | Cycle sort column (Symbol → Side → Type → Status → Submitted → None) |
+| `S` | Toggle sort direction (Asc ↔ Desc) |
 
 ### Order Entry Modal
 
@@ -351,16 +376,17 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 
 ## Mouse Interaction Model
 
-| Element | Left Click | Scroll |
-|---------|-----------|--------|
-| Tab bar | Switch to that panel | — |
-| List row | Select (move cursor) | Scroll list up/down |
-| Sub-tabs (Orders) | Switch sub-tab | — |
-| Modal: text input | Focus field | — |
-| Modal: radio button | Select option | — |
-| Modal: dropdown | Open dropdown | — |
-| Modal: dropdown option | Select and close | — |
-| Modal: Submit / Cancel | Activate button | — |
+| Element | Left Click | Double Click | Scroll |
+|---------|-----------|--------------|--------|
+| Tab bar | Switch to that panel | — | — |
+| List row | Select (move cursor) | Open Symbol/Position Detail modal | Scroll list up/down |
+| Sub-tabs (Orders) | Switch sub-tab | — | — |
+| Modal: text input | Focus field | — | — |
+| Modal: radio button | Select option | — | — |
+| Modal: dropdown | Open dropdown | — | — |
+| Modal: dropdown option | Select and close | — | — |
+| Modal: Submit / Cancel | Activate button | — | — |
+| Outside modal | Dismiss modal | — | — |
 
 Mouse support requires `crossterm` with the `event-stream` feature and `crossterm::execute!(stdout, EnableMouseCapture)` at startup. Hit positions for all interactive elements are calculated from the rendered `Rect` areas and stored in `App` state each frame.
 
