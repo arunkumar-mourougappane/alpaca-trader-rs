@@ -1,129 +1,133 @@
-# Release Notes — v0.6.0
+# Release Notes — v0.7.0
 
-**Release date:** 2026-05-19
+**Release date:** 2026-05-21
 **MSRV:** Rust 1.88+
-**Previous release:** [v0.5.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.5.0)
+**Previous release:** [v0.6.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.6.0)
 
 ---
 
 ## Overview
 
-v0.6.0 is a UX and real-time data release. The ten headline changes are:
+v0.7.0 is a major feature release focused on interactivity and discoverability. The headline changes are:
 
-1. **Live WebSocket chart streaming** — intraday charts update with every quote tick, not just once per poll cycle.
-2. **Filled Price column in Orders** — `filled_avg_price` is now shown directly in the Orders table.
-3. **Order fill notifications** — a status bar flash when a polled order transitions to `filled`.
-4. **P&L summary footer row** — aggregate unrealised P&L shown in dollar and percentage form below the Positions table.
-5. **Watchlist removal confirmation** — a yes/no modal before `d` deletes a watchlist entry.
-6. **Clipboard copy (`c` key)** — copies the selected symbol to the system clipboard from Positions and Watchlist panels.
-7. **`gg` / `G` jump navigation** — vim-style jump-to-top / jump-to-bottom in Positions, Orders, and Watchlist.
-8. **Refresh spinner and last-updated timestamp** — visual feedback in the header while a REST poll is in flight.
-9. **Status bar message queue** — rapid events are queued and shown sequentially instead of overwriting each other.
-10. **Internal refactoring** — shared formatting helpers, a render-test helper, and a generic vim-nav trait eliminate ~150 lines of duplication.
+1. **Interactive Chart Crosshairs** — keyboard and mouse-driven crosshair tooltips on the equity chart and symbol detail intraday chart
+2. **Help Overlay** — `?` brings up a full-screen keyboard shortcut reference
+3. **Global Symbol Search** — `Ctrl-F` / `/` opens a floating symbol search from any panel
+4. **Position Detail Modal** — `Enter` on a position shows a dedicated modal with intraday chart and P&L
+5. **Double-Click Support** — double-clicking a row opens the same detail as `Enter`; outside-click dismisses
+6. **Orders Symbol Filter** — `f` activates an inline filter bar to narrow orders by ticker
+7. **Column Sorting** — `s`/`S` sorts and reverses both Orders and Positions tables
+8. **Equity Date-Range Toggle** — `p` cycles the equity chart between 1D / 1W / 1M / YTD
+9. **PDT & Day-Trade Metrics** — Pattern Day Trader flag and day-trade count shown in Account panel
+10. **Documentation Overhaul** — architecture, UI mockups, testing, library API, and account management design docs all updated or created
 
-Test count grows from **449 → 540 tests**.
+Test count grows from **541 → 800 tests**.
 
 ---
 
 ## What's New
 
-### Live WebSocket Chart Streaming
+### Interactive Chart Crosshairs
 
-Intraday equity and position charts are now fed with real-time quote ticks between REST poll cycles. Previously, charts only updated once per 60-second poll. Now every WebSocket quote event advances the chart curve immediately, giving smooth braille updates at market speed.
+Both the Account equity chart and the Symbol Detail intraday chart now support interactive crosshairs.
+Use `←`/`h` and `→`/`l` to move the crosshair, or click a data point with the mouse.
+A tooltip shows the date and value at the selected point. `Esc` clears the crosshair.
 
-### Filled Price Column in Orders
+### Help Overlay (`?`)
 
-The `filled_avg_price` field is now part of the `Order` type and surfaced as a dedicated column in the Orders table. Traders no longer need to open a position detail to confirm the execution price.
+Press `?` from any panel to open a full-screen keyboard shortcut reference.
+Every key binding is listed by category — navigation, panels, modals, sorting, filtering, and charts.
+Any key press closes the overlay.
 
-### Order Fill Notifications
+### Global Symbol Search (`Ctrl-F` / `/`)
 
-When a REST poll detects that an order has transitioned to `filled`, a transient status bar message flashes:
+From any non-Watchlist panel, press `Ctrl-F` or `/` to open a floating symbol search input.
+Type a ticker symbol and press `Enter` to open the Symbol Detail modal immediately.
+`Esc` cancels without navigating.
 
-```
-✓ AAPL order filled at $213.42
-```
+### Position Detail Modal
 
-The notification is queued behind any other pending status messages so nothing is silently dropped.
+`Enter` on a Positions row opens a dedicated `PositionDetail` modal showing an intraday chart,
+current P&L (unrealized + realized), quantity, cost basis, and current price.
+Press `o` inside the modal to jump directly to Order Entry pre-filled with a SELL order for that symbol.
 
-### P&L Summary Footer Row
+### Double-Click & Outside-Click
 
-A pinned footer row appears below the Positions table showing aggregate unrealised P&L across all open positions:
+Double-clicking a row in any list panel opens the detail modal for that row, matching the `Enter` key behavior.
+Clicking outside an open modal (outside its bounding box) dismisses it.
 
-```
-TOTAL    —    —    —    +$1,234.56   +2.34%
-```
+### Orders Symbol Filter
 
-The footer updates whenever the positions data refreshes.
+Press `f` on the Orders panel to activate an inline filter bar at the bottom.
+Type a symbol to narrow visible rows in real time. `Enter` or `Esc` closes the filter bar. `F` clears the active filter.
 
-### Watchlist Removal Confirmation
+### Column Sorting
 
-Pressing `d` on a watchlist entry now opens a confirmation modal:
+`s` cycles the active sort column on both the Orders and Positions tables.
+`S` toggles the sort direction (Ascending ↔ Descending).
+The selected column header shows a `▲`/`▼` indicator.
 
-```
-Remove AAPL from watchlist? [y / n]
-```
+### Equity Date-Range Toggle
 
-The deletion is only sent to Alpaca after `y` is pressed. Pressing `n` or `Esc` dismisses the modal without any change.
+Press `p` on the Account panel to cycle the equity chart between four ranges:
+**1D** (intraday), **1W** (one week), **1M** (one month), and **YTD** (year-to-date).
+The selected range is persisted in `~/.config/alpaca-trader-rs/prefs.toml` across restarts.
 
-### Clipboard Copy (`c` Key)
+### PDT Flag and Day-Trade Metrics
 
-Press `c` on any selected row in Positions or Watchlist to copy the row's symbol to the system clipboard. A confirmation message appears in the status bar:
-
-```
-Copied AAPL to clipboard
-```
-
-On the Orders panel, `c` retains its existing behaviour of cancelling the selected order.
-
-### `gg` / `G` Jump Navigation
-
-Vim-style jump bindings work in all three table panels:
-
-| Key | Action |
-|-----|--------|
-| `gg` | Jump to first row |
-| `G` | Jump to last row |
-| `j` / `↓` | Move down one row |
-| `k` / `↑` | Move up one row |
-
-### Refresh Spinner and Last-Updated Timestamp
-
-The header now shows a spinning Braille frame while a REST poll is in flight, and the `hh:mm:ss` timestamp of the last successful refresh once the poll completes. This makes it clear whether the displayed data is fresh.
-
-### Status Bar Message Queue
-
-Events such as fill notifications, clipboard confirmations, and errors are enqueued rather than overwriting each other. Messages are shown sequentially and cleared automatically after their display duration elapses.
+The Account panel now shows `daytrade_count` and the Pattern Day Trader (`pdt`) flag.
+`short_market_value` is also fetched and displayed alongside `long_market_value`.
 
 ---
 
-## Refactoring Highlights
+## Bug Fixes
 
-- **`src/ui/formatting.rs`** (new) — shared `format_dollar`, `format_price`, `format_pct_ratio`, and `header_cell` helpers; removes duplicate private formatting functions from `positions.rs`, `account.rs`, and `orders.rs`.
-- **`src/ui/test_helpers.rs`** (new) — `render_to_string(width, height, fn)` eliminates `TestBackend` boilerplate from every UI module's test section.
-- **`ThemeColors::bordered_block`** — single call replaces all inline `Block::default().title().borders(ALL).border_style()` chains.
-- **`handle_nav_key` + `SelectionState` trait** — extracted shared vim-nav logic works generically over both `ListState` and `TableState`; removes ~20 duplicated lines from each of the three input handlers.
-- **`OrderEntryState::with_side` builder** — replaces manual field mutation in the modal handler.
+- **Orders Enter key** — `Enter` now only confirms the filter bar when active; previously the docs incorrectly described an Orders detail modal that never existed.
+- **Crosshair out-of-bounds** — fixed a panic when the crosshair index exceeded the chart data length after a data refresh.
+
+---
+
+## Documentation
+
+A complete documentation overhaul was performed in this release:
+
+- **`docs/architecture.md`** — technology stack corrected; `apca` and `ratatui-textarea` removed (never used); 4 missing crates added; `AlpacaClient` method list corrected (13 real methods); REST endpoints table corrected; data-flow diagram updated.
+- **`docs/ui-mockups.md`** — Orders footer corrected; Position Detail modal section added; per-modal keyboard tables added.
+- **`docs/testing.md`** — test layout updated with `src/input/` directory; count updated 101 → 800.
+- **`docs/future-features.md`** — 7 issues marked ✅ Implemented with PR links.
+- **`docs/library.md`** — new: full library API reference with 6 usage examples.
+- **`docs/account-management.md`** — new: design spec for in-app credential entry, multi-profile support, and settings modal (Phases 1–3).
+
+---
+
+## Internal / Refactoring
+
+- **`src/input/`** — input handlers split into per-panel modules (`account.rs`, `modal.rs`, `orders.rs`, `positions.rs`, `watchlist.rs`, `mouse.rs`), each with full unit-test coverage.
+- **Test helpers** — `render_test_frame()` and similar helpers in `src/ui/test_helpers.rs` used consistently across all UI render tests.
+- **Coverage** — every `match` arm, `if let`, and modal variant is now covered by a dedicated test.
 
 ---
 
 ## Tests
 
-**540 tests total** (up from 449 in v0.5.0):
+**800 tests total** (up from 541 in v0.6.0):
 
 | Scope | Count |
 |---|---|
-| Library (`src/stream/`, `src/types.rs`, `src/config.rs`) | 100 |
-| Binary crate (`src/app.rs`, `src/update.rs`, `src/handlers/`, `src/ui/`) | 410 |
-| HTTP integration (`tests/client_tests.rs`) | 29 |
-| Doc-tests | 1 |
-
-Coverage additions include live chart streaming handlers, order fill notification detection, P&L footer rendering, watchlist removal modal flow, clipboard keybinding paths, `gg`/`G` navigation, status bar queue ordering, and shared formatting helpers.
+| Library (`src/types.rs`, `src/config.rs`, `src/prefs.rs`, `src/client.rs`) | ~120 |
+| Input handlers (`src/input/`) | ~180 |
+| UI render (`src/ui/`) | ~370 |
+| HTTP integration (`tests/client_tests.rs`) | ~100 |
+| Doc-tests | ~30 |
 
 ---
 
 ## No Breaking Changes
 
-v0.6.0 is fully backwards-compatible with v0.5.0. All CLI flags, credential resolution, environment variables, and library API are unchanged.
+v0.7.0 is fully backwards-compatible with v0.6.0. All CLI flags,
+credential resolution, environment variables, and library API are unchanged.
+Existing `prefs.toml` files are read without modification; the new `equity_range` key
+defaults to `1D` if absent.
 
 ---
 
@@ -137,12 +141,5 @@ cd alpaca-trader-rs
 ./run.sh           # live trading
 ```
 
-Or configure via `.env`:
-
-```bash
-cp .env.example .env
-# Fill in your credentials — see docs/credentials-setup.md
-./run.sh --paper
-```
-
-See [README.md](README.md) for full setup options and [docs/credentials-setup.md](docs/credentials-setup.md) for API key setup.
+See [README.md](README.md) for full setup and
+[docs/credentials-setup.md](docs/credentials-setup.md) for API key setup.
