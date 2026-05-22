@@ -103,6 +103,8 @@ alpaca-trader --reset live    # remove live keychain entries
 
 ## Key Bindings
 
+### Global
+
 | Key | Action |
 |-----|--------|
 | `1` / `2` / `3` | Switch panel (Account / Watchlist / Positions) — or switch Orders sub-tab when on Orders panel |
@@ -110,22 +112,52 @@ alpaca-trader --reset live    # remove live keychain entries
 | `Tab` / `Shift-Tab` | Cycle panels forward / backward |
 | `j` / `k` or `↑` / `↓` | Navigate rows |
 | `gg` / `G` | Jump to first / last row |
-| `Enter` | Open symbol detail |
+| `Enter` | Open symbol / position detail |
 | `o` | New order (pre-fills selected symbol) |
-| `s` | SELL SHORT order (Positions panel) |
-| `c` | Copy symbol to clipboard (Positions / Watchlist) |
+| `c` | Copy symbol to clipboard (Positions / Watchlist / Account) |
 | `c` | Cancel selected order (Orders panel) |
 | `a` | Add symbol to watchlist |
 | `d` | Remove symbol from watchlist |
-| `/` | Search / filter watchlist |
+| `/` | Symbol filter on Watchlist; global symbol search on all other panels |
+| `Ctrl-F` | Global symbol search (any panel) |
 | `r` | Force refresh |
 | `?` | Help overlay |
 | `A` | About overlay |
-| `Esc` | Close modal |
+| `Esc` | Close modal / clear filter |
 | `T` | Toggle colour theme |
 | `q` / `Ctrl-C` | Quit |
 
-Full interaction spec (including mouse): [docs/ui-mockups.md](docs/ui-mockups.md)
+### Sorting (Positions & Orders panels)
+
+| Key | Action |
+|-----|--------|
+| `s` | Cycle sort column |
+| `S` | Toggle sort direction (asc / desc) |
+
+### Orders panel
+
+| Key | Action |
+|-----|--------|
+| `f` | Activate symbol filter (type to filter, Enter/Esc to clear) |
+
+### Account panel — equity chart
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` or `h` / `l` | Move crosshair left / right |
+| `p` | Cycle chart range: 1D → 1W → 1M → YTD |
+| `Esc` | Clear crosshair |
+| Mouse click | Set crosshair to clicked column |
+
+### Mouse
+
+| Action | Effect |
+|--------|--------|
+| Single click | Select row |
+| Double-click row | Open detail modal (same as Enter) |
+| Click outside modal | Dismiss Help / About / Symbol Detail / Position Detail |
+
+Full interaction spec: [docs/ui-mockups.md](docs/ui-mockups.md)
 
 ---
 
@@ -280,18 +312,24 @@ variables for the active environment are used — the opposing set is ignored.
 |---|---|
 | Typed async REST client (`AlpacaClient`) | ✅ |
 | TUI — header, tabs, status bar, braille line charts | ✅ |
-| Account panel with Day P&L, Open P&L, Account # | ✅ |
+| Account panel — equity, buying power, cash, long/short market value | ✅ |
+| Account panel — Day P&L, Open P&L, day-trade count (X/3), PDT flag | ✅ |
+| Equity chart crosshair — keyboard navigation + mouse click | ✅ |
+| Equity chart range toggle: 1D / 1W / 1M / YTD (`p` key) | ✅ |
 | Watchlist panel — Volume, Change%, live search | ✅ |
-| Positions panel with totals footer | ✅ |
-| Orders panel — Open / Filled / Cancelled sub-tabs | ✅ |
+| Positions panel with totals footer and column sorting | ✅ |
+| Position detail modal — OHLCV stats + intraday chart | ✅ |
+| Orders panel — Open / Filled / Cancelled sub-tabs with column sorting | ✅ |
+| Orders panel — symbol filter (`f` key) | ✅ |
 | Order Entry modal with Side, Type, TIF dropdowns (↑/↓) | ✅ |
 | Symbol Detail modal — OHLCV, intraday chart, watchlist toggle | ✅ |
+| Global symbol search modal (Ctrl-F / `/`) | ✅ |
 | Help and About overlays | ✅ |
+| Mouse support — row selection, double-click to open detail, outside-click to dismiss | ✅ |
 | Paper / Live switching (`--paper` / `--live`) | ✅ |
 | `--dry-run` mode — simulate orders without sending to Alpaca | ✅ |
 | Persistent user preferences (TOML config file) | ✅ |
 | Runtime colour theme switching (`T` key) | ✅ |
-| SELL SHORT from Positions panel (`s` key) | ✅ |
 | Header market-session state (PRE-MARKET / OPEN / AFTER-HOURS / CLOSED) | ✅ |
 | Instant UI redraw on terminal resize | ✅ |
 | WebSocket market data + account/trade streaming | ✅ |
@@ -301,7 +339,7 @@ variables for the active environment are used — the opposing set is ignored.
 | Interactive first-run credential prompt | ✅ |
 | Windows, macOS, and Linux support | ✅ |
 | GitHub Actions CI, security audit, Codecov (Linux + Windows), release builds | ✅ |
-| 540 tests (unit + integration) | ✅ |
+| 800 tests (unit + integration) | ✅ |
 
 ---
 
