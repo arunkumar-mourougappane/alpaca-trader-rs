@@ -7,6 +7,41 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.7.0] — 2026-05-21
+
+Adds interactive chart crosshairs, a keyboard shortcut help overlay, global symbol search, equity-range toggling, column sorting, an orders symbol filter, position detail modal, double-click support, and PDT/day-trade account metrics. Extensive documentation overhaul covering architecture, UI mockups, account management design, and library reference. Test count grows from **541 → 800**.
+
+### Added
+
+#### Charts & Account Panel
+- **Equity chart interactive crosshair** (`src/ui/account.rs`, `src/input/`) — keyboard (`←/h`, `→/l`) and mouse-click crosshair with a tooltip showing the date and portfolio value at the selected data point; `Esc` clears it.
+- **Equity date-range toggle** (`src/ui/account.rs`, `src/prefs.rs`) — `p` cycles the equity chart between 1D / 1W / 1M / YTD ranges, each backed by a separate `GET /v2/account/portfolio/history` call.
+- **Symbol detail intraday crosshair** (`src/ui/modals.rs`, `src/input/modal.rs`) — keyboard crosshair inside the Symbol Detail modal mirrors the Account panel crosshair pattern.
+- **PDT flag and day-trade metrics** (`src/types.rs`, `src/ui/account.rs`) — `short_market_value`, `daytrade_count`, and the Pattern Day Trader flag are now fetched and displayed in the Account panel.
+
+#### Navigation & Modals
+- **Keyboard shortcut help overlay** (`src/ui/modals.rs`, `src/input/modal.rs`) — `?` opens a full-screen help modal listing all key bindings by section; any key closes it. (#91)
+- **Global symbol search modal** (`src/app.rs`, `src/input/`) — `Ctrl-F` or `/` (from non-Watchlist tabs) opens a floating search input; `Enter` opens Symbol Detail for the typed ticker. (#95)
+- **Position detail modal** (`src/app.rs`, `src/input/positions.rs`) — `Enter` on a Positions row opens a dedicated `PositionDetail` modal with an intraday chart and P&L summary; `o` launches Order Entry pre-filled with SELL. (#87)
+- **Double-click to open detail** (`src/input/mouse.rs`) — double-clicking a list row opens the same detail modal as `Enter`; clicking outside an open modal dismisses it. (#92)
+
+#### Orders
+- **Symbol filter** (`src/input/orders.rs`, `src/app.rs`) — `f` activates an inline filter bar; type a ticker to narrow the visible rows; `Enter`/`Esc` closes; `F` clears. (#86)
+- **Column sorting** (`src/input/orders.rs`, `src/input/positions.rs`) — `s` cycles the sort column; `S` toggles direction (Asc ↔ Desc) on both the Orders and Positions tables.
+
+### Documentation
+- **`docs/architecture.md`** — technology stack fully corrected (removed stale `apca`/`ratatui-textarea` entries, added all actual crates with versions); directory tree expanded with `src/input/`; Update/View function snippets corrected; data-flow diagram updated with `command_tx` channel.
+- **`docs/ui-mockups.md`** — corrected Orders footer; added Position Detail modal section; fixed Symbol Detail trigger; added per-modal keyboard tables.
+- **`docs/testing.md`** — test count updated 101 → 800; full `src/input/` + `src/ui/` test file layout.
+- **`docs/future-features.md`** — Status column added; 7 issues marked ✅ Implemented.
+- **`docs/library.md`** — new file: full library API reference with 6 usage examples.
+- **`docs/account-management.md`** — new file: design spec for in-app credential entry, multi-profile support, and settings modal (Phases 1–3).
+
+### Changed
+- **About modal** — `A` opens an About modal with version, author, and project info baked in at compile time via `env!` macros.
+
+[0.7.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.6.0...v0.7.0
+
 ## [0.6.0] — 2026-05-19
 
 Adds live WebSocket chart streaming, order fill notifications, a P&L footer in the Positions panel,
@@ -394,6 +429,7 @@ First release. Ships as both an integratable Rust library and a standalone TUI t
 
 ---
 
+[0.6.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.2.0...v0.3.0
