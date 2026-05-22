@@ -352,6 +352,9 @@ pub struct AccountInfo {
     pub cash: String,
     /// Total long market value of all positions, as a dollar string.
     pub long_market_value: String,
+    /// Total short market value of all positions, as a dollar string.
+    #[serde(default)]
+    pub short_market_value: String,
     /// Number of day trades made in the rolling 5-business-day window.
     pub daytrade_count: u32,
     /// Whether the account has been flagged as a pattern day trader.

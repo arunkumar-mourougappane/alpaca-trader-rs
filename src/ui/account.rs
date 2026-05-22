@@ -16,7 +16,7 @@ use crate::ui::theme::ThemeColors;
 pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(8), Constraint::Min(4)])
+        .constraints([Constraint::Length(10), Constraint::Min(4)])
         .split(area);
 
     app.hit_areas.equity_chart_area = chunks[1];
@@ -34,6 +34,7 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
         let buying_power = format!("${}", format_dollar(&acc.buying_power));
         let cash = format!("${}", format_dollar(&acc.cash));
         let long_val = format!("${}", format_dollar(&acc.long_market_value));
+        let short_val = format!("${}", format_dollar(&acc.short_market_value));
 
         // Day P&L
         let day_pl_str = match compute_day_pl(&acc.equity, &acc.last_equity) {
@@ -52,6 +53,22 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
             "—".into()
         } else {
             acc.account_number.clone()
+        };
+
+        // Day trade counter: "X / 3", turns red at limit
+        let dt_str = format_daytrade_count(acc.daytrade_count);
+        let dt_style = if acc.daytrade_count >= 3 {
+            c.negative_style()
+        } else {
+            c.bold_style()
+        };
+
+        // PDT flag: Yes (red) / No (normal)
+        let pdt_str = if acc.pattern_day_trader { "Yes" } else { "No" };
+        let pdt_style = if acc.pattern_day_trader {
+            c.negative_style()
+        } else {
+            c.bold_style()
         };
 
         let lines = vec![
@@ -82,6 +99,17 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
                 spacer(),
                 label_t("  Status     ", &c),
                 value(&acc.status),
+            ]),
+            Line::from(vec![
+                label_t("  Short Mkt Value ", &c),
+                value(&short_val),
+                spacer(),
+                label_t("  Day Trades ", &c),
+                Span::styled(dt_str, dt_style),
+            ]),
+            Line::from(vec![
+                label_t("  PDT Flag        ", &c),
+                Span::styled(pdt_str, pdt_style),
             ]),
         ];
 
@@ -304,6 +332,11 @@ pub fn format_pl_amount(pl: f64) -> String {
 fn format_day_pl(pl: f64, pct: f64) -> String {
     let sign = if pl >= 0.0 { "+" } else { "-" };
     format!("{}${:.2} ({}{:.2}%)", sign, pl.abs(), sign, pct.abs())
+}
+
+/// Format a day-trade count as `"X / 3"`.
+pub fn format_daytrade_count(count: u32) -> String {
+    format!("{} / 3", count)
 }
 
 fn label_t(s: &str, c: &ThemeColors) -> Span<'static> {
@@ -902,5 +935,174 @@ mod tests {
         history[0] = 100_000_000u64; // first point is much higher
         let output = render_equity_chart_cursor_to_string(history, 0);
         assert!(!output.is_empty());
+    }
+
+    // ── format_daytrade_count ─────────────────────────────────────────────────
+
+    #[test]
+    fn format_daytrade_count_zero() {
+        assert_eq!(format_daytrade_count(0), "0 / 3");
+    }
+
+    #[test]
+    fn format_daytrade_count_two() {
+        assert_eq!(format_daytrade_count(2), "2 / 3");
+    }
+
+    #[test]
+    fn format_daytrade_count_at_limit() {
+        assert_eq!(format_daytrade_count(3), "3 / 3");
+    }
+
+    #[test]
+    fn format_daytrade_count_above_limit() {
+        assert_eq!(format_daytrade_count(5), "5 / 3");
+    }
+
+    // ── render_summary with new fields ───────────────────────────────────────
+
+    fn render_summary_to_string(account: crate::types::AccountInfo) -> String {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(100, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.account = Some(account);
+        terminal
+            .draw(|frame| {
+                render_summary(frame, frame.area(), &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_summary_shows_short_market_value() {
+        let acc = crate::types::AccountInfo {
+            short_market_value: "5000.00".into(),
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("Short Mkt Value"),
+            "should show Short Mkt Value label, got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("5000.00"),
+            "should show short market value amount, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_summary_daytrade_count_normal() {
+        let acc = crate::types::AccountInfo {
+            daytrade_count: 1,
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("1 / 3"),
+            "should show '1 / 3' for daytrade count, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_summary_daytrade_count_at_limit() {
+        let acc = crate::types::AccountInfo {
+            daytrade_count: 3,
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("3 / 3"),
+            "should show '3 / 3' warning, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_summary_pdt_flag_no() {
+        let acc = crate::types::AccountInfo {
+            pattern_day_trader: false,
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("No"),
+            "should show 'No' for PDT flag, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_summary_pdt_flag_yes() {
+        let acc = crate::types::AccountInfo {
+            pattern_day_trader: true,
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("Yes"),
+            "should show 'Yes' for PDT flag, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_summary_shows_loading_when_no_account() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(100, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = crate::app::test_helpers::make_test_app();
+        // app.account is None by default
+        terminal
+            .draw(|frame| {
+                render_summary(frame, frame.area(), &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        let output: String = (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("Loading"),
+            "should show loading message when no account, got:\n{}",
+            output
+        );
     }
 }
