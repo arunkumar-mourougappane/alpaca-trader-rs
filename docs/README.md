@@ -68,10 +68,11 @@ The TUI header will show **[PAPER]** to confirm you are in simulation mode.
 
 | Document | Description |
 |---|---|
+| [library.md](library.md) | Full library API reference and usage examples |
 | [credentials-setup.md](credentials-setup.md) | How to get and configure Alpaca API keys for paper and live trading |
 | [architecture.md](architecture.md) | System design, data flow, crate choices, and module layout |
 | [api-research.md](api-research.md) | Live API test results: watchlist endpoints, response shapes, auth notes |
-| [ui-mockups.md](ui-mockups.md) | ASCII mockups for all panels and modals, keyboard/mouse interaction spec, ratatui widget mapping |
+| [ui-mockups.md](ui-mockups.md) | ASCII mockups for all panels and modals, keyboard/mouse interaction spec |
 | [testing.md](testing.md) | Testing strategy: mock patterns, dev-dependency rationale, full test case inventory per module |
 | [github-actions.md](github-actions.md) | GitHub Actions reference: CI, security, coverage, releases, matrix builds, caching |
 | [phase2-research.md](phase2-research.md) | Phase 2 implementation plan: WebSocket streaming, mutation operations, command channel pattern |
@@ -82,25 +83,6 @@ The TUI header will show **[PAPER]** to confirm you are in simulation mode.
 ---
 
 ## Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `1` / `2` / `3` / `4` | Switch to Account / Watchlist / Positions / Orders |
-| `Tab` / `Shift-Tab` | Cycle panels forward / backward |
-| `j` / `k` or `↑` / `↓` | Navigate rows |
-| `g` / `G` | Jump to first / last row |
-| `Enter` | Open symbol detail modal |
-| `o` | New order (pre-fills selected symbol) |
-| `s` | SELL SHORT order entry (Positions panel) |
-| `c` | Cancel selected order |
-| `a` | Add symbol to watchlist |
-| `d` | Remove symbol from watchlist |
-| `/` | Search / filter |
-| `r` | Force refresh |
-| `?` | Show help overlay |
-| `A` | About overlay |
-| `Esc` | Close modal |
-| `q` / `Ctrl-C` | Quit |
 
 See [ui-mockups.md](ui-mockups.md) for the full per-panel and per-modal keyboard and mouse interaction spec.
 
