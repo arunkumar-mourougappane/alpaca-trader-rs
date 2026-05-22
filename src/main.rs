@@ -232,6 +232,19 @@ async fn main() -> anyhow::Result<()> {
             Some(event) => update(&mut app, event),
         }
 
+        // Drain any additional events that queued up while we were rendering.
+        // During market hours the WebSocket stream delivers quote updates at
+        // high frequency; without this drain each quote would trigger its own
+        // full render, flooding the terminal and starving keyboard input.
+        // Processing them all in one pass before the next draw keeps the render
+        // rate independent of the quote rate.
+        while let Ok(event) = rx.try_recv() {
+            update(&mut app, event);
+            if app.should_quit {
+                break;
+            }
+        }
+
         // If the update requested an immediate redraw (e.g. terminal resize),
         // draw again before blocking for the next event so the layout adapts
         // right away instead of waiting for the next periodic tick.
