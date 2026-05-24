@@ -84,8 +84,13 @@ async fn run_inner(
                     let _ = tx.send(Event::StreamDisconnected(StreamKind::Market)).await;
                     return;
                 }
-                warn!(error = %e, backoff_ms = backoff.as_millis(), "market stream disconnected, reconnecting");
-                let _ = tx.send(Event::StreamDisconnected(StreamKind::Market)).await;
+                warn!(error = %e, backoff_ms = backoff.as_millis(), attempt, "market stream disconnected, reconnecting");
+                let _ = tx
+                    .send(Event::StreamReconnecting {
+                        kind: StreamKind::Market,
+                        attempt,
+                    })
+                    .await;
                 tokio::select! {
                     _ = cancel.cancelled() => return,
                     _ = tokio::time::sleep(backoff) => {}
@@ -568,13 +573,16 @@ mod integration {
             .await;
         });
 
-        let mut saw_disconnect = false;
+        let mut saw_reconnecting = false;
         let mut saw_quote = false;
         tokio::time::timeout(Duration::from_secs(5), async {
-            while !saw_disconnect || !saw_quote {
+            while !saw_reconnecting || !saw_quote {
                 match rx.recv().await {
-                    Some(Event::StreamDisconnected(StreamKind::Market)) => {
-                        saw_disconnect = true;
+                    Some(Event::StreamReconnecting {
+                        kind: StreamKind::Market,
+                        attempt: 1,
+                    }) => {
+                        saw_reconnecting = true;
                     }
                     Some(Event::MarketQuote(q)) if q.symbol == "TSLA" => {
                         saw_quote = true;
@@ -585,12 +593,12 @@ mod integration {
             }
         })
         .await
-        .expect("should see disconnect + reconnect quote within 5s");
+        .expect("should see StreamReconnecting + reconnect quote within 5s");
 
         cancel.cancel();
         assert!(
-            saw_disconnect,
-            "should emit StreamDisconnected on first close"
+            saw_reconnecting,
+            "should emit StreamReconnecting on first close"
         );
         assert!(saw_quote, "should emit MarketQuote after reconnect");
     }

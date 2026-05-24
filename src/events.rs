@@ -50,7 +50,17 @@ pub enum Event {
     },
     /// A WebSocket stream successfully (re)connected.
     StreamConnected(StreamKind),
-    /// A WebSocket stream disconnected; reconnection will be attempted.
+    /// A WebSocket stream disconnected and is waiting to retry.
+    ///
+    /// `attempt` is the 1-based reconnect attempt number. The UI uses this to
+    /// display a "reconnecting… (N)" indicator while back-off is in progress.
+    StreamReconnecting {
+        /// Which stream is reconnecting.
+        kind: StreamKind,
+        /// 1-based attempt number (1 = first retry after the initial disconnect).
+        attempt: u32,
+    },
+    /// A WebSocket stream disconnected permanently (max reconnect attempts reached).
     StreamDisconnected(StreamKind),
     /// Portfolio equity history loaded at startup for the sparkline.
     PortfolioHistoryLoaded(Vec<f64>),

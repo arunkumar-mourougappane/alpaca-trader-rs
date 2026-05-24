@@ -77,12 +77,38 @@ pub fn update(app: &mut App, event: Event) {
         }
         Event::StatusMsg(msg) => app.push_status(StatusMessage::persistent(msg)),
         Event::StreamConnected(kind) => match kind {
-            StreamKind::Market => app.market_stream_ok = true,
-            StreamKind::Account => app.account_stream_ok = true,
+            StreamKind::Market => {
+                app.market_stream_ok = true;
+                app.market_stream_reconnecting = false;
+                app.market_reconnect_attempt = 0;
+            }
+            StreamKind::Account => {
+                app.account_stream_ok = true;
+                app.account_stream_reconnecting = false;
+                app.account_reconnect_attempt = 0;
+            }
+        },
+        Event::StreamReconnecting { kind, attempt } => match kind {
+            StreamKind::Market => {
+                app.market_stream_ok = false;
+                app.market_stream_reconnecting = true;
+                app.market_reconnect_attempt = attempt;
+            }
+            StreamKind::Account => {
+                app.account_stream_ok = false;
+                app.account_stream_reconnecting = true;
+                app.account_reconnect_attempt = attempt;
+            }
         },
         Event::StreamDisconnected(kind) => match kind {
-            StreamKind::Market => app.market_stream_ok = false,
-            StreamKind::Account => app.account_stream_ok = false,
+            StreamKind::Market => {
+                app.market_stream_ok = false;
+                app.market_stream_reconnecting = false;
+            }
+            StreamKind::Account => {
+                app.account_stream_ok = false;
+                app.account_stream_reconnecting = false;
+            }
         },
         Event::PortfolioHistoryLoaded(data) => {
             // Convert dollar values → cents (u64) to match equity_history format.
@@ -567,6 +593,121 @@ mod tests {
         update(&mut app, Event::StreamDisconnected(StreamKind::Market));
         assert!(!app.market_stream_ok);
         assert!(app.account_stream_ok);
+    }
+
+    // ── StreamReconnecting ────────────────────────────────────────────────────
+
+    #[test]
+    fn stream_reconnecting_market_sets_reconnecting_state() {
+        let mut app = make_test_app();
+        update(
+            &mut app,
+            Event::StreamReconnecting {
+                kind: StreamKind::Market,
+                attempt: 1,
+            },
+        );
+        assert!(
+            !app.market_stream_ok,
+            "stream should not be ok while reconnecting"
+        );
+        assert!(
+            app.market_stream_reconnecting,
+            "reconnecting flag should be set"
+        );
+        assert_eq!(app.market_reconnect_attempt, 1);
+        // account stream must remain unaffected
+        assert!(!app.account_stream_reconnecting);
+        assert_eq!(app.account_reconnect_attempt, 0);
+    }
+
+    #[test]
+    fn stream_reconnecting_account_sets_reconnecting_state() {
+        let mut app = make_test_app();
+        update(
+            &mut app,
+            Event::StreamReconnecting {
+                kind: StreamKind::Account,
+                attempt: 2,
+            },
+        );
+        assert!(!app.account_stream_ok);
+        assert!(app.account_stream_reconnecting);
+        assert_eq!(app.account_reconnect_attempt, 2);
+        // market stream must remain unaffected
+        assert!(!app.market_stream_reconnecting);
+        assert_eq!(app.market_reconnect_attempt, 0);
+    }
+
+    #[test]
+    fn stream_reconnecting_increments_attempt_counter() {
+        let mut app = make_test_app();
+        for attempt in 1..=3 {
+            update(
+                &mut app,
+                Event::StreamReconnecting {
+                    kind: StreamKind::Market,
+                    attempt,
+                },
+            );
+            assert_eq!(app.market_reconnect_attempt, attempt);
+        }
+    }
+
+    #[test]
+    fn stream_connected_clears_reconnecting_state_for_market() {
+        let mut app = make_test_app();
+        app.market_stream_reconnecting = true;
+        app.market_reconnect_attempt = 3;
+        update(&mut app, Event::StreamConnected(StreamKind::Market));
+        assert!(app.market_stream_ok);
+        assert!(
+            !app.market_stream_reconnecting,
+            "reconnecting flag should be cleared on connect"
+        );
+        assert_eq!(
+            app.market_reconnect_attempt, 0,
+            "attempt counter should reset on connect"
+        );
+    }
+
+    #[test]
+    fn stream_connected_clears_reconnecting_state_for_account() {
+        let mut app = make_test_app();
+        app.account_stream_reconnecting = true;
+        app.account_reconnect_attempt = 5;
+        update(&mut app, Event::StreamConnected(StreamKind::Account));
+        assert!(app.account_stream_ok);
+        assert!(!app.account_stream_reconnecting);
+        assert_eq!(app.account_reconnect_attempt, 0);
+    }
+
+    #[test]
+    fn stream_disconnected_clears_reconnecting_flag_for_market() {
+        let mut app = make_test_app();
+        app.market_stream_ok = true;
+        app.market_stream_reconnecting = true;
+        app.market_reconnect_attempt = 3;
+        update(&mut app, Event::StreamDisconnected(StreamKind::Market));
+        assert!(!app.market_stream_ok);
+        assert!(
+            !app.market_stream_reconnecting,
+            "permanent disconnect should clear reconnecting flag"
+        );
+        // attempt counter is intentionally kept so the UI can show "OFFLINE"
+        assert_eq!(app.market_reconnect_attempt, 3);
+    }
+
+    #[test]
+    fn stream_disconnected_clears_reconnecting_flag_for_account() {
+        let mut app = make_test_app();
+        app.account_stream_ok = true;
+        app.account_stream_reconnecting = true;
+        app.account_reconnect_attempt = 2;
+        update(&mut app, Event::StreamDisconnected(StreamKind::Account));
+        assert!(!app.account_stream_ok);
+        assert!(!app.account_stream_reconnecting);
+        assert_eq!(app.account_reconnect_attempt, 2);
     }
 
     #[test]
