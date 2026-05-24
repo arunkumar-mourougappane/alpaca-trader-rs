@@ -77,16 +77,41 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     if !app.market_stream_ok || !app.account_stream_ok {
-        let which = match (app.market_stream_ok, app.account_stream_ok) {
-            (false, false) => " ⚠ STREAM",
-            (false, true) => " ⚠ MARKET",
-            (true, false) => " ⚠ ACCOUNT",
-            _ => unreachable!(),
-        };
-        spans.push(Span::styled(
-            which,
-            Style::default().fg(c.neutral).add_modifier(Modifier::BOLD),
-        ));
+        // Build separate indicators for each stream so per-stream state is clear.
+        for (ok, reconnecting, attempt, label) in [
+            (
+                app.market_stream_ok,
+                app.market_stream_reconnecting,
+                app.market_reconnect_attempt,
+                "MARKET",
+            ),
+            (
+                app.account_stream_ok,
+                app.account_stream_reconnecting,
+                app.account_reconnect_attempt,
+                "ACCOUNT",
+            ),
+        ] {
+            if ok {
+                continue;
+            }
+            let (text, color) = if reconnecting {
+                (
+                    format!(" ⟳ {} reconnecting… ({})", label, attempt),
+                    c.neutral,
+                )
+            } else if attempt > 0 {
+                // Max attempts exhausted — stream is permanently offline.
+                (format!(" ✗ {} OFFLINE", label), c.negative)
+            } else {
+                // Still on the initial connect attempt.
+                (format!(" ⚠ {}", label), c.neutral)
+            };
+            spans.push(Span::styled(
+                text,
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ));
+        }
     }
 
     let line = Line::from(spans);
@@ -336,6 +361,160 @@ mod tests {
         assert!(
             !output.contains("Updated"),
             "header must not show 'Updated' when last_updated is None"
+        );
+    }
+
+    // ── Stream status indicators ──────────────────────────────────────────────
+
+    #[test]
+    fn header_shows_no_stream_indicator_when_both_connected() {
+        let mut app = make_test_app();
+        app.market_stream_ok = true;
+        app.account_stream_ok = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            !output.contains("MARKET") && !output.contains("ACCOUNT") && !output.contains("STREAM"),
+            "no stream indicator when both streams are connected; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_market_initial_loading_indicator() {
+        let mut app = make_test_app();
+        // Initial state: not ok, not reconnecting, attempt=0
+        app.market_stream_ok = false;
+        app.market_stream_reconnecting = false;
+        app.market_reconnect_attempt = 0;
+        app.account_stream_ok = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("MARKET"),
+            "header should show MARKET indicator during initial loading; got: {output:?}"
+        );
+        assert!(
+            !output.contains("reconnecting"),
+            "should not say reconnecting during initial load; got: {output:?}"
+        );
+        assert!(
+            !output.contains("OFFLINE"),
+            "should not say OFFLINE during initial load; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_market_reconnecting_indicator_with_attempt() {
+        let mut app = make_test_app();
+        app.market_stream_ok = false;
+        app.market_stream_reconnecting = true;
+        app.market_reconnect_attempt = 2;
+        app.account_stream_ok = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("reconnecting"),
+            "header should show reconnecting label; got: {output:?}"
+        );
+        assert!(
+            output.contains('2'),
+            "header should include attempt count; got: {output:?}"
+        );
+        assert!(
+            !output.contains("OFFLINE"),
+            "should not show OFFLINE while reconnecting; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_account_reconnecting_indicator_with_attempt() {
+        let mut app = make_test_app();
+        app.account_stream_ok = false;
+        app.account_stream_reconnecting = true;
+        app.account_reconnect_attempt = 3;
+        app.market_stream_ok = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("reconnecting"),
+            "header should show reconnecting label for account; got: {output:?}"
+        );
+        assert!(
+            output.contains('3'),
+            "header should include attempt count; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_market_offline_after_max_attempts() {
+        let mut app = make_test_app();
+        // Permanent offline: not ok, not reconnecting, but attempt > 0
+        app.market_stream_ok = false;
+        app.market_stream_reconnecting = false;
+        app.market_reconnect_attempt = 5;
+        app.account_stream_ok = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("OFFLINE"),
+            "header should show OFFLINE after exhausting reconnect attempts; got: {output:?}"
+        );
+        assert!(
+            !output.contains("reconnecting"),
+            "should not show reconnecting when permanently offline; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_account_offline_after_max_attempts() {
+        let mut app = make_test_app();
+        app.account_stream_ok = false;
+        app.account_stream_reconnecting = false;
+        app.account_reconnect_attempt = 3;
+        app.market_stream_ok = true;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("OFFLINE"),
+            "header should show OFFLINE for account stream; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_both_streams_reconnecting_independently() {
+        let mut app = make_test_app();
+        app.market_stream_ok = false;
+        app.market_stream_reconnecting = true;
+        app.market_reconnect_attempt = 1;
+        app.account_stream_ok = false;
+        app.account_stream_reconnecting = true;
+        app.account_reconnect_attempt = 2;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("MARKET"),
+            "should show MARKET indicator; got: {output:?}"
+        );
+        assert!(
+            output.contains("ACCOUNT"),
+            "should show ACCOUNT indicator; got: {output:?}"
+        );
+        assert!(
+            output.contains("reconnecting"),
+            "should show reconnecting label; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn header_shows_both_streams_offline() {
+        let mut app = make_test_app();
+        app.market_stream_ok = false;
+        app.market_stream_reconnecting = false;
+        app.market_reconnect_attempt = 3;
+        app.account_stream_ok = false;
+        app.account_stream_reconnecting = false;
+        app.account_reconnect_attempt = 3;
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("MARKET"),
+            "should show MARKET OFFLINE; got: {output:?}"
+        );
+        assert!(
+            output.contains("ACCOUNT"),
+            "should show ACCOUNT OFFLINE; got: {output:?}"
         );
     }
 }

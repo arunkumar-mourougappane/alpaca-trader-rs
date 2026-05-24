@@ -79,9 +79,12 @@ async fn run_inner(
                         .await;
                     return;
                 }
-                warn!(error = %e, backoff_ms = backoff.as_millis(), "account stream disconnected, reconnecting");
+                warn!(error = %e, backoff_ms = backoff.as_millis(), attempt, "account stream disconnected, reconnecting");
                 let _ = tx
-                    .send(Event::StreamDisconnected(StreamKind::Account))
+                    .send(Event::StreamReconnecting {
+                        kind: StreamKind::Account,
+                        attempt,
+                    })
                     .await;
                 tokio::select! {
                     _ = cancel.cancelled() => return,
@@ -455,13 +458,16 @@ mod integration {
             run_inner(tx, cancel2, test_config(), &url2, AppPrefs::default()).await;
         });
 
-        let mut saw_disconnect = false;
+        let mut saw_reconnecting = false;
         let mut saw_trade = false;
         tokio::time::timeout(Duration::from_secs(5), async {
-            while !saw_disconnect || !saw_trade {
+            while !saw_reconnecting || !saw_trade {
                 match rx.recv().await {
-                    Some(Event::StreamDisconnected(StreamKind::Account)) => {
-                        saw_disconnect = true;
+                    Some(Event::StreamReconnecting {
+                        kind: StreamKind::Account,
+                        attempt: 1,
+                    }) => {
+                        saw_reconnecting = true;
                     }
                     Some(Event::TradeUpdate { order: o, .. }) if o.symbol == "AAPL" => {
                         saw_trade = true;
@@ -472,12 +478,12 @@ mod integration {
             }
         })
         .await
-        .expect("should see disconnect + reconnect trade update within 5s");
+        .expect("should see StreamReconnecting + reconnect trade update within 5s");
 
         cancel.cancel();
         assert!(
-            saw_disconnect,
-            "should emit StreamDisconnected on first close"
+            saw_reconnecting,
+            "should emit StreamReconnecting on first close"
         );
         assert!(saw_trade, "should emit TradeUpdate after reconnect");
     }

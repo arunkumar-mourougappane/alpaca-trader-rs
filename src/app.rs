@@ -571,6 +571,20 @@ pub struct App {
     pub market_stream_ok: bool,
     /// `true` while the account WebSocket is connected and authenticated.
     pub account_stream_ok: bool,
+    /// `true` while the market-data stream is in a reconnect back-off window.
+    pub market_stream_reconnecting: bool,
+    /// `true` while the account stream is in a reconnect back-off window.
+    pub account_stream_reconnecting: bool,
+    /// 1-based reconnect attempt counter for the market-data stream.
+    ///
+    /// Reset to `0` when the stream connects successfully. Non-zero when
+    /// `!market_stream_ok`; used to distinguish "initial loading" from
+    /// "permanently offline after exhausting max attempts".
+    pub market_reconnect_attempt: u32,
+    /// 1-based reconnect attempt counter for the account stream.
+    ///
+    /// See `market_reconnect_attempt` for semantics.
+    pub account_reconnect_attempt: u32,
 
     /// Interactive element positions from the last rendered frame.
     pub hit_areas: HitAreas,
@@ -676,6 +690,10 @@ impl App {
             spinner_tick: 0,
             market_stream_ok: false,
             account_stream_ok: false,
+            market_stream_reconnecting: false,
+            account_stream_reconnecting: false,
+            market_reconnect_attempt: 0,
+            account_reconnect_attempt: 0,
             hit_areas: HitAreas::default(),
             last_click: None,
             pending_g_at: None,
