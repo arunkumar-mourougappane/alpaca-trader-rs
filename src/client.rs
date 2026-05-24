@@ -6,8 +6,8 @@ use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::config::{AlpacaConfig, AlpacaEnv};
 use crate::types::{
-    AccountInfo, BarsResponse, MarketClock, MinuteBar, Order, OrderRequest, PortfolioHistory,
-    Position, Snapshot, Watchlist, WatchlistSummary,
+    AccountInfo, Asset, BarsResponse, MarketClock, MinuteBar, Order, OrderRequest,
+    PortfolioHistory, Position, Snapshot, Watchlist, WatchlistSummary,
 };
 
 /// Async HTTP client for the Alpaca Markets REST API.
@@ -222,6 +222,66 @@ impl AlpacaClient {
             .json::<Watchlist>()
             .await
             .context("DELETE /watchlists/{id}/{symbol} parse failed")
+    }
+
+    /// Fetch a single asset by symbol or asset ID (`GET /assets/{symbol_or_id}`).
+    ///
+    /// Returns full asset details including tradability and fractionability flags.
+    pub async fn get_asset(&self, symbol: &str) -> Result<Asset> {
+        self.http
+            .get(self.url(&format!("/assets/{}", symbol)))
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .context("GET /assets/{symbol} request failed")?
+            .json::<Asset>()
+            .await
+            .context("GET /assets/{symbol} parse failed")
+    }
+
+    /// Replace the entire contents of a watchlist (`PUT /watchlists/{id}`).
+    ///
+    /// All existing symbols are replaced with `symbols`. To rename the watchlist
+    /// at the same time, pass `name`; pass `None` to keep the existing name.
+    ///
+    /// Returns the updated [`Watchlist`].
+    pub async fn replace_watchlist(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        symbols: &[&str],
+    ) -> Result<Watchlist> {
+        let mut body = serde_json::json!({ "symbols": symbols });
+        if let Some(n) = name {
+            body["name"] = serde_json::Value::String(n.to_owned());
+        }
+        self.http
+            .put(self.url(&format!("/watchlists/{}", id)))
+            .headers(self.auth_headers()?)
+            .json(&body)
+            .send()
+            .await
+            .context("PUT /watchlists/{id} request failed")?
+            .json::<Watchlist>()
+            .await
+            .context("PUT /watchlists/{id} parse failed")
+    }
+
+    /// Look up a watchlist by name (`GET /watchlists:by_name?name={name}`).
+    ///
+    /// Useful when only the human-readable name is known and the UUID is not
+    /// cached locally. Returns the full [`Watchlist`] including its assets.
+    pub async fn get_watchlist_by_name(&self, name: &str) -> Result<Watchlist> {
+        self.http
+            .get(self.url("/watchlists:by_name"))
+            .query(&[("name", name)])
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .context("GET /watchlists:by_name request failed")?
+            .json::<Watchlist>()
+            .await
+            .context("GET /watchlists:by_name parse failed")
     }
 
     /// Fetch portfolio equity history (`GET /account/portfolio/history`).
@@ -589,6 +649,126 @@ mod tests {
         let client = AlpacaClient::new(live_config(server.uri()));
         let wl = client.remove_from_watchlist("wl-1", "AAPL").await.unwrap();
         assert!(wl.assets.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_asset_parses_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/assets/AAPL"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "asset-1", "symbol": "AAPL", "name": "Apple Inc.",
+                "exchange": "NASDAQ", "class": "us_equity",
+                "tradable": true, "shortable": true, "fractionable": true,
+                "easy_to_borrow": true
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let asset = client.get_asset("AAPL").await.unwrap();
+        assert_eq!(asset.symbol, "AAPL");
+        assert_eq!(asset.name, "Apple Inc.");
+        assert!(asset.tradable);
+        assert!(asset.fractionable);
+    }
+
+    #[tokio::test]
+    async fn get_asset_500_returns_err() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/assets/UNKNOWN"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let result = client.get_asset("UNKNOWN").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn replace_watchlist_puts_symbols_and_returns_watchlist() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/watchlists/wl-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-1", "name": "My List",
+                "assets": [{
+                    "id": "a-1", "symbol": "TSLA", "name": "Tesla Inc.",
+                    "exchange": "NASDAQ", "class": "us_equity",
+                    "tradable": true, "shortable": false, "fractionable": true
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let wl = client
+            .replace_watchlist("wl-1", None, &["TSLA"])
+            .await
+            .unwrap();
+        assert_eq!(wl.assets.len(), 1);
+        assert_eq!(wl.assets[0].symbol, "TSLA");
+    }
+
+    #[tokio::test]
+    async fn replace_watchlist_with_name_sends_name_field() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/watchlists/wl-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-1", "name": "Renamed",
+                "assets": []
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let wl = client
+            .replace_watchlist("wl-1", Some("Renamed"), &[])
+            .await
+            .unwrap();
+        assert_eq!(wl.name, "Renamed");
+        assert!(wl.assets.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_watchlist_by_name_returns_full_watchlist() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists:by_name"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-42", "name": "Tech Stocks",
+                "assets": [{
+                    "id": "a-2", "symbol": "MSFT", "name": "Microsoft Corp.",
+                    "exchange": "NASDAQ", "class": "us_equity",
+                    "tradable": true, "shortable": true, "fractionable": true
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let wl = client.get_watchlist_by_name("Tech Stocks").await.unwrap();
+        assert_eq!(wl.id, "wl-42");
+        assert_eq!(wl.name, "Tech Stocks");
+        assert_eq!(wl.assets.len(), 1);
+        assert_eq!(wl.assets[0].symbol, "MSFT");
+    }
+
+    #[tokio::test]
+    async fn get_watchlist_by_name_not_found_returns_err() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists:by_name"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(live_config(server.uri()));
+        let result = client.get_watchlist_by_name("Nonexistent").await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
