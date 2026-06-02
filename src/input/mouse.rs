@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::app::{App, Modal, OrderField, OrdersSubTab, Tab};
+use crate::app::{App, FullOrderType, Modal, OrderField, OrdersSubTab, Tab};
 
 /// Maximum interval between two clicks on the same row to be considered a double-click.
 const DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(400);
@@ -218,8 +218,18 @@ fn handle_modal_mouse(app: &mut App, col: u16, row: u16) {
             OrderField::OrderType => {
                 if let Some(Modal::OrderEntry(ref mut state)) = app.modal {
                     state.focused_field = OrderField::OrderType;
-                    // Left half → LIMIT, right half → MARKET.
-                    state.market_order = col >= rect.x + rect.width / 2;
+                    // Map click column across 5 equal sections →
+                    // MARKET | LIMIT | STOP | STOP-LMT | TRAIL
+                    let w = rect.width.max(5) as usize;
+                    let offset = col.saturating_sub(rect.x) as usize;
+                    let section = (offset * 5 / w).min(4);
+                    state.order_type = match section {
+                        0 => FullOrderType::Market,
+                        1 => FullOrderType::Limit,
+                        2 => FullOrderType::Stop,
+                        3 => FullOrderType::StopLimit,
+                        _ => FullOrderType::TrailingStop,
+                    };
                 }
             }
             other => {
@@ -582,5 +592,70 @@ mod tests {
         app.hit_areas.list_data_start_y = 4;
         super::handle_mouse(&mut app, left_click(10, 4));
         assert_eq!(app.orders_state.selected(), Some(0));
+    }
+
+    // ── 5-way OrderType click tests ───────────────────────────────────────────
+
+    fn order_entry_with_order_type_hit_area(rect: Rect) -> crate::app::App {
+        let mut app = make_test_app();
+        let state = crate::app::OrderEntryState::new("AAPL".into());
+        app.modal = Some(Modal::OrderEntry(state));
+        app.hit_areas.modal_fields = vec![(crate::app::OrderField::OrderType, rect)];
+        app
+    }
+
+    #[test]
+    fn click_order_type_section_0_selects_market() {
+        use crate::app::FullOrderType;
+        // rect x=0, width=50; offset 0 → section 0*5/50=0 → Market
+        let mut app = order_entry_with_order_type_hit_area(Rect::new(0, 5, 50, 1));
+        super::handle_mouse(&mut app, left_click(0, 5));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::Market)
+        );
+    }
+
+    #[test]
+    fn click_order_type_section_1_selects_limit() {
+        use crate::app::FullOrderType;
+        // rect x=0, width=50; offset 10 → section 10*5/50=1 → Limit
+        let mut app = order_entry_with_order_type_hit_area(Rect::new(0, 5, 50, 1));
+        super::handle_mouse(&mut app, left_click(10, 5));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::Limit)
+        );
+    }
+
+    #[test]
+    fn click_order_type_section_2_selects_stop() {
+        use crate::app::FullOrderType;
+        // rect x=0, width=50; offset 20 → section 20*5/50=2 → Stop
+        let mut app = order_entry_with_order_type_hit_area(Rect::new(0, 5, 50, 1));
+        super::handle_mouse(&mut app, left_click(20, 5));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::Stop)
+        );
+    }
+
+    #[test]
+    fn click_order_type_section_3_selects_stop_limit() {
+        use crate::app::FullOrderType;
+        // rect x=0, width=50; offset 30 → section 30*5/50=3 → StopLimit
+        let mut app = order_entry_with_order_type_hit_area(Rect::new(0, 5, 50, 1));
+        super::handle_mouse(&mut app, left_click(30, 5));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::StopLimit)
+        );
+    }
+
+    #[test]
+    fn click_order_type_section_4_selects_trailing_stop() {
+        use crate::app::FullOrderType;
+        // rect x=0, width=50; offset 40 → section 40*5/50=4 → TrailingStop
+        let mut app = order_entry_with_order_type_hit_area(Rect::new(0, 5, 50, 1));
+        super::handle_mouse(&mut app, left_click(40, 5));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::TrailingStop)
+        );
     }
 }

@@ -11,14 +11,22 @@ pub enum Command {
         symbol: String,
         /// Order direction: `"buy"` or `"sell"`.
         side: String,
-        /// Execution type: `"market"` or `"limit"`.
+        /// Execution type: `"market"`, `"limit"`, `"stop"`, `"stop_limit"`, `"trailing_stop"`.
         order_type: String,
         /// Whole-share quantity; `None` when using notional.
         qty: Option<String>,
-        /// Limit price for limit orders; `None` for market orders.
-        price: Option<String>,
+        /// Limit price for limit and stop-limit orders; `None` otherwise.
+        limit_price: Option<String>,
+        /// Stop trigger price for stop and stop-limit orders; `None` otherwise.
+        stop_price: Option<String>,
+        /// Dollar trail amount for trailing-stop orders; `None` otherwise.
+        trail_price: Option<String>,
+        /// Percentage trail for trailing-stop orders; `None` otherwise.
+        trail_percent: Option<String>,
         /// Time-in-force: `"day"` or `"gtc"`.
         time_in_force: String,
+        /// Allow execution during extended hours; only valid for limit/day orders.
+        extended_hours: bool,
     },
     /// Cancel an open order identified by its Alpaca order ID.
     CancelOrder(String),

@@ -1325,7 +1325,7 @@ mod tests {
 
     #[test]
     fn order_entry_submit_market_order_omits_price() {
-        use crate::app::{OrderEntryState, OrderField};
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
         use crate::types::AccountInfo;
         let (mut app, mut cmd_rx) = app_with_rx();
         app.account = Some(AccountInfo {
@@ -1334,7 +1334,7 @@ mod tests {
         });
         let mut state = OrderEntryState::new("TSLA".into());
         state.focused_field = OrderField::Submit;
-        state.market_order = true;
+        state.order_type = FullOrderType::Market;
         state.qty_input = "5".into();
         app.modal = Some(Modal::OrderEntry(state));
 
@@ -1342,7 +1342,7 @@ mod tests {
 
         let cmd = cmd_rx.try_recv().expect("command should be sent");
         assert!(
-            matches!(cmd, Command::SubmitOrder { order_type, price: None, .. }
+            matches!(cmd, Command::SubmitOrder { order_type, limit_price: None, .. }
                 if order_type == "market"),
             "market order should have no price"
         );
@@ -1901,10 +1901,10 @@ mod tests {
     // ── Validation gate tests ─────────────────────────────────────────────────
 
     fn order_entry_submit_state(symbol: &str) -> crate::app::OrderEntryState {
-        use crate::app::{OrderEntryState, OrderField};
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
         let mut s = OrderEntryState::new(symbol.into());
         s.focused_field = OrderField::Submit;
-        s.market_order = false;
+        s.order_type = FullOrderType::Limit;
         s.qty_input = "10".into();
         s.price_input = "100.00".into();
         s
@@ -2294,31 +2294,31 @@ mod tests {
 
     #[test]
     fn modal_order_type_down_arrow_toggles() {
-        use crate::app::{OrderEntryState, OrderField};
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
         let (mut app, _rx) = app_with_rx();
         let mut state = OrderEntryState::new("AAPL".into());
         state.focused_field = OrderField::OrderType;
-        state.market_order = false;
+        state.order_type = FullOrderType::Limit;
         app.modal = Some(Modal::OrderEntry(state));
         update(&mut app, key(KeyCode::Down));
         assert!(
-            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.market_order),
-            "down arrow on OrderType should toggle to market"
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::Stop),
+            "down arrow on OrderType should cycle Limit → Stop"
         );
     }
 
     #[test]
     fn modal_order_type_up_arrow_toggles() {
-        use crate::app::{OrderEntryState, OrderField};
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
         let (mut app, _rx) = app_with_rx();
         let mut state = OrderEntryState::new("AAPL".into());
         state.focused_field = OrderField::OrderType;
-        state.market_order = true;
+        state.order_type = FullOrderType::Limit;
         app.modal = Some(Modal::OrderEntry(state));
         update(&mut app, key(KeyCode::Up));
         assert!(
-            matches!(&app.modal, Some(Modal::OrderEntry(s)) if !s.market_order),
-            "up arrow on OrderType should toggle to limit"
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.order_type == FullOrderType::Market),
+            "up arrow on OrderType should cycle Limit → Market"
         );
     }
 
@@ -2740,32 +2740,32 @@ mod tests {
 
     #[test]
     fn mouse_click_modal_field_order_type_left_half_selects_limit() {
-        use crate::app::{OrderEntryState, OrderField};
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
         let (mut app, _rx) = app_with_rx();
         let state = OrderEntryState::new("AAPL".into());
         app.modal = Some(Modal::OrderEntry(state));
-        // OrderType at x=10, width=20; left half = x < 20
+        // OrderType at x=10, width=20; offset=2 → section = 2*5/20 = 0 → Market
         app.hit_areas.modal_fields = vec![(OrderField::OrderType, rect(10, 6, 20, 1))];
 
-        update(&mut app, mouse_click(12, 6)); // left half
+        update(&mut app, mouse_click(12, 6)); // near left edge → Market
 
         assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
-                if !s.market_order && s.focused_field == OrderField::OrderType));
+                if s.order_type == FullOrderType::Market && s.focused_field == OrderField::OrderType));
     }
 
     #[test]
     fn mouse_click_modal_field_order_type_right_half_selects_market() {
-        use crate::app::{OrderEntryState, OrderField};
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
         let (mut app, _rx) = app_with_rx();
         let state = OrderEntryState::new("AAPL".into());
         app.modal = Some(Modal::OrderEntry(state));
-        // OrderType at x=10, width=20; right half = x >= 20
+        // OrderType at x=10, width=20; section index 4 (rightmost 4/5) → TrailingStop
         app.hit_areas.modal_fields = vec![(OrderField::OrderType, rect(10, 6, 20, 1))];
 
-        update(&mut app, mouse_click(22, 6)); // right half
+        update(&mut app, mouse_click(28, 6)); // near right edge
 
         assert!(matches!(&app.modal, Some(Modal::OrderEntry(s))
-                if s.market_order && s.focused_field == OrderField::OrderType));
+                if s.order_type == FullOrderType::TrailingStop && s.focused_field == OrderField::OrderType));
     }
 
     #[test]
