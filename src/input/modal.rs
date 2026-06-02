@@ -2,7 +2,8 @@ use crossterm::event::KeyCode;
 
 use super::send_command;
 use crate::app::{
-    App, ConfirmAction, Modal, OrderEntryState, OrderField, OrderSide, StatusMessage,
+    App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, OrderSide,
+    StatusMessage, TrailType,
 };
 use crate::commands::Command;
 
@@ -34,8 +35,8 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
 
         Modal::OrderEntry(mut state) => {
             match key.code {
-                KeyCode::Tab => state.focused_field = state.focused_field.next(),
-                KeyCode::BackTab => state.focused_field = state.focused_field.prev(),
+                KeyCode::Tab => state.focused_field = state.next_field(),
+                KeyCode::BackTab => state.focused_field = state.prev_field(),
                 KeyCode::Left | KeyCode::Right => match state.focused_field {
                     OrderField::Side => {
                         state.side = if key.code == KeyCode::Left {
@@ -44,7 +45,23 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             state.side.cycle_next()
                         };
                     }
-                    OrderField::OrderType => state.market_order = !state.market_order,
+                    OrderField::OrderType => {
+                        state.order_type = if key.code == KeyCode::Left {
+                            state.order_type.cycle_prev()
+                        } else {
+                            state.order_type.cycle_next()
+                        };
+                        // Reset focus if current field is now hidden.
+                        if !state.focused_field.is_visible_for(&state.order_type) {
+                            state.focused_field = OrderField::Qty;
+                        }
+                    }
+                    OrderField::TrailMode => {
+                        state.trail_type = state.trail_type.toggle();
+                    }
+                    OrderField::ExtendedHours => {
+                        state.extended_hours = !state.extended_hours;
+                    }
                     OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
                     _ => {}
                 },
@@ -56,7 +73,22 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             state.side.cycle_next()
                         };
                     }
-                    OrderField::OrderType => state.market_order = !state.market_order,
+                    OrderField::OrderType => {
+                        state.order_type = if key.code == KeyCode::Up {
+                            state.order_type.cycle_prev()
+                        } else {
+                            state.order_type.cycle_next()
+                        };
+                        if !state.focused_field.is_visible_for(&state.order_type) {
+                            state.focused_field = OrderField::Qty;
+                        }
+                    }
+                    OrderField::TrailMode => {
+                        state.trail_type = state.trail_type.toggle();
+                    }
+                    OrderField::ExtendedHours => {
+                        state.extended_hours = !state.extended_hours;
+                    }
                     OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
                     _ => {}
                 },
@@ -68,12 +100,21 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     OrderField::Price if c.is_ascii_digit() || c == '.' => {
                         state.price_input.push(c);
                     }
+                    OrderField::StopPrice if c.is_ascii_digit() || c == '.' => {
+                        state.stop_price_input.push(c);
+                    }
+                    OrderField::TrailAmount if c.is_ascii_digit() || c == '.' => {
+                        state.trail_input.push(c);
+                    }
                     OrderField::Side => {
                         if c == 'b' || c == 'B' {
                             state.side = OrderSide::Buy;
                         } else if c == 's' || c == 'S' {
                             state.side = OrderSide::Sell;
                         }
+                    }
+                    OrderField::ExtendedHours if c == ' ' => {
+                        state.extended_hours = !state.extended_hours;
                     }
                     _ => {}
                 },
@@ -87,6 +128,12 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     OrderField::Price => {
                         state.price_input.pop();
                     }
+                    OrderField::StopPrice => {
+                        state.stop_price_input.pop();
+                    }
+                    OrderField::TrailAmount => {
+                        state.trail_input.pop();
+                    }
                     _ => {}
                 },
                 KeyCode::Enter => {
@@ -97,41 +144,97 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             .and_then(|a| a.buying_power.parse::<f64>().ok())
                             .unwrap_or(0.0);
                         let market_open = app.clock.as_ref().map(|c| c.is_open).unwrap_or(true);
-                        if let Some(err) = crate::input::validate(&state, buying_power, market_open)
-                        {
+                        let extended_hours_ok = app
+                            .clock
+                            .as_ref()
+                            .map(|c| {
+                                use crate::types::MarketState;
+                                matches!(
+                                    c.market_state(),
+                                    MarketState::PreMarket | MarketState::AfterHours
+                                )
+                            })
+                            .unwrap_or(false);
+                        if let Some(err) = crate::input::validate(
+                            &state,
+                            buying_power,
+                            market_open,
+                            extended_hours_ok,
+                        ) {
                             app.push_status(StatusMessage::persistent(err));
                             app.modal = Some(Modal::OrderEntry(state));
                             return;
                         }
+                        // Build request fields based on order type (only legal fields).
+                        let (limit_price, stop_price, trail_price, trail_percent) =
+                            match &state.order_type {
+                                FullOrderType::Market => (None, None, None, None),
+                                FullOrderType::Limit => {
+                                    let p = if state.price_input.is_empty() {
+                                        None
+                                    } else {
+                                        Some(state.price_input.clone())
+                                    };
+                                    (p, None, None, None)
+                                }
+                                FullOrderType::Stop => {
+                                    let sp = if state.stop_price_input.is_empty() {
+                                        None
+                                    } else {
+                                        Some(state.stop_price_input.clone())
+                                    };
+                                    (None, sp, None, None)
+                                }
+                                FullOrderType::StopLimit => {
+                                    let p = if state.price_input.is_empty() {
+                                        None
+                                    } else {
+                                        Some(state.price_input.clone())
+                                    };
+                                    let sp = if state.stop_price_input.is_empty() {
+                                        None
+                                    } else {
+                                        Some(state.stop_price_input.clone())
+                                    };
+                                    (p, sp, None, None)
+                                }
+                                FullOrderType::TrailingStop => {
+                                    let amount = if state.trail_input.is_empty() {
+                                        None
+                                    } else {
+                                        Some(state.trail_input.clone())
+                                    };
+                                    match state.trail_type {
+                                        TrailType::Price => (None, None, amount, None),
+                                        TrailType::Percent => (None, None, None, amount),
+                                    }
+                                }
+                            };
                         send_command(
                             app,
                             Command::SubmitOrder {
                                 symbol: state.symbol.clone(),
                                 side: state.side.as_str().into(),
-                                order_type: if state.market_order {
-                                    "market"
-                                } else {
-                                    "limit"
-                                }
-                                .into(),
+                                order_type: state.order_type.as_str().into(),
                                 qty: if state.qty_input.is_empty() {
                                     None
                                 } else {
                                     Some(state.qty_input.clone())
                                 },
-                                price: if state.market_order || state.price_input.is_empty() {
-                                    None
-                                } else {
-                                    Some(state.price_input.clone())
-                                },
+                                limit_price,
+                                stop_price,
+                                trail_price,
+                                trail_percent,
                                 time_in_force: if state.gtc_order { "gtc" } else { "day" }.into(),
+                                extended_hours: state.extended_hours
+                                    && state.order_type == FullOrderType::Limit,
                             },
                             "Submitting order…",
                         );
                         app.modal = None;
                         return;
                     } else {
-                        state.focused_field = state.focused_field.next();
+                        state.focused_field = state.next_field();
                     }
                 }
                 _ => {}
@@ -544,5 +647,360 @@ mod tests {
             "unhandled key should keep SymbolDetail open; got: {:?}",
             app.modal
         );
+    }
+
+    // ── OrderEntry modal ──────────────────────────────────────────────────────
+
+    use crate::app::{FullOrderType, OrderEntryState, OrderField, TrailType};
+
+    fn make_order_entry(field: OrderField) -> crate::app::App {
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.focused_field = field;
+        app.modal = Some(Modal::OrderEntry(state));
+        app
+    }
+
+    fn order_entry_state(app: &crate::app::App) -> &OrderEntryState {
+        match app.modal.as_ref().unwrap() {
+            Modal::OrderEntry(s) => s,
+            _ => panic!("expected OrderEntry modal"),
+        }
+    }
+
+    #[test]
+    fn esc_closes_order_entry_modal() {
+        let mut app = make_order_entry(OrderField::Symbol);
+        press(&mut app, KeyCode::Esc);
+        assert!(app.modal.is_none(), "Esc should close OrderEntry");
+    }
+
+    #[test]
+    fn tab_advances_focus_from_symbol() {
+        let mut app = make_order_entry(OrderField::Symbol);
+        press(&mut app, KeyCode::Tab);
+        let s = order_entry_state(&app);
+        assert_ne!(s.focused_field, OrderField::Symbol, "Tab should move focus");
+    }
+
+    #[test]
+    fn backtab_retreats_focus() {
+        let mut app = make_order_entry(OrderField::Qty);
+        press(&mut app, KeyCode::BackTab);
+        let s = order_entry_state(&app);
+        // Should have moved backwards from Qty
+        assert_ne!(s.focused_field, OrderField::Qty, "BackTab should retreat");
+    }
+
+    // Symbol field: char input
+    #[test]
+    fn char_appends_to_symbol() {
+        let mut app = make_order_entry(OrderField::Symbol);
+        press(&mut app, KeyCode::Char('a'));
+        let s = order_entry_state(&app);
+        assert!(
+            s.symbol.ends_with('a'),
+            "char should append as-is to symbol (got: {})",
+            s.symbol
+        );
+    }
+
+    #[test]
+    fn backspace_removes_from_symbol() {
+        let mut app = make_order_entry(OrderField::Symbol);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.symbol = "APPL".into();
+        }
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(order_entry_state(&app).symbol, "APP");
+    }
+
+    // Qty field: char input
+    #[test]
+    fn char_appends_to_qty() {
+        let mut app = make_order_entry(OrderField::Qty);
+        press(&mut app, KeyCode::Char('5'));
+        assert!(order_entry_state(&app).qty_input.ends_with('5'));
+    }
+
+    #[test]
+    fn backspace_removes_from_qty() {
+        let mut app = make_order_entry(OrderField::Qty);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.qty_input = "10".into();
+        }
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(order_entry_state(&app).qty_input, "1");
+    }
+
+    // Price field: char input
+    #[test]
+    fn char_appends_to_price() {
+        let mut app = make_order_entry(OrderField::Price);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Limit;
+        }
+        press(&mut app, KeyCode::Char('3'));
+        assert!(order_entry_state(&app).price_input.ends_with('3'));
+    }
+
+    #[test]
+    fn backspace_removes_from_price() {
+        let mut app = make_order_entry(OrderField::Price);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Limit;
+            s.price_input = "100".into();
+        }
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(order_entry_state(&app).price_input, "10");
+    }
+
+    // StopPrice field
+    #[test]
+    fn char_appends_to_stop_price() {
+        let mut app = make_order_entry(OrderField::StopPrice);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Stop;
+        }
+        press(&mut app, KeyCode::Char('9'));
+        assert!(order_entry_state(&app).stop_price_input.ends_with('9'));
+    }
+
+    #[test]
+    fn backspace_removes_from_stop_price() {
+        let mut app = make_order_entry(OrderField::StopPrice);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Stop;
+            s.stop_price_input = "200".into();
+        }
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(order_entry_state(&app).stop_price_input, "20");
+    }
+
+    // TrailAmount field
+    #[test]
+    fn char_appends_to_trail_amount() {
+        let mut app = make_order_entry(OrderField::TrailAmount);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::TrailingStop;
+        }
+        press(&mut app, KeyCode::Char('2'));
+        assert!(order_entry_state(&app).trail_input.ends_with('2'));
+    }
+
+    #[test]
+    fn backspace_removes_from_trail_amount() {
+        let mut app = make_order_entry(OrderField::TrailAmount);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::TrailingStop;
+            s.trail_input = "5.5".into();
+        }
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(order_entry_state(&app).trail_input, "5.");
+    }
+
+    // OrderType cycling via Left/Right
+    #[test]
+    fn right_cycles_order_type_forward() {
+        let mut app = make_order_entry(OrderField::OrderType);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Market;
+        }
+        press(&mut app, KeyCode::Right);
+        assert_eq!(order_entry_state(&app).order_type, FullOrderType::Limit);
+    }
+
+    #[test]
+    fn left_cycles_order_type_backward() {
+        let mut app = make_order_entry(OrderField::OrderType);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Limit;
+        }
+        press(&mut app, KeyCode::Left);
+        assert_eq!(order_entry_state(&app).order_type, FullOrderType::Market);
+    }
+
+    #[test]
+    fn down_cycles_order_type_forward_on_order_type_field() {
+        let mut app = make_order_entry(OrderField::OrderType);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Stop;
+        }
+        press(&mut app, KeyCode::Down);
+        assert_eq!(order_entry_state(&app).order_type, FullOrderType::StopLimit);
+    }
+
+    #[test]
+    fn up_cycles_order_type_backward_on_order_type_field() {
+        let mut app = make_order_entry(OrderField::OrderType);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Stop;
+        }
+        press(&mut app, KeyCode::Up);
+        assert_eq!(order_entry_state(&app).order_type, FullOrderType::Limit);
+    }
+
+    // TrailMode toggle
+    #[test]
+    fn left_right_toggle_trail_mode() {
+        let mut app = make_order_entry(OrderField::TrailMode);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.trail_type = TrailType::Price;
+        }
+        press(&mut app, KeyCode::Right);
+        assert_eq!(order_entry_state(&app).trail_type, TrailType::Percent);
+        press(&mut app, KeyCode::Left);
+        assert_eq!(order_entry_state(&app).trail_type, TrailType::Price);
+    }
+
+    // ExtendedHours toggle
+    #[test]
+    fn space_toggles_extended_hours() {
+        let mut app = make_order_entry(OrderField::ExtendedHours);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.extended_hours = false;
+        }
+        press(&mut app, KeyCode::Char(' '));
+        assert!(
+            order_entry_state(&app).extended_hours,
+            "space should set extended_hours"
+        );
+        press(&mut app, KeyCode::Char(' '));
+        assert!(
+            !order_entry_state(&app).extended_hours,
+            "second space clears extended_hours"
+        );
+    }
+
+    #[test]
+    fn enter_on_extended_hours_advances_focus() {
+        let mut app = make_order_entry(OrderField::ExtendedHours);
+        press(&mut app, KeyCode::Enter);
+        // Enter on non-Submit field advances focus, not toggles
+        let s = order_entry_state(&app);
+        assert_ne!(
+            s.focused_field,
+            OrderField::ExtendedHours,
+            "Enter should advance focus"
+        );
+        assert!(app.modal.is_some());
+    }
+
+    // Side cycling
+    #[test]
+    fn left_right_cycle_side() {
+        let mut app = make_order_entry(OrderField::Side);
+        press(&mut app, KeyCode::Right);
+        let s = order_entry_state(&app);
+        // Should have cycled from default (Buy)
+        assert_ne!(
+            s.side,
+            crate::app::OrderSide::Buy,
+            "Right should cycle side away from Buy"
+        );
+    }
+
+    // TimeInForce cycling
+    #[test]
+    fn left_toggles_tif_to_day() {
+        let mut app = make_order_entry(OrderField::TimeInForce);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.gtc_order = true;
+        }
+        press(&mut app, KeyCode::Left);
+        assert!(!order_entry_state(&app).gtc_order);
+    }
+
+    #[test]
+    fn right_toggles_tif_to_gtc() {
+        let mut app = make_order_entry(OrderField::TimeInForce);
+        press(&mut app, KeyCode::Right);
+        assert!(order_entry_state(&app).gtc_order);
+    }
+
+    // Tab skips hidden fields
+    #[test]
+    fn tab_skips_price_for_market_order() {
+        let mut app = make_order_entry(OrderField::Qty);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.order_type = FullOrderType::Market;
+        }
+        press(&mut app, KeyCode::Tab);
+        // Should skip Price, StopPrice, TrailAmount, TrailMode, ExtendedHours → TimeInForce
+        assert_eq!(
+            order_entry_state(&app).focused_field,
+            OrderField::TimeInForce
+        );
+    }
+
+    // Enter advances through fields (does not submit until Submit is focused)
+    #[test]
+    fn enter_on_non_submit_field_advances_focus() {
+        let mut app = make_order_entry(OrderField::Symbol);
+        press(&mut app, KeyCode::Enter);
+        let s = order_entry_state(&app);
+        assert_ne!(
+            s.focused_field,
+            OrderField::Symbol,
+            "Enter on non-Submit field should advance"
+        );
+        assert!(app.modal.is_some(), "modal should still be open");
+    }
+
+    // Unhandled key on generic field is a no-op
+    #[test]
+    fn unhandled_key_on_order_entry_is_noop() {
+        let mut app = make_order_entry(OrderField::Qty);
+        press(&mut app, KeyCode::F(1));
+        // Modal should still be open
+        assert!(app.modal.is_some(), "F1 should not close order entry");
     }
 }

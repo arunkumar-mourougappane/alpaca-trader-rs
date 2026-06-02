@@ -149,6 +149,7 @@ mod tests {
             order_type: "limit".into(),
             time_in_force: "day".into(),
             limit_price: Some("185.00".into()),
+            ..Default::default()
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(
@@ -171,6 +172,7 @@ mod tests {
             order_type: "market".into(),
             time_in_force: "day".into(),
             limit_price: None,
+            ..Default::default()
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("\"qty\""), "qty should be omitted: {json}");
@@ -490,7 +492,7 @@ impl TimeInForce {
 /// Request body sent to `POST /orders`.
 ///
 /// Either `qty` or `notional` must be set; not both.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct OrderRequest {
     /// Ticker symbol to trade.
     pub symbol: String,
@@ -502,14 +504,26 @@ pub struct OrderRequest {
     pub notional: Option<String>,
     /// Order direction — `"buy"` or `"sell"`.
     pub side: String,
-    /// Order type — `"market"`, `"limit"`, etc.
+    /// Order type — `"market"`, `"limit"`, `"stop"`, `"stop_limit"`, `"trailing_stop"`.
     #[serde(rename = "type")]
     pub order_type: String,
     /// Time-in-force — `"day"`, `"gtc"`, etc.
     pub time_in_force: String,
-    /// Required for limit orders; omitted for market orders.
+    /// Required for limit and stop-limit orders; omitted otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit_price: Option<String>,
+    /// Required for stop and stop-limit orders; omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_price: Option<String>,
+    /// Dollar trail amount for trailing-stop orders; mutually exclusive with `trail_percent`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trail_price: Option<String>,
+    /// Percentage trail for trailing-stop orders; mutually exclusive with `trail_price`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trail_percent: Option<String>,
+    /// Allow execution during extended hours (pre/after-market); only valid for limit orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended_hours: Option<bool>,
 }
 
 /// Current market clock from `GET /clock`.

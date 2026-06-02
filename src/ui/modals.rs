@@ -10,7 +10,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, ConfirmAction, Modal, OrderEntryState, OrderField};
+use crate::app::{
+    App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, TrailType,
+};
 use crate::ui::{charts, popup_area};
 
 pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
@@ -224,7 +226,7 @@ fn render_about(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, app: &mut App) {
-    let popup = popup_area(area, 45, 65);
+    let popup = popup_area(area, 50, 80);
     frame.render_widget(Clear, popup);
 
     let c = app.current_theme.colors();
@@ -238,6 +240,19 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
 
+    let show_price = matches!(
+        state.order_type,
+        FullOrderType::Limit | FullOrderType::StopLimit
+    );
+    let show_stop_price = matches!(
+        state.order_type,
+        FullOrderType::Stop | FullOrderType::StopLimit
+    );
+    let show_trail = matches!(state.order_type, FullOrderType::TrailingStop);
+    let show_ext_hours = matches!(state.order_type, FullOrderType::Limit);
+
+    let v = |show: bool| Constraint::Length(if show { 1 } else { 0 });
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -246,30 +261,47 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Constraint::Length(1), // [2]  Side
             Constraint::Length(1), // [3]  Type
             Constraint::Length(1), // [4]  Qty
-            Constraint::Length(1), // [5]  Price
-            Constraint::Length(1), // [6]  TimeInForce
-            Constraint::Length(1), // [7]  blank
-            Constraint::Length(1), // [8]  Est Total
-            Constraint::Length(1), // [9]  Buying Power
-            Constraint::Length(1), // [10] blank
-            Constraint::Length(1), // [11] Market-closed warning
-            Constraint::Length(1), // [12] Submit / Cancel
-            Constraint::Length(1), // [13] hint
+            v(show_price),         // [5]  Price (Limit, StopLimit)
+            v(show_stop_price),    // [6]  Stop Price (Stop, StopLimit)
+            v(show_trail),         // [7]  Trail Amount (TrailingStop)
+            v(show_trail),         // [8]  Trail Mode $ / % (TrailingStop)
+            v(show_ext_hours),     // [9]  Extended Hours (Limit)
+            Constraint::Length(1), // [10] TimeInForce
+            Constraint::Length(1), // [11] blank
+            Constraint::Length(1), // [12] Est Total
+            Constraint::Length(1), // [13] Buying Power
+            Constraint::Length(1), // [14] blank
+            Constraint::Length(1), // [15] Market-closed warning
+            Constraint::Length(1), // [16] Submit / Cancel
+            Constraint::Length(1), // [17] hint
         ])
         .split(inner);
 
     let market_open = app.clock.as_ref().map(|c| c.is_open).unwrap_or(true);
 
-    // Populate hit areas for mouse click handling
-    app.hit_areas.modal_fields = vec![
+    // Populate hit areas for mouse click handling.
+    let mut modal_fields = vec![
         (OrderField::Symbol, chunks[0]),
         (OrderField::Side, chunks[2]),
         (OrderField::OrderType, chunks[3]),
         (OrderField::Qty, chunks[4]),
-        (OrderField::Price, chunks[5]),
-        (OrderField::TimeInForce, chunks[6]),
+        (OrderField::TimeInForce, chunks[10]),
     ];
-    app.hit_areas.modal_submit = Some(chunks[12]);
+    if show_price {
+        modal_fields.push((OrderField::Price, chunks[5]));
+    }
+    if show_stop_price {
+        modal_fields.push((OrderField::StopPrice, chunks[6]));
+    }
+    if show_trail {
+        modal_fields.push((OrderField::TrailAmount, chunks[7]));
+        modal_fields.push((OrderField::TrailMode, chunks[8]));
+    }
+    if show_ext_hours {
+        modal_fields.push((OrderField::ExtendedHours, chunks[9]));
+    }
+    app.hit_areas.modal_fields = modal_fields;
+    app.hit_areas.modal_submit = Some(chunks[16]);
 
     let focused = |field: &OrderField| *field == state.focused_field;
 
@@ -315,12 +347,18 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     ]);
     frame.render_widget(Paragraph::new(side_line), chunks[2]);
 
-    // Type
+    // Type — all 5 order types
     let type_line = Line::from(vec![
         Span::styled("  Type    ", c.dim_style()),
-        radio(!state.market_order, "LIMIT", &c),
-        Span::raw("  "),
-        radio(state.market_order, "MARKET", &c),
+        radio(state.order_type == FullOrderType::Market, "MARKET", &c),
+        Span::raw(" "),
+        radio(state.order_type == FullOrderType::Limit, "LIMIT", &c),
+        Span::raw(" "),
+        radio(state.order_type == FullOrderType::Stop, "STOP", &c),
+        Span::raw(" "),
+        radio(state.order_type == FullOrderType::StopLimit, "STOP-LMT", &c),
+        Span::raw(" "),
+        radio(state.order_type == FullOrderType::TrailingStop, "TRAIL", &c),
     ]);
     frame.render_widget(Paragraph::new(type_line), chunks[3]);
 
@@ -339,8 +377,8 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         chunks[4],
     );
 
-    // Price (only shown for limit)
-    if !state.market_order {
+    // Limit price (Limit, StopLimit)
+    if show_price {
         frame.render_widget(
             field_line(
                 "Price ",
@@ -358,13 +396,79 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             ),
             chunks[5],
         );
-    } else {
+    }
+
+    // Stop price (Stop, StopLimit)
+    if show_stop_price {
+        frame.render_widget(
+            field_line(
+                "Stop  ",
+                &format!(
+                    "{}{}",
+                    state.stop_price_input,
+                    if focused(&OrderField::StopPrice) {
+                        "▋"
+                    } else {
+                        ""
+                    }
+                ),
+                field_style(&OrderField::StopPrice),
+                c.dim_style(),
+            ),
+            chunks[6],
+        );
+    }
+
+    // Trail Amount (TrailingStop)
+    if show_trail {
+        let unit = if state.trail_type == TrailType::Percent {
+            "%"
+        } else {
+            "$"
+        };
+        frame.render_widget(
+            field_line(
+                &format!("Trail{unit} "),
+                &format!(
+                    "{}{}",
+                    state.trail_input,
+                    if focused(&OrderField::TrailAmount) {
+                        "▋"
+                    } else {
+                        ""
+                    }
+                ),
+                field_style(&OrderField::TrailAmount),
+                c.dim_style(),
+            ),
+            chunks[7],
+        );
+
+        // Trail Mode toggle
+        let trail_mode_line = Line::from(vec![
+            Span::styled("  Trail   ", c.dim_style()),
+            radio(state.trail_type == TrailType::Price, "$", &c),
+            Span::raw("  "),
+            radio(state.trail_type == TrailType::Percent, "%", &c),
+        ]);
+        frame.render_widget(Paragraph::new(trail_mode_line), chunks[8]);
+    }
+
+    // Extended Hours checkbox (Limit only)
+    if show_ext_hours {
+        let check = if state.extended_hours { "[x]" } else { "[ ]" };
+        let ext_style = if focused(&OrderField::ExtendedHours) {
+            Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled("  Price ", c.dim_style()),
-                Span::styled("N/A (Market order)", c.dim_style()),
+                Span::styled("  Ext Hrs ", c.dim_style()),
+                Span::styled(check, ext_style),
+                Span::styled(" Extended hours", c.dim_style()),
             ])),
-            chunks[5],
+            chunks[9],
         );
     }
 
@@ -375,16 +479,16 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         Span::raw("  "),
         radio(state.gtc_order, "GTC", &c),
     ]);
-    frame.render_widget(Paragraph::new(tif_line), chunks[6]);
+    frame.render_widget(Paragraph::new(tif_line), chunks[10]);
 
-    // Est Total
+    // Est Total (uses limit price when available)
     let est_total = estimate_total(state);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("  Est. Total  ", c.dim_style()),
             Span::styled(est_total, c.bold_style()),
         ])),
-        chunks[8],
+        chunks[12],
     );
 
     // Buying power
@@ -398,22 +502,34 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Span::styled("  Buying Power  ", c.dim_style()),
             Span::styled(bp, c.bold_style()),
         ])),
-        chunks[9],
+        chunks[13],
     );
 
     // Market-closed warning
-    if !market_open && !state.gtc_order {
+    let extended_hours_ok = app
+        .clock
+        .as_ref()
+        .map(|cl| {
+            use crate::types::MarketState;
+            matches!(
+                cl.market_state(),
+                MarketState::PreMarket | MarketState::AfterHours
+            )
+        })
+        .unwrap_or(false);
+    let ext_hours_active = state.extended_hours && show_ext_hours && extended_hours_ok;
+    let market_closed_day = !market_open && !state.gtc_order && !ext_hours_active;
+    if market_closed_day {
         frame.render_widget(
             Paragraph::new(Line::from(vec![Span::styled(
                 "  ⚠ Market closed — switch to GTC or wait",
                 Style::default().fg(c.neutral).add_modifier(Modifier::BOLD),
             )])),
-            chunks[11],
+            chunks[15],
         );
     }
 
-    // Submit button — dimmed when market is closed and order is DAY
-    let market_closed_day = !market_open && !state.gtc_order;
+    // Submit button
     let submit_style = if focused(&OrderField::Submit) && !market_closed_day {
         Style::default()
             .fg(c.accent)
@@ -428,12 +544,12 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         Span::raw("  "),
         Span::styled("[ Esc: Cancel ]", c.dim_style()),
     ]);
-    frame.render_widget(Paragraph::new(buttons), chunks[12]);
+    frame.render_widget(Paragraph::new(buttons), chunks[16]);
 
     // Hint
     frame.render_widget(
-        Paragraph::new("  Tab:Next  ←/→:Toggle  Enter:Advance  Esc:Close").style(c.dim_style()),
-        chunks[13],
+        Paragraph::new("  Tab:Next  ←/→:Cycle  Enter:Advance  Esc:Close").style(c.dim_style()),
+        chunks[17],
     );
 }
 
@@ -2118,24 +2234,24 @@ mod tests {
     // ── render_order_entry additional branches ────────────────────────────────
 
     #[test]
-    fn render_order_entry_market_order_shows_na_price() {
-        use crate::app::OrderEntryState;
+    fn render_order_entry_market_order_shows_no_price_field() {
+        use crate::app::{FullOrderType, OrderEntryState};
         let mut app = make_test_app();
         let mut state = OrderEntryState::new("AAPL".into());
-        state.market_order = true;
+        state.order_type = FullOrderType::Market;
         let output = render_order_entry_to_string(&mut app, state);
         assert!(
-            output.contains("N/A"),
-            "market order should show N/A for price field"
+            !output.contains("Price"),
+            "market order should not show Price field"
         );
     }
 
     #[test]
     fn render_order_entry_limit_order_shows_price_field() {
-        use crate::app::OrderEntryState;
+        use crate::app::{FullOrderType, OrderEntryState};
         let mut app = make_test_app();
         let mut state = OrderEntryState::new("AAPL".into());
-        state.market_order = false;
+        state.order_type = FullOrderType::Limit;
         let output = render_order_entry_to_string(&mut app, state);
         assert!(
             output.contains("Price"),
@@ -2215,12 +2331,12 @@ mod tests {
 
     #[test]
     fn render_order_entry_shows_estimated_total_when_filled() {
-        use crate::app::OrderEntryState;
+        use crate::app::{FullOrderType, OrderEntryState};
         let mut app = make_test_app();
         let mut state = OrderEntryState::new("AAPL".into());
         state.qty_input = "10".into();
         state.price_input = "150.00".into();
-        state.market_order = false;
+        state.order_type = FullOrderType::Limit;
         let output = render_order_entry_to_string(&mut app, state);
         assert!(
             output.contains("1500.00"),
@@ -2264,7 +2380,115 @@ mod tests {
         );
     }
 
-    // ── render_symbol_detail with snapshot data ───────────────────────────────
+    // ── New order type render tests ───────────────────────────────────────────
+
+    #[test]
+    fn render_order_entry_stop_order_shows_stop_field() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Stop;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(output.contains("Stop"), "stop order should show Stop field");
+        assert!(
+            !output.contains("Price "),
+            "stop order should not show Limit Price field"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_stop_limit_order_shows_both_price_fields() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::StopLimit;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Price"),
+            "stop-limit should show Price field"
+        );
+        assert!(output.contains("Stop"), "stop-limit should show Stop field");
+    }
+
+    #[test]
+    fn render_order_entry_trailing_stop_shows_trail_field() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::TrailingStop;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Trail"),
+            "trailing stop should show Trail field"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_limit_shows_extended_hours() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Limit;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Ext"),
+            "limit order should show Extended Hours field"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_market_does_not_show_extended_hours() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Market;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            !output.contains("Ext"),
+            "market order should not show Extended Hours field"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_extended_hours_checked_when_enabled() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Limit;
+        state.extended_hours = true;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("[x]"),
+            "extended_hours=true should render [x]"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_extended_hours_unchecked_by_default() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Limit;
+        state.extended_hours = false;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("[ ]"),
+            "extended_hours=false should render [ ]"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_type_row_shows_all_five_types() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Market;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(output.contains("MARKET"), "should show MARKET type");
+        assert!(output.contains("LIMIT"), "should show LIMIT type");
+        assert!(output.contains("STOP"), "should show STOP type");
+        assert!(output.contains("TRAIL"), "should show TRAIL type");
+    }
 
     #[test]
     fn render_symbol_detail_shows_ohlcv_values_from_snapshot() {

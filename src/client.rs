@@ -541,6 +541,7 @@ mod tests {
             order_type: "market".into(),
             time_in_force: "day".into(),
             limit_price: None,
+            ..Default::default()
         };
         let order = client.submit_order(&req).await.unwrap();
         assert_eq!(order.symbol, "AAPL");

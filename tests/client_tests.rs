@@ -317,6 +317,7 @@ async fn submit_order_posts_to_correct_path() {
         order_type: "limit".into(),
         time_in_force: "day".into(),
         limit_price: Some("185.00".into()),
+        ..Default::default()
     };
     let order = client.submit_order(&req).await.unwrap();
     assert_eq!(order.id, "new-order-id");

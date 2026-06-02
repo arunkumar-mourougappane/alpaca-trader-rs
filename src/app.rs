@@ -226,13 +226,93 @@ impl OrderSide {
     }
 }
 
+/// Extended order execution type for the order entry form.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum FullOrderType {
+    /// Market order — executes immediately at the best available price.
+    Market,
+    /// Limit order — executes only at the specified limit price or better.
+    #[default]
+    Limit,
+    /// Stop order — triggers a market order when the stop price is reached.
+    Stop,
+    /// Stop-limit order — triggers a limit order when the stop price is reached.
+    StopLimit,
+    /// Trailing stop — follows the price by a fixed dollar amount or percentage.
+    TrailingStop,
+}
+
+impl FullOrderType {
+    /// The wire string sent to the Alpaca API (`type` field).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FullOrderType::Market => "market",
+            FullOrderType::Limit => "limit",
+            FullOrderType::Stop => "stop",
+            FullOrderType::StopLimit => "stop_limit",
+            FullOrderType::TrailingStop => "trailing_stop",
+        }
+    }
+
+    /// Returns the next type in the cycle (Market → Limit → Stop → StopLimit → TrailingStop → Market).
+    pub fn cycle_next(&self) -> Self {
+        match self {
+            FullOrderType::Market => FullOrderType::Limit,
+            FullOrderType::Limit => FullOrderType::Stop,
+            FullOrderType::Stop => FullOrderType::StopLimit,
+            FullOrderType::StopLimit => FullOrderType::TrailingStop,
+            FullOrderType::TrailingStop => FullOrderType::Market,
+        }
+    }
+
+    /// Returns the previous type in the cycle.
+    pub fn cycle_prev(&self) -> Self {
+        match self {
+            FullOrderType::Market => FullOrderType::TrailingStop,
+            FullOrderType::Limit => FullOrderType::Market,
+            FullOrderType::Stop => FullOrderType::Limit,
+            FullOrderType::StopLimit => FullOrderType::Stop,
+            FullOrderType::TrailingStop => FullOrderType::StopLimit,
+        }
+    }
+}
+
+/// Whether a trailing stop is defined by dollar amount or percentage.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum TrailType {
+    /// Dollar amount trail (e.g., $5.00).
+    #[default]
+    Price,
+    /// Percentage trail (e.g., 2.0%).
+    Percent,
+}
+
+impl TrailType {
+    /// Toggle between the two variants.
+    pub fn toggle(&self) -> Self {
+        match self {
+            TrailType::Price => TrailType::Percent,
+            TrailType::Percent => TrailType::Price,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderField {
     Symbol,
     Side,
     OrderType,
     Qty,
+    /// Limit price — visible for [`FullOrderType::Limit`] and [`FullOrderType::StopLimit`].
     Price,
+    /// Stop trigger price — visible for [`FullOrderType::Stop`] and [`FullOrderType::StopLimit`].
+    StopPrice,
+    /// Trail dollar/percent amount — visible for [`FullOrderType::TrailingStop`].
+    TrailAmount,
+    /// Toggle between $ and % trail — visible for [`FullOrderType::TrailingStop`].
+    TrailMode,
+    /// Extended-hours trading flag — visible for [`FullOrderType::Limit`] only.
+    ExtendedHours,
     TimeInForce,
     Submit,
 }
@@ -244,7 +324,11 @@ impl OrderField {
             OrderField::Side => OrderField::OrderType,
             OrderField::OrderType => OrderField::Qty,
             OrderField::Qty => OrderField::Price,
-            OrderField::Price => OrderField::TimeInForce,
+            OrderField::Price => OrderField::StopPrice,
+            OrderField::StopPrice => OrderField::TrailAmount,
+            OrderField::TrailAmount => OrderField::TrailMode,
+            OrderField::TrailMode => OrderField::ExtendedHours,
+            OrderField::ExtendedHours => OrderField::TimeInForce,
             OrderField::TimeInForce => OrderField::Submit,
             OrderField::Submit => OrderField::Symbol,
         }
@@ -257,8 +341,34 @@ impl OrderField {
             OrderField::OrderType => OrderField::Side,
             OrderField::Qty => OrderField::OrderType,
             OrderField::Price => OrderField::Qty,
-            OrderField::TimeInForce => OrderField::Price,
+            OrderField::StopPrice => OrderField::Price,
+            OrderField::TrailAmount => OrderField::StopPrice,
+            OrderField::TrailMode => OrderField::TrailAmount,
+            OrderField::ExtendedHours => OrderField::TrailMode,
+            OrderField::TimeInForce => OrderField::ExtendedHours,
             OrderField::Submit => OrderField::TimeInForce,
+        }
+    }
+
+    /// Returns whether this field is shown for the given order type.
+    pub fn is_visible_for(&self, order_type: &FullOrderType) -> bool {
+        match self {
+            OrderField::Symbol
+            | OrderField::Side
+            | OrderField::OrderType
+            | OrderField::Qty
+            | OrderField::TimeInForce
+            | OrderField::Submit => true,
+            OrderField::Price => {
+                matches!(order_type, FullOrderType::Limit | FullOrderType::StopLimit)
+            }
+            OrderField::StopPrice => {
+                matches!(order_type, FullOrderType::Stop | FullOrderType::StopLimit)
+            }
+            OrderField::TrailAmount | OrderField::TrailMode => {
+                matches!(order_type, FullOrderType::TrailingStop)
+            }
+            OrderField::ExtendedHours => matches!(order_type, FullOrderType::Limit),
         }
     }
 }
@@ -267,10 +377,14 @@ impl OrderField {
 pub struct OrderEntryState {
     pub symbol: String,
     pub side: OrderSide,
-    pub market_order: bool, // true = MARKET, false = LIMIT
-    pub gtc_order: bool,    // true = GTC, false = DAY
+    pub order_type: FullOrderType,
+    pub gtc_order: bool, // true = GTC, false = DAY
     pub qty_input: String,
     pub price_input: String,
+    pub stop_price_input: String,
+    pub trail_input: String,
+    pub trail_type: TrailType,
+    pub extended_hours: bool,
     pub focused_field: OrderField,
 }
 
@@ -279,10 +393,14 @@ impl OrderEntryState {
         Self {
             symbol,
             side: OrderSide::Buy,
-            market_order: false,
+            order_type: FullOrderType::Limit,
             gtc_order: false,
             qty_input: String::new(),
             price_input: String::new(),
+            stop_price_input: String::new(),
+            trail_input: String::new(),
+            trail_type: TrailType::Price,
+            extended_hours: false,
             focused_field: OrderField::Qty,
         }
     }
@@ -291,6 +409,25 @@ impl OrderEntryState {
     pub fn with_side(mut self, side: OrderSide) -> Self {
         self.side = side;
         self
+    }
+
+    /// Advance focus to the next field that is visible for the current order type.
+    pub fn next_field(&self) -> OrderField {
+        let mut f = self.focused_field.next();
+        // Submit is always visible, so this loop always terminates.
+        while !f.is_visible_for(&self.order_type) {
+            f = f.next();
+        }
+        f
+    }
+
+    /// Retreat focus to the previous field that is visible for the current order type.
+    pub fn prev_field(&self) -> OrderField {
+        let mut f = self.focused_field.prev();
+        while !f.is_visible_for(&self.order_type) {
+            f = f.prev();
+        }
+        f
     }
 }
 
@@ -983,7 +1120,11 @@ mod tests {
         assert_eq!(OrderField::Side.next(), OrderField::OrderType);
         assert_eq!(OrderField::OrderType.next(), OrderField::Qty);
         assert_eq!(OrderField::Qty.next(), OrderField::Price);
-        assert_eq!(OrderField::Price.next(), OrderField::TimeInForce);
+        assert_eq!(OrderField::Price.next(), OrderField::StopPrice);
+        assert_eq!(OrderField::StopPrice.next(), OrderField::TrailAmount);
+        assert_eq!(OrderField::TrailAmount.next(), OrderField::TrailMode);
+        assert_eq!(OrderField::TrailMode.next(), OrderField::ExtendedHours);
+        assert_eq!(OrderField::ExtendedHours.next(), OrderField::TimeInForce);
         assert_eq!(OrderField::TimeInForce.next(), OrderField::Submit);
         assert_eq!(OrderField::Submit.next(), OrderField::Symbol);
     }
@@ -992,11 +1133,197 @@ mod tests {
     fn order_field_prev_full_cycle() {
         assert_eq!(OrderField::Symbol.prev(), OrderField::Submit);
         assert_eq!(OrderField::Submit.prev(), OrderField::TimeInForce);
-        assert_eq!(OrderField::TimeInForce.prev(), OrderField::Price);
+        assert_eq!(OrderField::TimeInForce.prev(), OrderField::ExtendedHours);
+        assert_eq!(OrderField::ExtendedHours.prev(), OrderField::TrailMode);
+        assert_eq!(OrderField::TrailMode.prev(), OrderField::TrailAmount);
+        assert_eq!(OrderField::TrailAmount.prev(), OrderField::StopPrice);
+        assert_eq!(OrderField::StopPrice.prev(), OrderField::Price);
         assert_eq!(OrderField::Price.prev(), OrderField::Qty);
         assert_eq!(OrderField::Qty.prev(), OrderField::OrderType);
         assert_eq!(OrderField::OrderType.prev(), OrderField::Side);
         assert_eq!(OrderField::Side.prev(), OrderField::Symbol);
+    }
+
+    // ── FullOrderType ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn full_order_type_as_str() {
+        assert_eq!(FullOrderType::Market.as_str(), "market");
+        assert_eq!(FullOrderType::Limit.as_str(), "limit");
+        assert_eq!(FullOrderType::Stop.as_str(), "stop");
+        assert_eq!(FullOrderType::StopLimit.as_str(), "stop_limit");
+        assert_eq!(FullOrderType::TrailingStop.as_str(), "trailing_stop");
+    }
+
+    #[test]
+    fn full_order_type_cycle_next_full_cycle() {
+        assert_eq!(FullOrderType::Market.cycle_next(), FullOrderType::Limit);
+        assert_eq!(FullOrderType::Limit.cycle_next(), FullOrderType::Stop);
+        assert_eq!(FullOrderType::Stop.cycle_next(), FullOrderType::StopLimit);
+        assert_eq!(
+            FullOrderType::StopLimit.cycle_next(),
+            FullOrderType::TrailingStop
+        );
+        assert_eq!(
+            FullOrderType::TrailingStop.cycle_next(),
+            FullOrderType::Market
+        );
+    }
+
+    #[test]
+    fn full_order_type_cycle_prev_full_cycle() {
+        assert_eq!(
+            FullOrderType::Market.cycle_prev(),
+            FullOrderType::TrailingStop
+        );
+        assert_eq!(FullOrderType::Limit.cycle_prev(), FullOrderType::Market);
+        assert_eq!(FullOrderType::Stop.cycle_prev(), FullOrderType::Limit);
+        assert_eq!(FullOrderType::StopLimit.cycle_prev(), FullOrderType::Stop);
+        assert_eq!(
+            FullOrderType::TrailingStop.cycle_prev(),
+            FullOrderType::StopLimit
+        );
+    }
+
+    #[test]
+    fn full_order_type_default_is_limit() {
+        assert_eq!(FullOrderType::default(), FullOrderType::Limit);
+    }
+
+    // ── TrailType ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn trail_type_toggle() {
+        assert_eq!(TrailType::Price.toggle(), TrailType::Percent);
+        assert_eq!(TrailType::Percent.toggle(), TrailType::Price);
+    }
+
+    #[test]
+    fn trail_type_default_is_price() {
+        assert_eq!(TrailType::default(), TrailType::Price);
+    }
+
+    // ── OrderField::is_visible_for ────────────────────────────────────────────
+
+    #[test]
+    fn order_field_visibility_market() {
+        let ot = FullOrderType::Market;
+        assert!(OrderField::Symbol.is_visible_for(&ot));
+        assert!(OrderField::Side.is_visible_for(&ot));
+        assert!(OrderField::OrderType.is_visible_for(&ot));
+        assert!(OrderField::Qty.is_visible_for(&ot));
+        assert!(!OrderField::Price.is_visible_for(&ot));
+        assert!(!OrderField::StopPrice.is_visible_for(&ot));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
+        assert!(!OrderField::TrailMode.is_visible_for(&ot));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+        assert!(OrderField::TimeInForce.is_visible_for(&ot));
+        assert!(OrderField::Submit.is_visible_for(&ot));
+    }
+
+    #[test]
+    fn order_field_visibility_limit() {
+        let ot = FullOrderType::Limit;
+        assert!(OrderField::Price.is_visible_for(&ot));
+        assert!(!OrderField::StopPrice.is_visible_for(&ot));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
+        assert!(!OrderField::TrailMode.is_visible_for(&ot));
+        assert!(OrderField::ExtendedHours.is_visible_for(&ot));
+    }
+
+    #[test]
+    fn order_field_visibility_stop() {
+        let ot = FullOrderType::Stop;
+        assert!(!OrderField::Price.is_visible_for(&ot));
+        assert!(OrderField::StopPrice.is_visible_for(&ot));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
+        assert!(!OrderField::TrailMode.is_visible_for(&ot));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+    }
+
+    #[test]
+    fn order_field_visibility_stop_limit() {
+        let ot = FullOrderType::StopLimit;
+        assert!(OrderField::Price.is_visible_for(&ot));
+        assert!(OrderField::StopPrice.is_visible_for(&ot));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+    }
+
+    #[test]
+    fn order_field_visibility_trailing_stop() {
+        let ot = FullOrderType::TrailingStop;
+        assert!(!OrderField::Price.is_visible_for(&ot));
+        assert!(!OrderField::StopPrice.is_visible_for(&ot));
+        assert!(OrderField::TrailAmount.is_visible_for(&ot));
+        assert!(OrderField::TrailMode.is_visible_for(&ot));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+    }
+
+    // ── OrderEntryState::next_field / prev_field ──────────────────────────────
+
+    #[test]
+    fn next_field_skips_invisible_fields_for_market() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.focused_field = OrderField::Qty;
+        // Price, StopPrice, TrailAmount, TrailMode, ExtendedHours are invisible → skip to TIF
+        assert_eq!(s.next_field(), OrderField::TimeInForce);
+    }
+
+    #[test]
+    fn prev_field_skips_invisible_fields_for_market() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.focused_field = OrderField::TimeInForce;
+        // ExtendedHours, TrailMode, TrailAmount, StopPrice, Price are invisible → skip to Qty
+        assert_eq!(s.prev_field(), OrderField::Qty);
+    }
+
+    #[test]
+    fn next_field_stop_limit_shows_price_then_stop_price() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::StopLimit;
+        s.focused_field = OrderField::Qty;
+        assert_eq!(s.next_field(), OrderField::Price);
+        s.focused_field = OrderField::Price;
+        assert_eq!(s.next_field(), OrderField::StopPrice);
+        s.focused_field = OrderField::StopPrice;
+        // TrailAmount, TrailMode, ExtendedHours invisible → skip to TIF
+        assert_eq!(s.next_field(), OrderField::TimeInForce);
+    }
+
+    #[test]
+    fn next_field_trailing_stop_shows_trail_fields() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::TrailingStop;
+        s.focused_field = OrderField::Qty;
+        // Price and StopPrice invisible → TrailAmount
+        assert_eq!(s.next_field(), OrderField::TrailAmount);
+        s.focused_field = OrderField::TrailAmount;
+        assert_eq!(s.next_field(), OrderField::TrailMode);
+        s.focused_field = OrderField::TrailMode;
+        // ExtendedHours invisible → TIF
+        assert_eq!(s.next_field(), OrderField::TimeInForce);
+    }
+
+    #[test]
+    fn next_field_limit_shows_extended_hours() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Limit;
+        s.focused_field = OrderField::Price;
+        // StopPrice, TrailAmount, TrailMode invisible → ExtendedHours
+        assert_eq!(s.next_field(), OrderField::ExtendedHours);
+        s.focused_field = OrderField::ExtendedHours;
+        assert_eq!(s.next_field(), OrderField::TimeInForce);
+    }
+
+    #[test]
+    fn next_field_wraps_from_submit_to_symbol() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.focused_field = OrderField::Submit;
+        assert_eq!(s.next_field(), OrderField::Symbol);
     }
 
     // ── filtered_orders ───────────────────────────────────────────────────────
