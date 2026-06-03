@@ -459,8 +459,8 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    use crate::app::test_helpers::make_test_app;
-    use crate::app::Modal;
+    use crate::app::test_helpers::{make_test_app, make_watchlist};
+    use crate::app::{ConfirmAction, Modal};
 
     fn press(app: &mut crate::app::App, code: KeyCode) {
         let event = KeyEvent::new(code, KeyModifiers::NONE);
@@ -1002,5 +1002,529 @@ mod tests {
         press(&mut app, KeyCode::F(1));
         // Modal should still be open
         assert!(app.modal.is_some(), "F1 should not close order entry");
+    }
+
+    // Non-digit char on Qty is a no-op
+    #[test]
+    fn non_digit_char_on_qty_is_noop() {
+        let mut app = make_order_entry(OrderField::Qty);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.qty_input = "10".into();
+        }
+        press(&mut app, KeyCode::Char('x'));
+        assert_eq!(
+            order_entry_state(&app).qty_input,
+            "10",
+            "non-digit char should not change qty input"
+        );
+    }
+
+    // b/B/s/S shortcut on Side field
+    #[test]
+    fn b_key_sets_side_to_buy_on_side_field() {
+        let mut app = make_order_entry(OrderField::Side);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.side = crate::app::OrderSide::Sell;
+        }
+        press(&mut app, KeyCode::Char('b'));
+        assert_eq!(order_entry_state(&app).side, crate::app::OrderSide::Buy);
+    }
+
+    #[test]
+    fn upper_b_key_sets_side_to_buy_on_side_field() {
+        let mut app = make_order_entry(OrderField::Side);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.side = crate::app::OrderSide::Sell;
+        }
+        press(&mut app, KeyCode::Char('B'));
+        assert_eq!(order_entry_state(&app).side, crate::app::OrderSide::Buy);
+    }
+
+    #[test]
+    fn s_key_sets_side_to_sell_on_side_field() {
+        let mut app = make_order_entry(OrderField::Side);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.side = crate::app::OrderSide::Buy;
+        }
+        press(&mut app, KeyCode::Char('s'));
+        assert_eq!(order_entry_state(&app).side, crate::app::OrderSide::Sell);
+    }
+
+    #[test]
+    fn upper_s_key_sets_side_to_sell_on_side_field() {
+        let mut app = make_order_entry(OrderField::Side);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.side = crate::app::OrderSide::Buy;
+        }
+        press(&mut app, KeyCode::Char('S'));
+        assert_eq!(order_entry_state(&app).side, crate::app::OrderSide::Sell);
+    }
+
+    // Up/Down on Side cycles side
+    #[test]
+    fn up_key_cycles_side_backward() {
+        let mut app = make_order_entry(OrderField::Side);
+        // default side is Buy; Up should cycle backward (away from Buy)
+        press(&mut app, KeyCode::Up);
+        assert_ne!(
+            order_entry_state(&app).side,
+            crate::app::OrderSide::Buy,
+            "Up should cycle side backward from Buy"
+        );
+    }
+
+    #[test]
+    fn down_key_cycles_side_forward() {
+        let mut app = make_order_entry(OrderField::Side);
+        press(&mut app, KeyCode::Down);
+        assert_ne!(
+            order_entry_state(&app).side,
+            crate::app::OrderSide::Buy,
+            "Down should cycle side forward from Buy"
+        );
+    }
+
+    // Up/Down on TrailMode toggles trail_type
+    #[test]
+    fn up_down_toggle_trail_mode_via_up_down() {
+        let mut app = make_order_entry(OrderField::TrailMode);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.trail_type = TrailType::Price;
+        }
+        press(&mut app, KeyCode::Down);
+        assert_eq!(order_entry_state(&app).trail_type, TrailType::Percent);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(order_entry_state(&app).trail_type, TrailType::Price);
+    }
+
+    // Up/Down on ExtendedHours toggles extended_hours
+    #[test]
+    fn up_down_toggle_extended_hours_via_up_down() {
+        let mut app = make_order_entry(OrderField::ExtendedHours);
+        {
+            let Modal::OrderEntry(ref mut s) = app.modal.as_mut().unwrap() else {
+                panic!()
+            };
+            s.extended_hours = false;
+        }
+        press(&mut app, KeyCode::Down);
+        assert!(
+            order_entry_state(&app).extended_hours,
+            "Down should toggle extended_hours on"
+        );
+        press(&mut app, KeyCode::Up);
+        assert!(
+            !order_entry_state(&app).extended_hours,
+            "Up should toggle extended_hours off"
+        );
+    }
+
+    // Up/Down on TimeInForce toggles gtc_order
+    #[test]
+    fn up_down_toggle_tif_via_up_down() {
+        let mut app = make_order_entry(OrderField::TimeInForce);
+        press(&mut app, KeyCode::Down);
+        assert!(
+            order_entry_state(&app).gtc_order,
+            "Down should toggle gtc_order on"
+        );
+        press(&mut app, KeyCode::Up);
+        assert!(
+            !order_entry_state(&app).gtc_order,
+            "Up should toggle gtc_order off"
+        );
+    }
+
+    // ── About modal ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn any_key_closes_about_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::About);
+        press(&mut app, KeyCode::Enter);
+        assert!(app.modal.is_none(), "any key should close About modal");
+    }
+
+    // ── Confirm modal ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn y_key_confirms_and_closes_confirm_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel order?".into(),
+            action: ConfirmAction::CancelOrder("ord-1".into()),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::Char('y'));
+        assert!(app.modal.is_none(), "y should close the Confirm modal");
+    }
+
+    #[test]
+    fn left_key_confirms_and_closes_confirm_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("ord-2".into()),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::Left);
+        assert!(app.modal.is_none(), "Left should close the Confirm modal");
+    }
+
+    #[test]
+    fn n_key_closes_confirm_modal_unconfirmed() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("ord-3".into()),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::Char('n'));
+        assert!(
+            app.modal.is_none(),
+            "n should close the Confirm modal (unconfirmed)"
+        );
+    }
+
+    #[test]
+    fn right_key_closes_confirm_modal_unconfirmed() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("ord-4".into()),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::Right);
+        assert!(
+            app.modal.is_none(),
+            "Right should close the Confirm modal (unconfirmed)"
+        );
+    }
+
+    #[test]
+    fn enter_on_confirm_modal_when_not_confirmed_keeps_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("ord-5".into()),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(app.modal, Some(Modal::Confirm { .. })),
+            "Enter with confirmed=false should keep Confirm modal open"
+        );
+    }
+
+    #[test]
+    fn enter_on_confirm_modal_when_confirmed_closes_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("ord-6".into()),
+            confirmed: true,
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "Enter with confirmed=true should close Confirm modal"
+        );
+    }
+
+    #[test]
+    fn unhandled_key_keeps_confirm_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Confirm {
+            message: "Cancel?".into(),
+            action: ConfirmAction::CancelOrder("ord-7".into()),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::F(5));
+        assert!(
+            matches!(app.modal, Some(Modal::Confirm { .. })),
+            "unhandled key should keep Confirm modal open"
+        );
+    }
+
+    // ── ConfirmRemoveWatchlist modal ──────────────────────────────────────────
+
+    #[test]
+    fn y_key_confirms_and_closes_confirm_remove_watchlist_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "AAPL".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::Char('y'));
+        assert!(app.modal.is_none(), "y should close ConfirmRemoveWatchlist");
+    }
+
+    #[test]
+    fn enter_key_confirms_and_closes_confirm_remove_watchlist_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "TSLA".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "Enter should close ConfirmRemoveWatchlist"
+        );
+    }
+
+    #[test]
+    fn n_key_cancels_confirm_remove_watchlist_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "NVDA".into(),
+            watchlist_id: "wl-2".into(),
+        });
+        press(&mut app, KeyCode::Char('n'));
+        assert!(
+            app.modal.is_none(),
+            "n should close ConfirmRemoveWatchlist without confirming"
+        );
+    }
+
+    #[test]
+    fn unhandled_key_keeps_confirm_remove_watchlist_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::ConfirmRemoveWatchlist {
+            symbol: "MSFT".into(),
+            watchlist_id: "wl-3".into(),
+        });
+        press(&mut app, KeyCode::Char('z'));
+        assert!(
+            matches!(app.modal, Some(Modal::ConfirmRemoveWatchlist { .. })),
+            "unhandled key should keep ConfirmRemoveWatchlist open"
+        );
+    }
+
+    // ── AddSymbol modal ───────────────────────────────────────────────────────
+
+    #[test]
+    fn char_appends_uppercase_to_add_symbol_input() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::AddSymbol {
+            input: "AAP".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::Char('l'));
+        match &app.modal {
+            Some(Modal::AddSymbol { input, .. }) => {
+                assert_eq!(input, "AAPL", "char should be uppercased and appended")
+            }
+            _ => panic!("expected AddSymbol modal"),
+        }
+    }
+
+    #[test]
+    fn backspace_removes_from_add_symbol_input() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::AddSymbol {
+            input: "AAPL".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::Backspace);
+        match &app.modal {
+            Some(Modal::AddSymbol { input, .. }) => assert_eq!(input, "AAP"),
+            _ => panic!("expected AddSymbol modal"),
+        }
+    }
+
+    #[test]
+    fn enter_with_non_empty_input_closes_add_symbol_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::AddSymbol {
+            input: "AAPL".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "Enter with non-empty input should close AddSymbol"
+        );
+    }
+
+    #[test]
+    fn enter_with_empty_input_closes_add_symbol_modal_without_command() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::AddSymbol {
+            input: "".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "Enter with empty input should close AddSymbol (no command sent)"
+        );
+    }
+
+    #[test]
+    fn unhandled_key_keeps_add_symbol_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::AddSymbol {
+            input: "TS".into(),
+            watchlist_id: "wl-1".into(),
+        });
+        press(&mut app, KeyCode::F(1));
+        assert!(
+            matches!(app.modal, Some(Modal::AddSymbol { .. })),
+            "unhandled key should keep AddSymbol open"
+        );
+    }
+
+    // ── GlobalSearch modal ────────────────────────────────────────────────────
+
+    #[test]
+    fn char_appends_uppercase_to_global_search_query() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch {
+            query: "AAP".into(),
+        });
+        press(&mut app, KeyCode::Char('l'));
+        match &app.modal {
+            Some(Modal::GlobalSearch { query }) => {
+                assert_eq!(
+                    query, "AAPL",
+                    "char should be uppercased and appended to query"
+                )
+            }
+            _ => panic!("expected GlobalSearch modal"),
+        }
+    }
+
+    #[test]
+    fn backspace_removes_from_global_search_query() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch {
+            query: "TSLA".into(),
+        });
+        press(&mut app, KeyCode::Backspace);
+        match &app.modal {
+            Some(Modal::GlobalSearch { query }) => assert_eq!(query, "TSL"),
+            _ => panic!("expected GlobalSearch modal"),
+        }
+    }
+
+    #[test]
+    fn enter_with_non_empty_query_transitions_to_symbol_detail() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch {
+            query: "NVDA".into(),
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "NVDA"),
+            "Enter with non-empty query should switch to SymbolDetail; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn enter_with_empty_query_closes_global_search_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch { query: "".into() });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "Enter with empty query should close GlobalSearch"
+        );
+    }
+
+    #[test]
+    fn unhandled_key_keeps_global_search_modal_open() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::GlobalSearch { query: "NV".into() });
+        press(&mut app, KeyCode::F(3));
+        assert!(
+            matches!(&app.modal, Some(Modal::GlobalSearch { query }) if query == "NV"),
+            "unhandled key should keep GlobalSearch open; got: {:?}",
+            app.modal
+        );
+    }
+
+    // ── SymbolDetail additional keys ─────────────────────────────────────────
+
+    #[test]
+    fn o_key_in_symbol_detail_opens_buy_order_entry() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::SymbolDetail("TSLA".into()));
+        press(&mut app, KeyCode::Char('o'));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.symbol == "TSLA"),
+            "o key should open OrderEntry for symbol; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn s_key_in_symbol_detail_opens_sell_order_entry() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        press(&mut app, KeyCode::Char('s'));
+        assert!(
+            matches!(&app.modal, Some(Modal::OrderEntry(s)) if s.side == crate::app::OrderSide::Sell),
+            "s key should open OrderEntry with Sell side; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn w_key_in_symbol_detail_with_no_watchlist_keeps_modal_open() {
+        let mut app = make_test_app();
+        app.watchlist = None;
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        press(&mut app, KeyCode::Char('w'));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
+            "w with no watchlist should keep SymbolDetail open; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn w_key_in_symbol_detail_when_in_watchlist_keeps_modal_open() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        press(&mut app, KeyCode::Char('w'));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
+            "w on watchlist symbol should keep SymbolDetail open; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn w_key_in_symbol_detail_when_not_in_watchlist_keeps_modal_open() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["TSLA"]));
+        app.modal = Some(Modal::SymbolDetail("AAPL".into()));
+        press(&mut app, KeyCode::Char('w'));
+        assert!(
+            matches!(&app.modal, Some(Modal::SymbolDetail(s)) if s == "AAPL"),
+            "w on non-watchlist symbol should keep SymbolDetail open; got: {:?}",
+            app.modal
+        );
     }
 }
