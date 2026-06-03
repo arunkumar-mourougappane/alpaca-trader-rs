@@ -2975,4 +2975,240 @@ mod tests {
             "render() should set modal_popup_area for PositionDetail"
         );
     }
+
+    // ── render_symbol_detail: quote price edge cases ──────────────────────────
+
+    #[test]
+    fn render_symbol_detail_with_ask_only_shows_ask_price() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.quotes.insert(
+            "AAPL".into(),
+            Quote {
+                symbol: "AAPL".into(),
+                ap: Some(200.00),
+                bp: None,
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("200.00"),
+            "should display ask price when only ap is set; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_with_bid_only_shows_bid_price() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.quotes.insert(
+            "AAPL".into(),
+            Quote {
+                symbol: "AAPL".into(),
+                ap: None,
+                bp: Some(199.50),
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("199.50"),
+            "should display bid price when only bp is set; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_change_when_prev_close_is_zero_shows_zero_percent() {
+        use crate::types::{Snapshot, SnapshotBar};
+        let mut app = make_test_app();
+        app.snapshots.insert(
+            "AAPL".into(),
+            Snapshot {
+                daily_bar: Some(SnapshotBar {
+                    o: 100.0,
+                    h: 110.0,
+                    l: 90.0,
+                    c: 105.0,
+                    v: 500_000.0,
+                }),
+                prev_daily_bar: Some(SnapshotBar {
+                    c: 0.0, // prev close = 0 → guard branch
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        // When prev_daily_bar.c == 0, change_pct is set to 0.0 → renders "+0.00%"
+        assert!(
+            output.contains("0.00"),
+            "zero prev close should render 0.00% change; got:\n{}",
+            output
+        );
+    }
+
+    // ── render_symbol_detail: asset flags ────────────────────────────────────
+
+    #[test]
+    fn render_symbol_detail_shows_checkmark_for_true_asset_flags() {
+        let mut app = make_test_app();
+        // make_watchlist uses make_asset which sets all flags to true
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains('✓'),
+            "should show ✓ for true asset flags; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_cross_for_false_asset_flags() {
+        use crate::types::{Asset, Watchlist};
+        let mut app = make_test_app();
+        app.watchlist = Some(Watchlist {
+            id: "wl-1".into(),
+            name: "Test".into(),
+            assets: vec![Asset {
+                id: "id-AAPL".into(),
+                symbol: "AAPL".into(),
+                name: "Apple Inc".into(),
+                exchange: "NASDAQ".into(),
+                asset_class: "us_equity".into(),
+                tradable: false,
+                shortable: false,
+                fractionable: false,
+                easy_to_borrow: false,
+            }],
+        });
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains('✗'),
+            "should show ✗ for false asset flags; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_shows_exchange_and_class_from_asset() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("NASDAQ"),
+            "should show exchange from asset; got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("us_equity"),
+            "should show asset_class from asset; got:\n{}",
+            output
+        );
+    }
+
+    // ── render_order_entry: trailing stop trail unit label ────────────────────
+
+    #[test]
+    fn render_order_entry_trailing_stop_percent_shows_percent_unit() {
+        use crate::app::{FullOrderType, OrderEntryState, TrailType};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::TrailingStop;
+        state.trail_type = TrailType::Percent;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Trail%"),
+            "TrailingStop with Percent trail type should show Trail% label; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_order_entry_trailing_stop_price_shows_dollar_unit() {
+        use crate::app::{FullOrderType, OrderEntryState, TrailType};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::TrailingStop;
+        state.trail_type = TrailType::Price;
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            output.contains("Trail$"),
+            "TrailingStop with Price trail type should show Trail$ label; got:\n{}",
+            output
+        );
+    }
+
+    // ── render_order_entry: ext hours active suppresses market-closed warning ─
+
+    #[test]
+    fn render_order_entry_limit_ext_hours_pre_market_no_warning() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        use crate::types::MarketClock;
+        let mut app = make_test_app();
+        // Pre-market: 2h before 09:30 ET
+        app.clock = Some(MarketClock {
+            is_open: false,
+            next_open: "2026-05-13T13:30:00Z".into(),
+            next_close: "2026-05-13T20:00:00Z".into(),
+            timestamp: "2026-05-13T11:30:00Z".into(),
+        });
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Limit;
+        state.extended_hours = true;
+        state.gtc_order = false; // DAY order — without ext_hours would trigger warning
+        let output = render_order_entry_to_string(&mut app, state);
+        assert!(
+            !output.contains("Market closed"),
+            "Limit + ext_hours + pre-market should NOT show market-closed warning; got:\n{}",
+            output
+        );
+    }
+
+    // ── render_confirm: hit area is set ───────────────────────────────────────
+
+    #[test]
+    fn render_confirm_sets_modal_confirm_buttons_hit_area() {
+        let mut app = make_test_app();
+        let backend = ratatui::backend::TestBackend::new(120, 40);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_confirm(
+                    frame,
+                    area,
+                    "Cancel?",
+                    &ConfirmAction::CancelOrder("id".into()),
+                    false,
+                    &mut app,
+                );
+            })
+            .unwrap();
+        assert!(
+            app.hit_areas.modal_confirm_buttons.is_some(),
+            "render_confirm should set modal_confirm_buttons hit area"
+        );
+    }
+
+    // ── render_confirm_remove_watchlist: hit area is set ─────────────────────
+
+    #[test]
+    fn render_confirm_remove_watchlist_sets_modal_confirm_buttons_hit_area() {
+        let mut app = make_test_app();
+        let backend = ratatui::backend::TestBackend::new(120, 40);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_confirm_remove_watchlist(frame, area, "AAPL", &mut app);
+            })
+            .unwrap();
+        assert!(
+            app.hit_areas.modal_confirm_buttons.is_some(),
+            "render_confirm_remove_watchlist should set modal_confirm_buttons hit area"
+        );
+    }
 }
