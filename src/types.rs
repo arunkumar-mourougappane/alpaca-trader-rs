@@ -752,3 +752,24 @@ pub struct PortfolioHistory {
     /// Dollar equity values per time bucket; `None` means market was closed.
     pub equity: Vec<Option<f64>>,
 }
+
+/// An in-memory price alert for a single watchlist symbol.
+///
+/// Both bounds are optional; a symbol can have an upper bound, a lower bound,
+/// or both simultaneously.  Alerts are session-only by default — they are not
+/// persisted to disk.
+///
+/// The alert fires when a real-time quote crosses the threshold: the status bar
+/// flashes a message and the terminal bell (`\x07`) is written to stdout.
+#[derive(Debug, Clone, Default)]
+pub struct PriceAlert {
+    /// Trigger when the ask or mid price rises **above** this threshold.
+    pub above: Option<f64>,
+    /// Trigger when the ask or mid price falls **below** this threshold.
+    pub below: Option<f64>,
+    /// Tracks whether the "above" alert has already fired this session,
+    /// so it doesn't re-trigger on every subsequent tick above the threshold.
+    pub above_triggered: bool,
+    /// Tracks whether the "below" alert has already fired this session.
+    pub below_triggered: bool,
+}

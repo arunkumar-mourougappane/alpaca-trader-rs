@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::app::{App, Modal, OrderEntryState};
+use crate::app::{AlertField, App, Modal, OrderEntryState};
 
 pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEvent) {
     let len = app.watchlist.as_ref().map(|w| w.assets.len()).unwrap_or(0);
@@ -34,6 +34,27 @@ pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEven
                 });
             }
         }
+        // 'A' (uppercase) — open the price-alert dialog for the selected symbol.
+        // Pre-fills existing thresholds so the user can edit or clear them.
+        KeyCode::Char('A') => {
+            if let Some(symbol) = app.selected_watchlist_symbol() {
+                let existing = app.price_alerts.get(&symbol);
+                let above_input = existing
+                    .and_then(|a| a.above)
+                    .map(|v| format!("{:.2}", v))
+                    .unwrap_or_default();
+                let below_input = existing
+                    .and_then(|a| a.below)
+                    .map(|v| format!("{:.2}", v))
+                    .unwrap_or_default();
+                app.modal = Some(Modal::SetAlert {
+                    symbol,
+                    above_input,
+                    below_input,
+                    focused: AlertField::Above,
+                });
+            }
+        }
         KeyCode::Char('d') => {
             if let (Some(symbol), Some(wl)) =
                 (app.selected_watchlist_symbol(), app.watchlist.as_ref())
@@ -61,3 +82,4 @@ pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEven
         _ => {}
     }
 }
+

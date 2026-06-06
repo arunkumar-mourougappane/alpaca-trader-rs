@@ -143,7 +143,7 @@ use tokio::sync::{mpsc, watch, Notify};
 use crate::commands::Command;
 use crate::config::AlpacaConfig;
 use crate::prefs::AppPrefs;
-use crate::types::{AccountInfo, MarketClock, Order, Position, Quote, Snapshot, Watchlist};
+use crate::types::{AccountInfo, MarketClock, Order, Position, PriceAlert, Quote, Snapshot, Watchlist};
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -436,6 +436,25 @@ pub enum ConfirmAction {
     CancelOrder(String),
 }
 
+/// Focusable input field in the [`Modal::SetAlert`] dialog.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlertField {
+    /// "Above" threshold input.
+    Above,
+    /// "Below" threshold input.
+    Below,
+}
+
+impl AlertField {
+    /// Toggle to the other field.
+    pub fn toggle(&self) -> Self {
+        match self {
+            AlertField::Above => AlertField::Below,
+            AlertField::Below => AlertField::Above,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Modal {
     Help,
@@ -475,6 +494,21 @@ pub enum Modal {
     PositionDetail {
         /// Ticker symbol whose position is being viewed.
         symbol: String,
+    },
+    /// Price alert configuration dialog for a watchlist symbol.
+    ///
+    /// The user enters optional upper and/or lower price thresholds.
+    /// On `Enter`/Save the thresholds are stored in [`App::price_alerts`].
+    /// On `Esc` the dialog is dismissed without changes.
+    SetAlert {
+        /// The watchlist symbol this alert applies to.
+        symbol: String,
+        /// Text currently typed in the "above" price field.
+        above_input: String,
+        /// Text currently typed in the "below" price field.
+        below_input: String,
+        /// Which input field currently has keyboard focus.
+        focused: AlertField,
     },
 }
 
@@ -676,6 +710,14 @@ pub struct App {
     /// Intraday 1-minute close prices in cents, keyed by ticker symbol.
     pub intraday_bars: HashMap<String, Vec<u64>>,
 
+    /// In-memory price alerts keyed by ticker symbol.
+    ///
+    /// Each entry holds optional upper/lower thresholds.  When a streaming
+    /// quote crosses a threshold the status bar flashes and the terminal
+    /// bell (`\x07`) is emitted.  Alerts persist for the lifetime of the
+    /// session; they are not written to disk.
+    pub price_alerts: HashMap<String, PriceAlert>,
+
     pub active_tab: Tab,
     pub watchlist_state: TableState,
     pub positions_state: TableState,
@@ -842,6 +884,7 @@ impl App {
             orders_sort: SortState::default(),
             orders_symbol_filter: String::new(),
             orders_filter_active: false,
+            price_alerts: HashMap::new(),
         }
     }
 

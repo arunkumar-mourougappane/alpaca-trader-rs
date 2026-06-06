@@ -1,0 +1,37 @@
+feat: price alert triggers (closes #101)
+
+Add per-symbol price alert functionality on the Watchlist tab.
+
+Changes
+- types.rs        - New PriceAlert struct with above/below thresholds
+                    and above_triggered/below_triggered de-bounce flags.
+- app.rs          - Add AlertField enum and Modal::SetAlert variant.
+                    Add price_alerts: HashMap<String, PriceAlert> field to
+                    App, initialised empty.
+- input/watchlist.rs - 'A' (uppercase) on the Watchlist tab opens
+                    Modal::SetAlert pre-filled with any existing thresholds.
+- input/modal.rs  - handle_modal_key arm for Modal::SetAlert:
+                    Tab/Shift-Tab/Up/Down switch focus between Above/Below
+                    fields; digits and '.' are accepted; Backspace removes;
+                    Enter saves (or clears when both fields empty); Esc
+                    dismisses without saving.
+- update.rs       - 'A' global shortcut now opens About only on non-Watchlist
+                    tabs (falls through to panel handler on Watchlist tab).
+                    New evaluate_price_alert helper called on every
+                    Event::MarketQuote: derives mid-price, compares to stored
+                    thresholds, pushes a bell status message, and writes the
+                    terminal bell (\x07) to stdout on crossing; de-bounce flag
+                    prevents repeated firings while price remains above/below
+                    the threshold; flag resets when price retreats, allowing
+                    re-trigger.
+- ui/modals.rs    - Register Modal::SetAlert popup area; dispatch to new
+                    render_set_alert function. Help screen updated with 'A'
+                    (Set price alert) entry and clarified About shortcut.
+                    Help popup height increased from 70% to 78% to
+                    accommodate the new row.
+- ui/watchlist.rs - Symbol cell shows "SYM 🔔" when a price alert is set.
+
+Tests
+- 19 new unit tests across update.rs (alert evaluation, key routing) and
+  input/modal.rs (SetAlert field input, Tab, Enter, Esc, decimal).
+- All 961 tests pass.
