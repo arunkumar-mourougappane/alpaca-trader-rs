@@ -2,10 +2,11 @@ use crossterm::event::KeyCode;
 
 use super::send_command;
 use crate::app::{
-    App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, OrderSide,
+    AlertField, App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, OrderSide,
     StatusMessage, TrailType,
 };
 use crate::commands::Command;
+use crate::types::PriceAlert;
 
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
     if key.code == KeyCode::Esc {
@@ -449,6 +450,108 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 return;
             }
             _ => Some(Modal::PositionDetail { symbol }),
+        },
+
+        Modal::SetAlert {
+            symbol,
+            mut above_input,
+            mut below_input,
+            mut focused,
+        } => match key.code {
+            // Tab / Shift-Tab toggle between Above and Below inputs.
+            KeyCode::Tab | KeyCode::BackTab => {
+                focused = focused.toggle();
+                Some(Modal::SetAlert {
+                    symbol,
+                    above_input,
+                    below_input,
+                    focused,
+                })
+            }
+            // Up / Down also switch focus.
+            KeyCode::Up => {
+                focused = AlertField::Above;
+                Some(Modal::SetAlert {
+                    symbol,
+                    above_input,
+                    below_input,
+                    focused,
+                })
+            }
+            KeyCode::Down => {
+                focused = AlertField::Below;
+                Some(Modal::SetAlert {
+                    symbol,
+                    above_input,
+                    below_input,
+                    focused,
+                })
+            }
+            // Digits and decimal point are accepted in the active field.
+            KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
+                match focused {
+                    AlertField::Above => above_input.push(c),
+                    AlertField::Below => below_input.push(c),
+                }
+                Some(Modal::SetAlert {
+                    symbol,
+                    above_input,
+                    below_input,
+                    focused,
+                })
+            }
+            KeyCode::Backspace => {
+                match focused {
+                    AlertField::Above => {
+                        above_input.pop();
+                    }
+                    AlertField::Below => {
+                        below_input.pop();
+                    }
+                }
+                Some(Modal::SetAlert {
+                    symbol,
+                    above_input,
+                    below_input,
+                    focused,
+                })
+            }
+            // Enter saves the alert (at least one threshold must be set).
+            KeyCode::Enter => {
+                let above = above_input.parse::<f64>().ok();
+                let below = below_input.parse::<f64>().ok();
+                if above.is_none() && below.is_none() {
+                    // Both fields empty — remove any existing alert for this symbol.
+                    app.price_alerts.remove(&symbol);
+                    app.push_transient_status(format!("Alert cleared for {symbol}"));
+                } else {
+                    let alert = PriceAlert {
+                        above,
+                        below,
+                        above_triggered: false,
+                        below_triggered: false,
+                    };
+                    app.price_alerts.insert(symbol.clone(), alert);
+                    let mut parts: Vec<String> = Vec::new();
+                    if let Some(a) = above {
+                        parts.push(format!("above ${:.2}", a));
+                    }
+                    if let Some(b) = below {
+                        parts.push(format!("below ${:.2}", b));
+                    }
+                    app.push_transient_status(format!(
+                        "🔔 Alert set for {symbol}: {}",
+                        parts.join(", ")
+                    ));
+                }
+                None // close the modal
+            }
+            _ => Some(Modal::SetAlert {
+                symbol,
+                above_input,
+                below_input,
+                focused,
+            }),
         },
     };
 
@@ -1527,4 +1630,147 @@ mod tests {
             app.modal
         );
     }
+
+    // ── SetAlert modal ────────────────────────────────────────────────────────
+
+    fn make_set_alert_app(symbol: &str) -> crate::app::App {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::SetAlert {
+            symbol: symbol.into(),
+            above_input: String::new(),
+            below_input: String::new(),
+            focused: crate::app::AlertField::Above,
+        });
+        app
+    }
+
+    #[test]
+    fn set_alert_digit_appends_to_above_field() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('5'));
+        press(&mut app, KeyCode::Char('0'));
+        match &app.modal {
+            Some(Modal::SetAlert { above_input, .. }) => {
+                assert_eq!(above_input, "150");
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_tab_switches_focus_to_below() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Tab);
+        match &app.modal {
+            Some(Modal::SetAlert { focused, .. }) => {
+                assert_eq!(*focused, crate::app::AlertField::Below);
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_digit_appends_to_below_field_after_tab() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Tab); // switch to Below
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('4'));
+        press(&mut app, KeyCode::Char('9'));
+        match &app.modal {
+            Some(Modal::SetAlert { below_input, .. }) => {
+                assert_eq!(below_input, "149");
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_backspace_removes_from_active_field() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Backspace);
+        match &app.modal {
+            Some(Modal::SetAlert { above_input, .. }) => {
+                assert_eq!(above_input, "20");
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_enter_saves_alert_and_closes_modal() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Char('2'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "modal should close after Enter; got: {:?}",
+            app.modal
+        );
+        let alert = app.price_alerts.get("AAPL").expect("alert should be saved");
+        assert_eq!(alert.above, Some(200.0));
+        assert_eq!(alert.below, None);
+    }
+
+    #[test]
+    fn set_alert_enter_with_empty_inputs_clears_alert() {
+        let mut app = make_set_alert_app("AAPL");
+        // Pre-insert an alert, then confirm with empty inputs → should clear it.
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                above: Some(200.0),
+                ..Default::default()
+            },
+        );
+        press(&mut app, KeyCode::Enter); // inputs are empty
+        assert!(
+            app.modal.is_none(),
+            "modal should close after Enter"
+        );
+        assert!(
+            app.price_alerts.get("AAPL").is_none(),
+            "alert should be cleared when both inputs are empty"
+        );
+    }
+
+    #[test]
+    fn set_alert_esc_closes_modal_without_saving() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Char('9'));
+        press(&mut app, KeyCode::Char('9'));
+        press(&mut app, KeyCode::Esc);
+        assert!(
+            app.modal.is_none(),
+            "Esc should close SetAlert without saving"
+        );
+        assert!(
+            app.price_alerts.get("AAPL").is_none(),
+            "no alert should be saved after Esc"
+        );
+    }
+
+    #[test]
+    fn set_alert_decimal_accepted_in_above_field() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('8'));
+        press(&mut app, KeyCode::Char('5'));
+        press(&mut app, KeyCode::Char('.'));
+        press(&mut app, KeyCode::Char('5'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Enter);
+        let alert = app.price_alerts.get("AAPL").expect("alert saved");
+        assert!(
+            (alert.above.unwrap() - 185.50).abs() < 0.001,
+            "expected 185.50, got: {:?}",
+            alert.above
+        );
+    }
 }
+

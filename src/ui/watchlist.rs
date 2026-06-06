@@ -156,8 +156,16 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
                 .map(|b| format_volume(b.v))
                 .unwrap_or_else(|| "—".into());
 
+            // Show 🔔 next to the symbol when a price alert is configured.
+            let has_alert = app.price_alerts.contains_key(&asset.symbol);
+            let symbol_text = if has_alert {
+                format!("{} 🔔", asset.symbol)
+            } else {
+                asset.symbol.clone()
+            };
+
             Row::new(vec![
-                Cell::from(asset.symbol.clone()).style(c.bold_style()),
+                Cell::from(symbol_text).style(c.bold_style()),
                 Cell::from(asset.name.clone()),
                 Cell::from(price_text).style(price_style),
                 Cell::from(change_text).style(change_style),

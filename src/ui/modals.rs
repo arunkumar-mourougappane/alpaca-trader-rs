@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use crate::app::{
-    App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, TrailType,
+    AlertField, App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, TrailType,
 };
 use crate::ui::{charts, popup_area};
 
@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
     // Register the popup bounding box so the mouse handler can dismiss the modal
     // when the user clicks outside it.
     app.hit_areas.modal_popup_area = Some(match modal {
-        Modal::Help => popup_area(area, 50, 70),
+        Modal::Help => popup_area(area, 50, 78),
         Modal::About => popup_area(area, 50, 60),
         Modal::OrderEntry(_) => popup_area(area, 45, 65),
         Modal::SymbolDetail(_) => popup_area(area, 55, 88),
@@ -28,6 +28,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
         Modal::AddSymbol { .. } => popup_area(area, 35, 20),
         Modal::GlobalSearch { .. } => popup_area(area, 35, 20),
         Modal::PositionDetail { .. } => popup_area(area, 60, 90),
+        Modal::SetAlert { .. } => popup_area(area, 42, 30),
     });
 
     match modal {
@@ -46,11 +47,17 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
         Modal::AddSymbol { input, .. } => render_add_symbol(frame, area, input, app),
         Modal::GlobalSearch { query } => render_global_search(frame, area, query, app),
         Modal::PositionDetail { symbol } => render_position_detail(frame, area, symbol, app),
+        Modal::SetAlert {
+            symbol,
+            above_input,
+            below_input,
+            focused,
+        } => render_set_alert(frame, area, symbol, above_input, below_input, focused, app),
     }
 }
 
 fn render_help(frame: &mut Frame, area: Rect, app: &App) {
-    let popup = popup_area(area, 50, 70);
+    let popup = popup_area(area, 50, 78);
     frame.render_widget(Clear, popup);
 
     let c = app.current_theme.colors();
@@ -79,6 +86,7 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         ("o", "New order (Watchlist/Orders) / Sell position"),
         ("c", "Copy symbol (Watchlist/Positions) / Cancel order"),
         ("a", "Add symbol to watchlist"),
+        ("A", "Set price alert (Watchlist)"),
         ("d", "Remove symbol from watchlist"),
         ("r", "Force refresh"),
         ("/", "Search / filter watchlist"),
@@ -91,7 +99,7 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         ("T", "Cycle theme (Default → Dark → High-contrast)"),
         ("q / Ctrl-C", "Quit"),
         ("?", "This help screen"),
-        ("A", "About this app"),
+        ("A", "About this app (non-Watchlist tabs)"),
         ("Ctrl-F / /", "Global symbol search"),
     ];
 
@@ -1035,7 +1043,117 @@ fn render_global_search(frame: &mut Frame, area: Rect, query: &str, app: &App) {
     );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+fn render_set_alert(
+    frame: &mut Frame,
+    area: Rect,
+    symbol: &str,
+    above_input: &str,
+    below_input: &str,
+    focused: &AlertField,
+    app: &App,
+) {
+    let popup = popup_area(area, 42, 30);
+    frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
+
+    // Show a 🔔 in the title when the symbol already has an active alert.
+    let has_alert = app.price_alerts.contains_key(symbol);
+    let title = if has_alert {
+        format!(" 🔔 Set Alert — {symbol} ")
+    } else {
+        format!(" Set Alert — {symbol} ")
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(c.accent_style());
+
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // [0] hint line
+            Constraint::Length(1), // [1] blank
+            Constraint::Length(1), // [2] Above label + input
+            Constraint::Length(1), // [3] blank
+            Constraint::Length(1), // [4] Below label + input
+            Constraint::Length(1), // [5] blank
+            Constraint::Length(1), // [6] current values / note
+            Constraint::Min(0),    // [7] filler
+            Constraint::Length(1), // [8] key hints
+        ])
+        .split(inner);
+
+    // Instruction hint
+    frame.render_widget(
+        Paragraph::new(
+            "  Enter thresholds (leave blank to skip/clear):",
+        )
+        .style(c.dim_style()),
+        chunks[0],
+    );
+
+    // Above threshold field
+    let above_focused = *focused == AlertField::Above;
+    let above_style = if above_focused {
+        Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let above_cursor = if above_focused { "▋" } else { "" };
+    let above_line = Line::from(vec![
+        Span::styled("  Above  $", c.dim_style()),
+        Span::styled(above_input.to_string(), above_style),
+        Span::styled(above_cursor, c.accent_style()),
+    ]);
+    frame.render_widget(Paragraph::new(above_line), chunks[2]);
+
+    // Below threshold field
+    let below_focused = *focused == AlertField::Below;
+    let below_style = if below_focused {
+        Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let below_cursor = if below_focused { "▋" } else { "" };
+    let below_line = Line::from(vec![
+        Span::styled("  Below  $", c.dim_style()),
+        Span::styled(below_input.to_string(), below_style),
+        Span::styled(below_cursor, c.accent_style()),
+    ]);
+    frame.render_widget(Paragraph::new(below_line), chunks[4]);
+
+    // Show current active alert thresholds if any
+    if let Some(alert) = app.price_alerts.get(symbol) {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(a) = alert.above {
+            parts.push(format!("above ${:.2}", a));
+        }
+        if let Some(b) = alert.below {
+            parts.push(format!("below ${:.2}", b));
+        }
+        if !parts.is_empty() {
+            let note = format!("  Active: {}", parts.join(", "));
+            frame.render_widget(
+                Paragraph::new(Span::styled(note, c.accent_style())),
+                chunks[6],
+            );
+        }
+    }
+
+    // Key hints
+    frame.render_widget(
+        Paragraph::new("  Enter:Save  Tab:Switch field  Esc:Cancel").style(c.dim_style()),
+        chunks[8],
+    );
+}
+
+
 
 fn field_line(label: &str, value: &str, style: Style, dim_style: Style) -> Paragraph<'static> {
     Paragraph::new(Line::from(vec![
