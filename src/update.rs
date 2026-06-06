@@ -1426,6 +1426,31 @@ mod tests {
     }
 
     #[test]
+    fn alert_below_resets_and_refires_after_price_retreats() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                below: Some(150.0),
+                below_triggered: true,
+                ..Default::default()
+            },
+        );
+        // Price rises above threshold → triggered flag should reset.
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 152.0)));
+        assert!(
+            !app.price_alerts["AAPL"].below_triggered,
+            "below_triggered should reset when price retreats"
+        );
+        // Price drops back below threshold → should fire again.
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 148.0)));
+        assert!(
+            app.price_alerts["AAPL"].below_triggered,
+            "below_triggered should re-fire after price crosses again"
+        );
+    }
+
+    #[test]
     fn watchlist_d_opens_confirm_remove_watchlist() {
         let mut app = watchlist_app();
         update(&mut app, key(KeyCode::Char('d')));

@@ -357,4 +357,22 @@ mod tests {
         // (110 - 100) / 100 * 100 = +10.00%
         assert!(output.contains("+10.00%"), "expected +10.00% change");
     }
+
+    #[test]
+    fn watchlist_renders_bell_icon_when_price_alert_configured() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        app.price_alerts.insert(
+            "AAPL".to_string(),
+            crate::types::PriceAlert {
+                above: Some(150.0),
+                ..Default::default()
+            },
+        );
+        let output = render_watchlist_to_string(&mut app);
+        assert!(
+            output.contains("AAPL 🔔"),
+            "expected AAPL 🔔 to be rendered in the watchlist, got: {output}"
+        );
+    }
 }

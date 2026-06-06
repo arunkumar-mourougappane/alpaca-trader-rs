@@ -1769,4 +1769,79 @@ mod tests {
             alert.above
         );
     }
+
+    #[test]
+    fn set_alert_up_down_arrows_switch_focus() {
+        let mut app = make_set_alert_app("AAPL");
+        // Starts on Above. Press Down -> Below
+        press(&mut app, KeyCode::Down);
+        match &app.modal {
+            Some(Modal::SetAlert { focused, .. }) => {
+                assert_eq!(*focused, crate::app::AlertField::Below);
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+        // Press Up -> Above
+        press(&mut app, KeyCode::Up);
+        match &app.modal {
+            Some(Modal::SetAlert { focused, .. }) => {
+                assert_eq!(*focused, crate::app::AlertField::Above);
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_backspace_on_below_field() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Tab); // switch to Below
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('5'));
+        press(&mut app, KeyCode::Backspace);
+        match &app.modal {
+            Some(Modal::SetAlert { below_input, .. }) => {
+                assert_eq!(below_input, "1");
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_enter_with_only_below_saving() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Tab); // switch to Below
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('5'));
+        press(&mut app, KeyCode::Char('0'));
+        press(&mut app, KeyCode::Enter);
+        assert!(app.modal.is_none());
+        let alert = app.price_alerts.get("AAPL").expect("alert should be saved");
+        assert_eq!(alert.above, None);
+        assert_eq!(alert.below, Some(150.0));
+    }
+
+    #[test]
+    fn set_alert_unhandled_key_is_noop() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Char('x'));
+        match &app.modal {
+            Some(Modal::SetAlert { above_input, .. }) => {
+                assert_eq!(above_input, "");
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_alert_double_tab_toggles_back_to_above() {
+        let mut app = make_set_alert_app("AAPL");
+        press(&mut app, KeyCode::Tab); // to Below
+        press(&mut app, KeyCode::Tab); // to Above
+        match &app.modal {
+            Some(Modal::SetAlert { focused, .. }) => {
+                assert_eq!(*focused, crate::app::AlertField::Above);
+            }
+            other => panic!("expected SetAlert, got: {:?}", other),
+        }
+    }
 }
