@@ -3324,4 +3324,79 @@ mod tests {
             "render_confirm_remove_watchlist should set modal_confirm_buttons hit area"
         );
     }
+
+    // ── render_set_alert tests ───────────────────────────────────────────────
+
+    fn render_set_alert_to_string(
+        app: &mut App,
+        symbol: &str,
+        above_input: &str,
+        below_input: &str,
+        focused: &AlertField,
+    ) -> String {
+        let backend = TestBackend::new(120, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_set_alert(frame, area, symbol, above_input, below_input, focused, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_set_alert_shows_fields_above_focused() {
+        let mut app = make_test_app();
+        let output =
+            render_set_alert_to_string(&mut app, "AAPL", "180.5", "170.0", &AlertField::Above);
+        assert!(output.contains("Set Alert — AAPL"));
+        assert!(output.contains("Above  $180.5▋"));
+        assert!(output.contains("Below  $170.0"));
+        assert!(output.contains("Enter:Save  Tab:Switch field  Esc:Cancel"));
+    }
+
+    #[test]
+    fn render_set_alert_shows_fields_below_focused() {
+        let mut app = make_test_app();
+        let output =
+            render_set_alert_to_string(&mut app, "AAPL", "180.5", "170.0", &AlertField::Below);
+        assert!(output.contains("Above  $180.5"));
+        assert!(output.contains("Below  $170.0▋"));
+    }
+
+    #[test]
+    fn render_set_alert_shows_bell_in_title_when_alert_exists() {
+        let mut app = make_test_app();
+        app.price_alerts.insert(
+            "AAPL".to_string(),
+            crate::types::PriceAlert {
+                above: Some(185.0),
+                below: Some(165.0),
+                ..Default::default()
+            },
+        );
+        let output = render_set_alert_to_string(&mut app, "AAPL", "", "", &AlertField::Above);
+        assert!(output.contains("🔔"));
+        assert!(output.contains("Set Alert — AAPL"));
+        assert!(output.contains("Active: above $185.00, below $165.00"));
+    }
 }
