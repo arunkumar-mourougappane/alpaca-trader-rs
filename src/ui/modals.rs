@@ -1091,10 +1091,7 @@ fn render_set_alert(
 
     // Instruction hint
     frame.render_widget(
-        Paragraph::new(
-            "  Enter thresholds (leave blank to skip/clear):",
-        )
-        .style(c.dim_style()),
+        Paragraph::new("  Enter thresholds (leave blank to skip/clear):").style(c.dim_style()),
         chunks[0],
     );
 
@@ -1152,8 +1149,6 @@ fn render_set_alert(
         chunks[8],
     );
 }
-
-
 
 fn field_line(label: &str, value: &str, style: Style, dim_style: Style) -> Paragraph<'static> {
     Paragraph::new(Line::from(vec![

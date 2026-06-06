@@ -190,9 +190,7 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
         // 'A' opens the price-alert dialog when on the Watchlist tab;
         // on every other tab it opens the About screen.
-        KeyCode::Char('A') if app.active_tab != Tab::Watchlist => {
-            app.modal = Some(Modal::About)
-        }
+        KeyCode::Char('A') if app.active_tab != Tab::Watchlist => app.modal = Some(Modal::About),
         // '1'/'2'/'3' switch panels globally, but yield to the Orders panel so those
         // keys can switch sub-tabs (Open / Filled / Cancelled) when Orders is active.
         KeyCode::Char('1') if app.active_tab != Tab::Orders => {
@@ -379,7 +377,12 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
             Some(a) => a,
             None => return,
         };
-        (alert.above, alert.below, alert.above_triggered, alert.below_triggered)
+        (
+            alert.above,
+            alert.below,
+            alert.above_triggered,
+            alert.below_triggered,
+        )
     };
 
     // ── Above threshold ───────────────────────────────────────────────────────
@@ -390,9 +393,8 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
                 if let Some(a) = app.price_alerts.get_mut(&symbol) {
                     a.above_triggered = true;
                 }
-                let msg = format!(
-                    "🔔 {symbol} above ${threshold:.2} — alert triggered! (${price:.2})"
-                );
+                let msg =
+                    format!("🔔 {symbol} above ${threshold:.2} — alert triggered! (${price:.2})");
                 app.push_transient_status(msg);
                 // Ring the terminal bell.
                 let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x07");
@@ -412,9 +414,8 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
                 if let Some(a) = app.price_alerts.get_mut(&symbol) {
                     a.below_triggered = true;
                 }
-                let msg = format!(
-                    "🔔 {symbol} below ${threshold:.2} — alert triggered! (${price:.2})"
-                );
+                let msg =
+                    format!("🔔 {symbol} below ${threshold:.2} — alert triggered! (${price:.2})");
                 app.push_transient_status(msg);
                 let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x07");
             }
@@ -426,7 +427,6 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1424,7 +1424,6 @@ mod tests {
             "mid-price at threshold should trigger alert"
         );
     }
-
 
     #[test]
     fn watchlist_d_opens_confirm_remove_watchlist() {

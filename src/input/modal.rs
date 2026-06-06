@@ -1729,12 +1729,9 @@ mod tests {
             },
         );
         press(&mut app, KeyCode::Enter); // inputs are empty
+        assert!(app.modal.is_none(), "modal should close after Enter");
         assert!(
-            app.modal.is_none(),
-            "modal should close after Enter"
-        );
-        assert!(
-            app.price_alerts.get("AAPL").is_none(),
+            !app.price_alerts.contains_key("AAPL"),
             "alert should be cleared when both inputs are empty"
         );
     }
@@ -1750,7 +1747,7 @@ mod tests {
             "Esc should close SetAlert without saving"
         );
         assert!(
-            app.price_alerts.get("AAPL").is_none(),
+            !app.price_alerts.contains_key("AAPL"),
             "no alert should be saved after Esc"
         );
     }
@@ -1773,4 +1770,3 @@ mod tests {
         );
     }
 }
-
