@@ -82,4 +82,3 @@ pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEven
         _ => {}
     }
 }
-

@@ -143,7 +143,9 @@ use tokio::sync::{mpsc, watch, Notify};
 use crate::commands::Command;
 use crate::config::AlpacaConfig;
 use crate::prefs::AppPrefs;
-use crate::types::{AccountInfo, MarketClock, Order, Position, PriceAlert, Quote, Snapshot, Watchlist};
+use crate::types::{
+    AccountInfo, MarketClock, Order, Position, PriceAlert, Quote, Snapshot, Watchlist,
+};
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq)]
