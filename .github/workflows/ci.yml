@@ -83,7 +83,7 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
       - run: cargo llvm-cov --all-features --lcov --output-path coverage.lcov
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: ./coverage.lcov
           flags: ${{ runner.os }}
