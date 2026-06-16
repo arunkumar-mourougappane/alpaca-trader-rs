@@ -53,7 +53,10 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             state.order_type.cycle_next()
                         };
                         // Reset focus if current field is now hidden.
-                        if !state.focused_field.is_visible_for(&state.order_type, state.bracket) {
+                        if !state
+                            .focused_field
+                            .is_visible_for(&state.order_type, state.bracket)
+                        {
                             state.focused_field = OrderField::Qty;
                         }
                     }
@@ -83,7 +86,10 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         } else {
                             state.order_type.cycle_next()
                         };
-                        if !state.focused_field.is_visible_for(&state.order_type, state.bracket) {
+                        if !state
+                            .focused_field
+                            .is_visible_for(&state.order_type, state.bracket)
+                        {
                             state.focused_field = OrderField::Qty;
                         }
                     }

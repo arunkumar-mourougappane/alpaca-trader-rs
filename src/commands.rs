@@ -3,6 +3,7 @@
 ///
 /// This enum bridges the sync/async boundary for all mutation operations
 /// initiated from key-press handlers in the UI layer.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Command {
     /// Submit a new order to the broker.

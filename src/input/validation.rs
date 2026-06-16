@@ -125,18 +125,14 @@ pub(crate) fn validate(
         if !state.stop_loss_limit_price.is_empty() {
             match state.stop_loss_limit_price.parse::<f64>() {
                 Ok(v) if v > 0.0 => {}
-                Ok(_) => {
-                    return Some("Stop-loss limit price must be greater than zero".into())
-                }
+                Ok(_) => return Some("Stop-loss limit price must be greater than zero".into()),
                 Err(_) => return Some("Stop-loss limit price is not a valid number".into()),
             }
         }
         // Directional validation: for buy orders TP must be above SL.
         if state.side == OrderSide::Buy {
             if tp <= sl {
-                return Some(
-                    "Take-profit must be above stop-loss for a buy bracket order".into(),
-                );
+                return Some("Take-profit must be above stop-loss for a buy bracket order".into());
             }
             // If we have a limit entry price, TP must be above it and SL must be below.
             if let Ok(entry) = state.price_input.parse::<f64>() {
@@ -150,9 +146,7 @@ pub(crate) fn validate(
         } else {
             // Sell bracket: TP below SL.
             if tp >= sl {
-                return Some(
-                    "Take-profit must be below stop-loss for a sell bracket order".into(),
-                );
+                return Some("Take-profit must be below stop-loss for a sell bracket order".into());
             }
         }
     }
@@ -540,10 +534,7 @@ mod tests {
         state.order_type = FullOrderType::TrailingStop;
         state.trail_input = "5.00".into();
         let msg = validate(&state, 10_000.0, true, false).expect("should fail");
-        assert!(
-            msg.to_lowercase().contains("bracket"),
-            "got: {msg}"
-        );
+        assert!(msg.to_lowercase().contains("bracket"), "got: {msg}");
     }
 
     #[test]
@@ -591,10 +582,7 @@ mod tests {
         state.take_profit_price = "170.00".into(); // below entry
         state.stop_loss_price = "160.00".into();
         let msg = validate(&state, 100_000.0, true, false).expect("should fail");
-        assert!(
-            msg.to_lowercase().contains("take-profit"),
-            "got: {msg}"
-        );
+        assert!(msg.to_lowercase().contains("take-profit"), "got: {msg}");
     }
 
     #[test]
@@ -605,10 +593,7 @@ mod tests {
         state.take_profit_price = "185.00".into();
         state.stop_loss_price = "180.00".into(); // above entry
         let msg = validate(&state, 100_000.0, true, false).expect("should fail");
-        assert!(
-            msg.to_lowercase().contains("stop-loss"),
-            "got: {msg}"
-        );
+        assert!(msg.to_lowercase().contains("stop-loss"), "got: {msg}");
     }
 
     #[test]
