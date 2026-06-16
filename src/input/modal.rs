@@ -53,7 +53,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             state.order_type.cycle_next()
                         };
                         // Reset focus if current field is now hidden.
-                        if !state.focused_field.is_visible_for(&state.order_type) {
+                        if !state.focused_field.is_visible_for(&state.order_type, state.bracket) {
                             state.focused_field = OrderField::Qty;
                         }
                     }
@@ -64,6 +64,9 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         state.extended_hours = !state.extended_hours;
                     }
                     OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
+                    OrderField::Bracket => {
+                        state.bracket = !state.bracket;
+                    }
                     _ => {}
                 },
                 KeyCode::Up | KeyCode::Down => match state.focused_field {
@@ -80,7 +83,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         } else {
                             state.order_type.cycle_next()
                         };
-                        if !state.focused_field.is_visible_for(&state.order_type) {
+                        if !state.focused_field.is_visible_for(&state.order_type, state.bracket) {
                             state.focused_field = OrderField::Qty;
                         }
                     }
@@ -91,6 +94,9 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         state.extended_hours = !state.extended_hours;
                     }
                     OrderField::TimeInForce => state.gtc_order = !state.gtc_order,
+                    OrderField::Bracket => {
+                        state.bracket = !state.bracket;
+                    }
                     _ => {}
                 },
                 KeyCode::Char(c) => match state.focused_field {
@@ -106,6 +112,18 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     }
                     OrderField::TrailAmount if c.is_ascii_digit() || c == '.' => {
                         state.trail_input.push(c);
+                    }
+                    OrderField::Bracket if c == ' ' => {
+                        state.bracket = !state.bracket;
+                    }
+                    OrderField::TakeProfit if c.is_ascii_digit() || c == '.' => {
+                        state.take_profit_price.push(c);
+                    }
+                    OrderField::StopLoss if c.is_ascii_digit() || c == '.' => {
+                        state.stop_loss_price.push(c);
+                    }
+                    OrderField::StopLossLimit if c.is_ascii_digit() || c == '.' => {
+                        state.stop_loss_limit_price.push(c);
                     }
                     OrderField::Side => {
                         if c == 'b' || c == 'B' {
@@ -134,6 +152,15 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     }
                     OrderField::TrailAmount => {
                         state.trail_input.pop();
+                    }
+                    OrderField::TakeProfit => {
+                        state.take_profit_price.pop();
+                    }
+                    OrderField::StopLoss => {
+                        state.stop_loss_price.pop();
+                    }
+                    OrderField::StopLossLimit => {
+                        state.stop_loss_limit_price.pop();
                     }
                     _ => {}
                 },
@@ -211,6 +238,10 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                     }
                                 }
                             };
+                        let bracket_eligible = matches!(
+                            state.order_type,
+                            FullOrderType::Market | FullOrderType::Limit
+                        ) && state.bracket;
                         send_command(
                             app,
                             Command::SubmitOrder {
@@ -229,6 +260,27 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                 time_in_force: if state.gtc_order { "gtc" } else { "day" }.into(),
                                 extended_hours: state.extended_hours
                                     && state.order_type == FullOrderType::Limit,
+                                take_profit_price: if bracket_eligible
+                                    && !state.take_profit_price.is_empty()
+                                {
+                                    Some(state.take_profit_price.clone())
+                                } else {
+                                    None
+                                },
+                                stop_loss_price: if bracket_eligible
+                                    && !state.stop_loss_price.is_empty()
+                                {
+                                    Some(state.stop_loss_price.clone())
+                                } else {
+                                    None
+                                },
+                                stop_loss_limit_price: if bracket_eligible
+                                    && !state.stop_loss_limit_price.is_empty()
+                                {
+                                    Some(state.stop_loss_limit_price.clone())
+                                } else {
+                                    None
+                                },
                             },
                             "Submitting order…",
                         );

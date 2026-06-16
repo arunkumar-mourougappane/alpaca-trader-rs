@@ -100,6 +100,63 @@ pub(crate) fn validate(
         }
     }
 
+    // 9. Bracket order validation.
+    if state.bracket {
+        use crate::app::OrderSide;
+        if state.side == OrderSide::SellShort {
+            return Some("Bracket orders are not available for sell-short positions".into());
+        }
+        if !matches!(
+            state.order_type,
+            FullOrderType::Market | FullOrderType::Limit
+        ) {
+            return Some("Bracket orders require a Market or Limit entry type".into());
+        }
+        let tp: f64 = match state.take_profit_price.parse::<f64>() {
+            Ok(v) if v > 0.0 => v,
+            Ok(_) => return Some("Take-profit price must be greater than zero".into()),
+            Err(_) => return Some("Take-profit price is not a valid number".into()),
+        };
+        let sl: f64 = match state.stop_loss_price.parse::<f64>() {
+            Ok(v) if v > 0.0 => v,
+            Ok(_) => return Some("Stop-loss price must be greater than zero".into()),
+            Err(_) => return Some("Stop-loss price is not a valid number".into()),
+        };
+        if !state.stop_loss_limit_price.is_empty() {
+            match state.stop_loss_limit_price.parse::<f64>() {
+                Ok(v) if v > 0.0 => {}
+                Ok(_) => {
+                    return Some("Stop-loss limit price must be greater than zero".into())
+                }
+                Err(_) => return Some("Stop-loss limit price is not a valid number".into()),
+            }
+        }
+        // Directional validation: for buy orders TP must be above SL.
+        if state.side == OrderSide::Buy {
+            if tp <= sl {
+                return Some(
+                    "Take-profit must be above stop-loss for a buy bracket order".into(),
+                );
+            }
+            // If we have a limit entry price, TP must be above it and SL must be below.
+            if let Ok(entry) = state.price_input.parse::<f64>() {
+                if entry > 0.0 && tp <= entry {
+                    return Some("Take-profit must be above the limit entry price".into());
+                }
+                if entry > 0.0 && sl >= entry {
+                    return Some("Stop-loss must be below the limit entry price".into());
+                }
+            }
+        } else {
+            // Sell bracket: TP below SL.
+            if tp >= sl {
+                return Some(
+                    "Take-profit must be below stop-loss for a sell bracket order".into(),
+                );
+            }
+        }
+    }
+
     None
 }
 
@@ -436,5 +493,135 @@ mod tests {
             msg.to_lowercase().contains("extended") || msg.to_lowercase().contains("day"),
             "got: {msg}"
         );
+    }
+
+    // ── Bracket order ─────────────────────────────────────────────────────────
+
+    fn base_bracket_state() -> OrderEntryState {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.gtc_order = true;
+        s.qty_input = "10".into();
+        s.bracket = true;
+        s.take_profit_price = "185.00".into();
+        s.stop_loss_price = "165.00".into();
+        s
+    }
+
+    #[test]
+    fn valid_bracket_market_buy_returns_none() {
+        let state = base_bracket_state();
+        assert_eq!(validate(&state, 10_000.0, true, false), None);
+    }
+
+    #[test]
+    fn valid_bracket_limit_buy_returns_none() {
+        let mut state = base_bracket_state();
+        state.order_type = FullOrderType::Limit;
+        state.price_input = "175.00".into();
+        assert_eq!(validate(&state, 100_000.0, true, false), None);
+    }
+
+    #[test]
+    fn bracket_sell_short_fails() {
+        use crate::app::OrderSide;
+        let mut state = base_bracket_state();
+        state.side = OrderSide::SellShort;
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(
+            msg.to_lowercase().contains("bracket") || msg.to_lowercase().contains("short"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn bracket_trailing_stop_fails() {
+        let mut state = base_bracket_state();
+        state.order_type = FullOrderType::TrailingStop;
+        state.trail_input = "5.00".into();
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(
+            msg.to_lowercase().contains("bracket"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn bracket_missing_take_profit_fails() {
+        let mut state = base_bracket_state();
+        state.take_profit_price.clear();
+        assert!(validate(&state, 10_000.0, true, false).is_some());
+    }
+
+    #[test]
+    fn bracket_missing_stop_loss_fails() {
+        let mut state = base_bracket_state();
+        state.stop_loss_price.clear();
+        assert!(validate(&state, 10_000.0, true, false).is_some());
+    }
+
+    #[test]
+    fn bracket_buy_tp_below_sl_fails() {
+        let mut state = base_bracket_state();
+        // Inverted: TP below SL for a buy order
+        state.take_profit_price = "160.00".into();
+        state.stop_loss_price = "170.00".into();
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(
+            msg.to_lowercase().contains("take-profit") || msg.to_lowercase().contains("stop-loss"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn bracket_buy_tp_above_entry_sl_below_entry_passes() {
+        let mut state = base_bracket_state();
+        state.order_type = FullOrderType::Limit;
+        state.price_input = "175.00".into();
+        state.take_profit_price = "185.00".into();
+        state.stop_loss_price = "165.00".into();
+        assert_eq!(validate(&state, 100_000.0, true, false), None);
+    }
+
+    #[test]
+    fn bracket_buy_tp_below_limit_entry_fails() {
+        let mut state = base_bracket_state();
+        state.order_type = FullOrderType::Limit;
+        state.price_input = "175.00".into();
+        state.take_profit_price = "170.00".into(); // below entry
+        state.stop_loss_price = "160.00".into();
+        let msg = validate(&state, 100_000.0, true, false).expect("should fail");
+        assert!(
+            msg.to_lowercase().contains("take-profit"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn bracket_buy_sl_above_limit_entry_fails() {
+        let mut state = base_bracket_state();
+        state.order_type = FullOrderType::Limit;
+        state.price_input = "175.00".into();
+        state.take_profit_price = "185.00".into();
+        state.stop_loss_price = "180.00".into(); // above entry
+        let msg = validate(&state, 100_000.0, true, false).expect("should fail");
+        assert!(
+            msg.to_lowercase().contains("stop-loss"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn bracket_optional_sl_limit_price_valid() {
+        let mut state = base_bracket_state();
+        state.stop_loss_limit_price = "164.00".into();
+        assert_eq!(validate(&state, 10_000.0, true, false), None);
+    }
+
+    #[test]
+    fn bracket_invalid_sl_limit_price_fails() {
+        let mut state = base_bracket_state();
+        state.stop_loss_limit_price = "bad".into();
+        assert!(validate(&state, 10_000.0, true, false).is_some());
     }
 }

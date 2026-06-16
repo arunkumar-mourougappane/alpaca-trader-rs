@@ -21,7 +21,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
     app.hit_areas.modal_popup_area = Some(match modal {
         Modal::Help => popup_area(area, 50, 78),
         Modal::About => popup_area(area, 50, 60),
-        Modal::OrderEntry(_) => popup_area(area, 45, 65),
+        Modal::OrderEntry(_) => popup_area(area, 50, 80),
         Modal::SymbolDetail(_) => popup_area(area, 55, 88),
         Modal::Confirm { .. } => popup_area(area, 40, 25),
         Modal::ConfirmRemoveWatchlist { .. } => popup_area(area, 42, 22),
@@ -258,6 +258,11 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     );
     let show_trail = matches!(state.order_type, FullOrderType::TrailingStop);
     let show_ext_hours = matches!(state.order_type, FullOrderType::Limit);
+    let show_bracket = matches!(
+        state.order_type,
+        FullOrderType::Market | FullOrderType::Limit
+    );
+    let show_bracket_legs = show_bracket && state.bracket;
 
     let v = |show: bool| Constraint::Length(if show { 1 } else { 0 });
 
@@ -275,13 +280,17 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             v(show_trail),         // [8]  Trail Mode $ / % (TrailingStop)
             v(show_ext_hours),     // [9]  Extended Hours (Limit)
             Constraint::Length(1), // [10] TimeInForce
-            Constraint::Length(1), // [11] blank
-            Constraint::Length(1), // [12] Est Total
-            Constraint::Length(1), // [13] Buying Power
-            Constraint::Length(1), // [14] blank
-            Constraint::Length(1), // [15] Market-closed warning
-            Constraint::Length(1), // [16] Submit / Cancel
-            Constraint::Length(1), // [17] hint
+            v(show_bracket),       // [11] Bracket checkbox
+            v(show_bracket_legs),  // [12] Take Profit
+            v(show_bracket_legs),  // [13] Stop Loss
+            v(show_bracket_legs),  // [14] Stop Loss Limit (optional)
+            Constraint::Length(1), // [15] blank
+            Constraint::Length(1), // [16] Est Total
+            Constraint::Length(1), // [17] Buying Power
+            Constraint::Length(1), // [18] blank
+            Constraint::Length(1), // [19] Market-closed warning
+            Constraint::Length(1), // [20] Submit / Cancel
+            Constraint::Length(1), // [21] hint
         ])
         .split(inner);
 
@@ -308,8 +317,16 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     if show_ext_hours {
         modal_fields.push((OrderField::ExtendedHours, chunks[9]));
     }
+    if show_bracket {
+        modal_fields.push((OrderField::Bracket, chunks[11]));
+    }
+    if show_bracket_legs {
+        modal_fields.push((OrderField::TakeProfit, chunks[12]));
+        modal_fields.push((OrderField::StopLoss, chunks[13]));
+        modal_fields.push((OrderField::StopLossLimit, chunks[14]));
+    }
     app.hit_areas.modal_fields = modal_fields;
-    app.hit_areas.modal_submit = Some(chunks[16]);
+    app.hit_areas.modal_submit = Some(chunks[20]);
 
     let focused = |field: &OrderField| *field == state.focused_field;
 
@@ -489,6 +506,81 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     ]);
     frame.render_widget(Paragraph::new(tif_line), chunks[10]);
 
+    // Bracket checkbox (Market and Limit only)
+    if show_bracket {
+        let check = if state.bracket { "[x]" } else { "[ ]" };
+        let bracket_style = if focused(&OrderField::Bracket) {
+            Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("  Bracket ", c.dim_style()),
+                Span::styled(check, bracket_style),
+                Span::styled(" Bracket order (TP + SL legs)", c.dim_style()),
+            ])),
+            chunks[11],
+        );
+    }
+
+    // Bracket legs (only when bracket is enabled)
+    if show_bracket_legs {
+        frame.render_widget(
+            field_line(
+                "TP $  ",
+                &format!(
+                    "{}{}",
+                    state.take_profit_price,
+                    if focused(&OrderField::TakeProfit) {
+                        "▋"
+                    } else {
+                        ""
+                    }
+                ),
+                field_style(&OrderField::TakeProfit),
+                c.dim_style(),
+            ),
+            chunks[12],
+        );
+
+        frame.render_widget(
+            field_line(
+                "SL $  ",
+                &format!(
+                    "{}{}",
+                    state.stop_loss_price,
+                    if focused(&OrderField::StopLoss) {
+                        "▋"
+                    } else {
+                        ""
+                    }
+                ),
+                field_style(&OrderField::StopLoss),
+                c.dim_style(),
+            ),
+            chunks[13],
+        );
+
+        frame.render_widget(
+            field_line(
+                "SL Lmt",
+                &format!(
+                    "{}{}",
+                    state.stop_loss_limit_price,
+                    if focused(&OrderField::StopLossLimit) {
+                        "▋"
+                    } else {
+                        ""
+                    }
+                ),
+                field_style(&OrderField::StopLossLimit),
+                c.dim_style(),
+            ),
+            chunks[14],
+        );
+    }
+
     // Est Total (uses limit price when available)
     let est_total = estimate_total(state);
     frame.render_widget(
@@ -496,7 +588,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Span::styled("  Est. Total  ", c.dim_style()),
             Span::styled(est_total, c.bold_style()),
         ])),
-        chunks[12],
+        chunks[16],
     );
 
     // Buying power
@@ -510,7 +602,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
             Span::styled("  Buying Power  ", c.dim_style()),
             Span::styled(bp, c.bold_style()),
         ])),
-        chunks[13],
+        chunks[17],
     );
 
     // Market-closed warning
@@ -533,7 +625,7 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
                 "  ⚠ Market closed — switch to GTC or wait",
                 Style::default().fg(c.neutral).add_modifier(Modifier::BOLD),
             )])),
-            chunks[15],
+            chunks[19],
         );
     }
 
@@ -552,12 +644,12 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
         Span::raw("  "),
         Span::styled("[ Esc: Cancel ]", c.dim_style()),
     ]);
-    frame.render_widget(Paragraph::new(buttons), chunks[16]);
+    frame.render_widget(Paragraph::new(buttons), chunks[20]);
 
     // Hint
     frame.render_widget(
-        Paragraph::new("  Tab:Next  ←/→:Cycle  Enter:Advance  Esc:Close").style(c.dim_style()),
-        chunks[17],
+        Paragraph::new("  Tab:Next  ←/→:Cycle  Space:Toggle  Esc:Close").style(c.dim_style()),
+        chunks[21],
     );
 }
 
