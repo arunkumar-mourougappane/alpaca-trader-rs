@@ -603,6 +603,168 @@ mod tests {
         );
     }
 
+    /// Bracket order with TP+SL is submitted and returns "Order submitted".
+    #[tokio::test]
+    async fn submit_bracket_order_sends_accepted_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(order_response()))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(test_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::SubmitOrder {
+                symbol: "AAPL".into(),
+                side: "buy".into(),
+                order_type: "market".into(),
+                qty: Some("10".into()),
+                limit_price: None,
+                stop_price: None,
+                trail_price: None,
+                trail_percent: None,
+                time_in_force: "day".into(),
+                extended_hours: false,
+                take_profit_price: Some("195.00".into()),
+                stop_loss_price: Some("170.00".into()),
+                stop_loss_limit_price: Some("169.00".into()),
+            },
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m == "Order submitted")),
+            "expected 'Order submitted' for bracket order; got: {events:?}"
+        );
+    }
+
+    /// Bracket order with only TP+SL (no SL limit) is submitted successfully.
+    #[tokio::test]
+    async fn submit_bracket_order_no_sl_limit_sends_accepted_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(order_response()))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(test_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::SubmitOrder {
+                symbol: "AAPL".into(),
+                side: "buy".into(),
+                order_type: "market".into(),
+                qty: Some("10".into()),
+                limit_price: None,
+                stop_price: None,
+                trail_price: None,
+                trail_percent: None,
+                time_in_force: "day".into(),
+                extended_hours: false,
+                take_profit_price: Some("195.00".into()),
+                stop_loss_price: Some("170.00".into()),
+                stop_loss_limit_price: None,
+            },
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m == "Order submitted")),
+            "expected 'Order submitted' for bracket order without SL limit"
+        );
+    }
+
+    /// Dry-run bracket order emits the bracket display in the status message.
+    #[tokio::test]
+    async fn submit_order_dry_run_bracket_includes_tp_sl_in_message() {
+        let server = MockServer::start().await;
+        let client = AlpacaClient::new(dry_run_config(server.uri()));
+        let (tx, mut rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+
+        execute_one(
+            Command::SubmitOrder {
+                symbol: "AAPL".into(),
+                side: "buy".into(),
+                order_type: "market".into(),
+                qty: Some("10".into()),
+                limit_price: None,
+                stop_price: None,
+                trail_price: None,
+                trail_percent: None,
+                time_in_force: "day".into(),
+                extended_hours: false,
+                take_profit_price: Some("195.00".into()),
+                stop_loss_price: Some("170.00".into()),
+                stop_loss_limit_price: None,
+            },
+            &tx,
+            &client,
+            &notify,
+        )
+        .await;
+
+        let events = collect_events(&mut rx).await;
+        let msg = events
+            .iter()
+            .find_map(|e| {
+                if let Event::StatusMsg(m) = e {
+                    Some(m.as_str())
+                } else {
+                    None
+                }
+            })
+            .expect("expected a StatusMsg");
+        assert!(msg.contains("[DRY-RUN]"), "should have DRY-RUN tag");
+        assert!(msg.contains("bracket"), "should mention bracket");
+        assert!(msg.contains("195.00"), "should include TP price");
+        assert!(msg.contains("170.00"), "should include SL price");
+    }
+
+    /// `run()` processes commands until the cancellation token fires.
+    #[tokio::test]
+    async fn run_exits_on_cancellation() {
+        use tokio_util::sync::CancellationToken;
+
+        let server = MockServer::start().await;
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Command>(4);
+        let (evt_tx, _evt_rx) = mpsc::channel(16);
+        let notify = Arc::new(Notify::new());
+        let cancel = CancellationToken::new();
+
+        let cancel_clone = cancel.clone();
+        let handle = tokio::spawn(run(cmd_rx, evt_tx, client, notify, cancel_clone));
+
+        // Signal cancellation and wait for the loop to exit.
+        cancel.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .expect("run() should exit within 2s after cancellation")
+            .expect("run() task should not panic");
+
+        drop(cmd_tx);
+    }
+
     /// Dry-run status message should include order details.
     #[tokio::test]
     async fn submit_order_dry_run_message_includes_order_details() {
