@@ -114,6 +114,85 @@ mod tests {
             },
         );
     }
+
+    // ── from_credentials ─────────────────────────────────────────────────────
+
+    fn make_creds(endpoint: &str, env: AlpacaEnv) -> ResolvedCredentials {
+        ResolvedCredentials {
+            endpoint: endpoint.into(),
+            key: "AKTEST000".into(),
+            secret: "secret000".into(),
+            env,
+        }
+    }
+
+    #[test]
+    fn from_credentials_empty_endpoint_returns_error() {
+        let creds = make_creds("", AlpacaEnv::Paper);
+        let result = AlpacaConfig::from_credentials(creds);
+        assert!(result.is_err(), "empty endpoint should produce an error");
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("endpoint must not be empty"),
+            "error message should mention the empty endpoint"
+        );
+    }
+
+    #[test]
+    fn from_credentials_live_appends_v2() {
+        let creds = make_creds("https://api.alpaca.markets", AlpacaEnv::Live);
+        let cfg = AlpacaConfig::from_credentials(creds).unwrap();
+        assert_eq!(cfg.base_url, "https://api.alpaca.markets/v2");
+        assert_eq!(cfg.env, AlpacaEnv::Live);
+        assert!(!cfg.dry_run);
+    }
+
+    #[test]
+    fn from_credentials_paper_uses_endpoint_as_is() {
+        let creds = make_creds("https://paper-api.alpaca.markets", AlpacaEnv::Paper);
+        let cfg = AlpacaConfig::from_credentials(creds).unwrap();
+        assert_eq!(cfg.base_url, "https://paper-api.alpaca.markets");
+        assert!(
+            !cfg.base_url.ends_with("/v2"),
+            "paper endpoint must not gain /v2"
+        );
+        assert_eq!(cfg.env, AlpacaEnv::Paper);
+    }
+
+    #[test]
+    fn from_credentials_trims_trailing_slash_live() {
+        let creds = make_creds("https://api.alpaca.markets/", AlpacaEnv::Live);
+        let cfg = AlpacaConfig::from_credentials(creds).unwrap();
+        assert_eq!(
+            cfg.base_url, "https://api.alpaca.markets/v2",
+            "trailing slash must be stripped before /v2 is appended"
+        );
+    }
+
+    #[test]
+    fn from_credentials_trims_trailing_slash_paper() {
+        let creds = make_creds("https://paper-api.alpaca.markets/", AlpacaEnv::Paper);
+        let cfg = AlpacaConfig::from_credentials(creds).unwrap();
+        assert_eq!(
+            cfg.base_url, "https://paper-api.alpaca.markets",
+            "trailing slash must be stripped from paper endpoint"
+        );
+    }
+
+    #[test]
+    fn from_credentials_preserves_key_and_secret() {
+        let creds = ResolvedCredentials {
+            endpoint: "https://api.alpaca.markets".into(),
+            key: "MY_KEY".into(),
+            secret: "MY_SECRET".into(),
+            env: AlpacaEnv::Live,
+        };
+        let cfg = AlpacaConfig::from_credentials(creds).unwrap();
+        assert_eq!(cfg.key, "MY_KEY");
+        assert_eq!(cfg.secret, "MY_SECRET");
+    }
 }
 
 /// Credentials resolved from env vars, OS keychain, or an interactive prompt.

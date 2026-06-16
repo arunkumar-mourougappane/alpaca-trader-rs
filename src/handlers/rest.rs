@@ -685,4 +685,288 @@ mod tests {
             "paper mode must not make any HTTP requests, got: {unexpected:?}"
         );
     }
+
+    // ── Error-path tests ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn poll_positions_error_emits_status_msg() {
+        let server = MockServer::start().await;
+
+        // Override positions with 500 — must be mounted before generic success mocks.
+        Mock::given(method("GET"))
+            .and(path("/positions"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        // Remaining endpoints succeed so poll_all doesn't blow up on other calls.
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "ACTIVE", "equity": "0", "buying_power": "0",
+                "cash": "0", "long_market_value": "0",
+                "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "is_open": false, "next_open": "", "next_close": "", "timestamp": ""
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/account/portfolio/history"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "equity": [], "timestamp": [], "profit_loss": [],
+                "profit_loss_pct": [], "base_value": 0.0, "timeframe": "1Min"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_once(tx, client).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m.contains("Positions error"))),
+            "HTTP 500 on /positions must emit StatusMsg containing 'Positions error'; got: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_orders_error_emits_status_msg() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/orders"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "ACTIVE", "equity": "0", "buying_power": "0",
+                "cash": "0", "long_market_value": "0",
+                "daytrade_count": 0, "pattern_day_trader": false, "currency": "USD"
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/positions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/clock"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "is_open": false, "next_open": "", "next_close": "", "timestamp": ""
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/account/portfolio/history"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "equity": [], "timestamp": [], "profit_loss": [],
+                "profit_loss_pct": [], "base_value": 0.0, "timeframe": "1Min"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = Arc::new(AlpacaClient::new(test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_once(tx, client).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m.contains("Orders error"))),
+            "HTTP 500 on /orders must emit StatusMsg containing 'Orders error'; got: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_watchlist_list_error_emits_status_msg() {
+        let server = MockServer::start().await;
+
+        // Watchlist list endpoint returns 500.
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        // Use live config so poll_watchlist actually calls the API.
+        let client = Arc::new(AlpacaClient::new(live_test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_watchlist(&client, &tx).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m.contains("Watchlist error"))),
+            "HTTP 500 on /watchlists list must emit StatusMsg containing 'Watchlist error'; got: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_watchlist_empty_list_returns_early_without_get_call() {
+        let server = MockServer::start().await;
+
+        // List returns empty array → should return early, never call /watchlists/:id.
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+
+        // Use live config so watchlist polling is attempted.
+        let client = Arc::new(AlpacaClient::new(live_test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_watchlist(&client, &tx).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        // No WatchlistUpdated (returned early) and no error status.
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            "empty watchlist list must not emit WatchlistUpdated"
+        );
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::StatusMsg(_))),
+            "empty watchlist list must not emit any StatusMsg; got: {events:?}"
+        );
+
+        // Confirm no GET /watchlists/:id was made (only the list endpoint was hit).
+        let requests = server.received_requests().await.unwrap();
+        assert!(
+            requests.iter().all(|r| r.url.path() == "/watchlists"),
+            "only /watchlists should have been called; got: {requests:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_watchlist_get_error_emits_status_msg() {
+        let server = MockServer::start().await;
+
+        // List returns one watchlist entry …
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"id": "wl-err-1", "name": "Primary"}
+            ])))
+            .mount(&server)
+            .await;
+
+        // … but fetching the detail returns 500.
+        Mock::given(method("GET"))
+            .and(path("/watchlists/wl-err-1"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = Arc::new(AlpacaClient::new(live_test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_watchlist(&client, &tx).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::StatusMsg(m) if m.contains("Watchlist error"))),
+            "HTTP 500 on /watchlists/:id must emit StatusMsg containing 'Watchlist error'; got: {events:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_snapshots_error_does_not_emit_status_msg_or_panic() {
+        let server = MockServer::start().await;
+
+        // Watchlist list and detail succeed and return an asset so snapshots is triggered.
+        Mock::given(method("GET"))
+            .and(path("/watchlists"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {"id": "wl-snap-err", "name": "Primary"}
+            ])))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/watchlists/wl-snap-err"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "wl-snap-err",
+                "name": "Primary",
+                "assets": [
+                    {
+                        "id": "asset-aapl",
+                        "symbol": "AAPL",
+                        "name": "Apple Inc",
+                        "exchange": "NASDAQ",
+                        "class": "us_equity",
+                        "tradable": true,
+                        "shortable": true,
+                        "fractionable": true,
+                        "easy_to_borrow": true
+                    }
+                ]
+            })))
+            .mount(&server)
+            .await;
+
+        // Snapshots endpoint returns 500 — should be silently logged (tracing::warn), no panic.
+        Mock::given(method("GET"))
+            .and(path("/stocks/snapshots"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = Arc::new(AlpacaClient::new(live_test_config(server.uri())));
+        let (tx, mut rx) = mpsc::channel(32);
+        poll_watchlist(&client, &tx).await;
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+
+        // WatchlistUpdated must still arrive (the snapshot failure is non-fatal).
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::WatchlistUpdated(_))),
+            "WatchlistUpdated must still be emitted even when snapshots fail; got: {events:?}"
+        );
+        // No SnapshotsUpdated because the call failed.
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::SnapshotsUpdated(_))),
+            "SnapshotsUpdated must not be emitted after 500 error; got: {events:?}"
+        );
+        // No StatusMsg — snapshot errors are only logged, never surfaced to the user.
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::StatusMsg(_))),
+            "snapshots error must not emit any StatusMsg; got: {events:?}"
+        );
+    }
 }

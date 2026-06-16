@@ -4001,4 +4001,148 @@ mod tests {
             "command should still be dispatched"
         );
     }
+
+    // ── SnapshotsUpdated ──────────────────────────────────────────────────────
+
+    fn make_snapshot() -> crate::types::Snapshot {
+        crate::types::Snapshot {
+            latest_trade: Some(crate::types::SnapshotTrade { p: 185.0 }),
+            latest_quote: None,
+            daily_bar: None,
+            prev_daily_bar: None,
+        }
+    }
+
+    #[test]
+    fn snapshots_updated_stores_snapshots() {
+        let mut app = make_test_app();
+        assert!(app.snapshots.is_empty());
+        let mut snapshots = std::collections::HashMap::new();
+        snapshots.insert("AAPL".to_string(), make_snapshot());
+        update(&mut app, Event::SnapshotsUpdated(snapshots));
+        assert_eq!(
+            app.snapshots.len(),
+            1,
+            "snapshots map should have one entry"
+        );
+        assert!(app.snapshots.contains_key("AAPL"));
+        assert_eq!(
+            app.snapshots["AAPL"].latest_trade.as_ref().map(|t| t.p),
+            Some(185.0)
+        );
+    }
+
+    #[test]
+    fn snapshots_updated_replaces_existing_snapshots() {
+        let mut app = make_test_app();
+        let mut old = std::collections::HashMap::new();
+        old.insert("TSLA".to_string(), make_snapshot());
+        app.snapshots = old;
+        let mut new_snaps = std::collections::HashMap::new();
+        new_snaps.insert("AAPL".to_string(), make_snapshot());
+        update(&mut app, Event::SnapshotsUpdated(new_snaps));
+        assert!(
+            !app.snapshots.contains_key("TSLA"),
+            "old snapshots should be replaced"
+        );
+        assert!(app.snapshots.contains_key("AAPL"));
+    }
+
+    #[test]
+    fn snapshots_updated_empty_clears_snapshots() {
+        let mut app = make_test_app();
+        let mut existing = std::collections::HashMap::new();
+        existing.insert("AAPL".to_string(), make_snapshot());
+        app.snapshots = existing;
+        update(
+            &mut app,
+            Event::SnapshotsUpdated(std::collections::HashMap::new()),
+        );
+        assert!(
+            app.snapshots.is_empty(),
+            "SnapshotsUpdated with empty map should clear snapshots"
+        );
+    }
+
+    // ── evaluate_price_alert: no ask/bid ──────────────────────────────────────
+
+    #[test]
+    fn alert_skipped_when_quote_has_no_ask_and_no_bid() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                above: Some(100.0),
+                below: Some(50.0),
+                ..Default::default()
+            },
+        );
+        // Both ap and bp are None → evaluate_price_alert returns early.
+        let q = crate::types::Quote {
+            symbol: "AAPL".into(),
+            ap: None,
+            bp: None,
+            ..Default::default()
+        };
+        update(&mut app, Event::MarketQuote(q));
+        assert_eq!(
+            app.current_status_text(),
+            "",
+            "no alert should fire when neither ask nor bid is present"
+        );
+        assert!(
+            !app.price_alerts["AAPL"].above_triggered,
+            "above_triggered must remain false"
+        );
+        assert!(
+            !app.price_alerts["AAPL"].below_triggered,
+            "below_triggered must remain false"
+        );
+    }
+
+    // ── equity chart cursor: empty history ────────────────────────────────────
+
+    #[test]
+    fn left_key_on_account_tab_with_empty_history_is_noop() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history.clear();
+        app.equity_chart_cursor = None;
+        update(&mut app, key(KeyCode::Left));
+        assert!(
+            app.equity_chart_cursor.is_none(),
+            "cursor should stay None when history is empty"
+        );
+    }
+
+    #[test]
+    fn right_key_on_account_tab_with_empty_history_is_noop() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history.clear();
+        app.equity_chart_cursor = None;
+        update(&mut app, key(KeyCode::Right));
+        assert!(
+            app.equity_chart_cursor.is_none(),
+            "cursor should stay None when history is empty"
+        );
+    }
+
+    #[test]
+    fn h_key_on_account_tab_with_empty_history_is_noop() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history.clear();
+        update(&mut app, key(KeyCode::Char('h')));
+        assert!(app.equity_chart_cursor.is_none());
+    }
+
+    #[test]
+    fn l_key_on_account_tab_with_empty_history_is_noop() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.active_tab = Tab::Account;
+        app.equity_history.clear();
+        update(&mut app, key(KeyCode::Char('l')));
+        assert!(app.equity_chart_cursor.is_none());
+    }
 }

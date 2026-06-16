@@ -517,4 +517,40 @@ mod tests {
             "should show ACCOUNT OFFLINE; got: {output:?}"
         );
     }
+
+    #[test]
+    fn header_live_env_renders_live_label() {
+        use crate::config::{AlpacaConfig, AlpacaEnv};
+        let mut app = make_test_app();
+        app.config = AlpacaConfig {
+            base_url: "https://api.alpaca.markets/v2".into(),
+            key: "k".into(),
+            secret: "s".into(),
+            env: AlpacaEnv::Live,
+            dry_run: false,
+        };
+        let output = render_header_to_string(&app);
+        assert!(
+            output.contains("LIVE"),
+            "expected LIVE label in header; got: {output:?}"
+        );
+    }
+
+    #[test]
+    fn render_tabs_includes_tab_labels() {
+        let backend = TestBackend::new(80, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = make_test_app();
+        terminal
+            .draw(|frame| render_tabs(frame, frame.area(), &app))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let output: String = (0..buf.area.width)
+            .map(|col| buf[(col, 0)].symbol().to_string())
+            .collect();
+        assert!(
+            output.contains("Account"),
+            "render_tabs should include tab labels; got: {output:?}"
+        );
+    }
 }

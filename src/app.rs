@@ -2017,4 +2017,71 @@ mod tests {
         assert_eq!(state.col, PositionSortCol::None);
         assert_eq!(state.dir, SortDir::Asc);
     }
+
+    // ── StatusMessage constructors ────────────────────────────────────────────
+
+    #[test]
+    fn status_message_with_ttl_has_text_and_expiry() {
+        let msg = StatusMessage::with_ttl("hello", std::time::Duration::from_secs(5));
+        assert_eq!(msg.text, "hello");
+        assert!(msg.expires_at.is_some(), "with_ttl must set expires_at");
+    }
+
+    #[test]
+    fn status_message_persistent_has_text_and_no_expiry() {
+        let msg = StatusMessage::persistent("world");
+        assert_eq!(msg.text, "world");
+        assert!(
+            msg.expires_at.is_none(),
+            "persistent must have no expires_at"
+        );
+    }
+
+    #[test]
+    fn status_message_default_is_persistent_empty() {
+        let msg = StatusMessage::default();
+        assert_eq!(msg.text, "");
+        assert!(msg.expires_at.is_none());
+    }
+
+    // ── StatusMessage PartialEq impls ─────────────────────────────────────────
+
+    #[test]
+    fn status_message_eq_str() {
+        let msg = StatusMessage::persistent("hello");
+        assert!(
+            msg == *"hello",
+            "StatusMessage should equal &str with same text"
+        );
+        assert!(msg != *"other");
+    }
+
+    #[test]
+    fn status_message_eq_str_ref() {
+        let msg = StatusMessage::persistent("hello");
+        let s: &str = "hello";
+        assert!(msg == s);
+        assert!(msg != "world");
+    }
+
+    #[test]
+    fn status_message_eq_string() {
+        let msg = StatusMessage::persistent("hello");
+        let s = String::from("hello");
+        assert!(msg == s);
+        assert!(msg != *"other");
+    }
+
+    #[test]
+    fn status_message_eq_status_message() {
+        let a = StatusMessage::persistent("hello");
+        let b = StatusMessage::with_ttl("hello", std::time::Duration::from_secs(1));
+        // PartialEq for StatusMessage compares text only, not expires_at.
+        assert!(
+            a == b,
+            "two StatusMessages with same text should be equal regardless of TTL"
+        );
+        let c = StatusMessage::persistent("other");
+        assert!(a != c);
+    }
 }
