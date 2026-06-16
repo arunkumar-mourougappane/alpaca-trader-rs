@@ -92,9 +92,7 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
                     }),
                     Some(StopLossLeg {
                         stop_price: sl.into(),
-                        limit_price: stop_loss_limit_price
-                            .filter(|s| !s.is_empty())
-                            .map(Into::into),
+                        limit_price: stop_loss_limit_price.filter(|s| !s.is_empty()),
                     }),
                 )
             } else {
