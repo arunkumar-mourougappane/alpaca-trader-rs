@@ -316,6 +316,14 @@ pub enum OrderField {
     /// Extended-hours trading flag — visible for [`FullOrderType::Limit`] only.
     ExtendedHours,
     TimeInForce,
+    /// Bracket order checkbox — visible for Market and Limit order types, non-short sides.
+    Bracket,
+    /// Take-profit limit price — visible when bracket is enabled.
+    TakeProfit,
+    /// Stop-loss stop price — visible when bracket is enabled.
+    StopLoss,
+    /// Stop-loss limit price (optional) — visible when bracket is enabled.
+    StopLossLimit,
     Submit,
 }
 
@@ -331,7 +339,11 @@ impl OrderField {
             OrderField::TrailAmount => OrderField::TrailMode,
             OrderField::TrailMode => OrderField::ExtendedHours,
             OrderField::ExtendedHours => OrderField::TimeInForce,
-            OrderField::TimeInForce => OrderField::Submit,
+            OrderField::TimeInForce => OrderField::Bracket,
+            OrderField::Bracket => OrderField::TakeProfit,
+            OrderField::TakeProfit => OrderField::StopLoss,
+            OrderField::StopLoss => OrderField::StopLossLimit,
+            OrderField::StopLossLimit => OrderField::Submit,
             OrderField::Submit => OrderField::Symbol,
         }
     }
@@ -348,12 +360,16 @@ impl OrderField {
             OrderField::TrailMode => OrderField::TrailAmount,
             OrderField::ExtendedHours => OrderField::TrailMode,
             OrderField::TimeInForce => OrderField::ExtendedHours,
-            OrderField::Submit => OrderField::TimeInForce,
+            OrderField::Bracket => OrderField::TimeInForce,
+            OrderField::TakeProfit => OrderField::Bracket,
+            OrderField::StopLoss => OrderField::TakeProfit,
+            OrderField::StopLossLimit => OrderField::StopLoss,
+            OrderField::Submit => OrderField::StopLossLimit,
         }
     }
 
-    /// Returns whether this field is shown for the given order type.
-    pub fn is_visible_for(&self, order_type: &FullOrderType) -> bool {
+    /// Returns whether this field is shown for the given order type and bracket state.
+    pub fn is_visible_for(&self, order_type: &FullOrderType, bracket: bool) -> bool {
         match self {
             OrderField::Symbol
             | OrderField::Side
@@ -371,6 +387,12 @@ impl OrderField {
                 matches!(order_type, FullOrderType::TrailingStop)
             }
             OrderField::ExtendedHours => matches!(order_type, FullOrderType::Limit),
+            OrderField::Bracket => {
+                matches!(order_type, FullOrderType::Market | FullOrderType::Limit)
+            }
+            OrderField::TakeProfit | OrderField::StopLoss | OrderField::StopLossLimit => {
+                matches!(order_type, FullOrderType::Market | FullOrderType::Limit) && bracket
+            }
         }
     }
 }
@@ -388,6 +410,10 @@ pub struct OrderEntryState {
     pub trail_type: TrailType,
     pub extended_hours: bool,
     pub focused_field: OrderField,
+    pub bracket: bool,
+    pub take_profit_price: String,
+    pub stop_loss_price: String,
+    pub stop_loss_limit_price: String,
 }
 
 impl OrderEntryState {
@@ -404,6 +430,10 @@ impl OrderEntryState {
             trail_type: TrailType::Price,
             extended_hours: false,
             focused_field: OrderField::Qty,
+            bracket: false,
+            take_profit_price: String::new(),
+            stop_loss_price: String::new(),
+            stop_loss_limit_price: String::new(),
         }
     }
 
@@ -413,20 +443,20 @@ impl OrderEntryState {
         self
     }
 
-    /// Advance focus to the next field that is visible for the current order type.
+    /// Advance focus to the next field that is visible for the current order type and bracket state.
     pub fn next_field(&self) -> OrderField {
         let mut f = self.focused_field.next();
         // Submit is always visible, so this loop always terminates.
-        while !f.is_visible_for(&self.order_type) {
+        while !f.is_visible_for(&self.order_type, self.bracket) {
             f = f.next();
         }
         f
     }
 
-    /// Retreat focus to the previous field that is visible for the current order type.
+    /// Retreat focus to the previous field that is visible for the current order type and bracket state.
     pub fn prev_field(&self) -> OrderField {
         let mut f = self.focused_field.prev();
-        while !f.is_visible_for(&self.order_type) {
+        while !f.is_visible_for(&self.order_type, self.bracket) {
             f = f.prev();
         }
         f
@@ -1170,14 +1200,22 @@ mod tests {
         assert_eq!(OrderField::TrailAmount.next(), OrderField::TrailMode);
         assert_eq!(OrderField::TrailMode.next(), OrderField::ExtendedHours);
         assert_eq!(OrderField::ExtendedHours.next(), OrderField::TimeInForce);
-        assert_eq!(OrderField::TimeInForce.next(), OrderField::Submit);
+        assert_eq!(OrderField::TimeInForce.next(), OrderField::Bracket);
+        assert_eq!(OrderField::Bracket.next(), OrderField::TakeProfit);
+        assert_eq!(OrderField::TakeProfit.next(), OrderField::StopLoss);
+        assert_eq!(OrderField::StopLoss.next(), OrderField::StopLossLimit);
+        assert_eq!(OrderField::StopLossLimit.next(), OrderField::Submit);
         assert_eq!(OrderField::Submit.next(), OrderField::Symbol);
     }
 
     #[test]
     fn order_field_prev_full_cycle() {
         assert_eq!(OrderField::Symbol.prev(), OrderField::Submit);
-        assert_eq!(OrderField::Submit.prev(), OrderField::TimeInForce);
+        assert_eq!(OrderField::Submit.prev(), OrderField::StopLossLimit);
+        assert_eq!(OrderField::StopLossLimit.prev(), OrderField::StopLoss);
+        assert_eq!(OrderField::StopLoss.prev(), OrderField::TakeProfit);
+        assert_eq!(OrderField::TakeProfit.prev(), OrderField::Bracket);
+        assert_eq!(OrderField::Bracket.prev(), OrderField::TimeInForce);
         assert_eq!(OrderField::TimeInForce.prev(), OrderField::ExtendedHours);
         assert_eq!(OrderField::ExtendedHours.prev(), OrderField::TrailMode);
         assert_eq!(OrderField::TrailMode.prev(), OrderField::TrailAmount);
@@ -1253,56 +1291,77 @@ mod tests {
     #[test]
     fn order_field_visibility_market() {
         let ot = FullOrderType::Market;
-        assert!(OrderField::Symbol.is_visible_for(&ot));
-        assert!(OrderField::Side.is_visible_for(&ot));
-        assert!(OrderField::OrderType.is_visible_for(&ot));
-        assert!(OrderField::Qty.is_visible_for(&ot));
-        assert!(!OrderField::Price.is_visible_for(&ot));
-        assert!(!OrderField::StopPrice.is_visible_for(&ot));
-        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
-        assert!(!OrderField::TrailMode.is_visible_for(&ot));
-        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
-        assert!(OrderField::TimeInForce.is_visible_for(&ot));
-        assert!(OrderField::Submit.is_visible_for(&ot));
+        assert!(OrderField::Symbol.is_visible_for(&ot, false));
+        assert!(OrderField::Side.is_visible_for(&ot, false));
+        assert!(OrderField::OrderType.is_visible_for(&ot, false));
+        assert!(OrderField::Qty.is_visible_for(&ot, false));
+        assert!(!OrderField::Price.is_visible_for(&ot, false));
+        assert!(!OrderField::StopPrice.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailMode.is_visible_for(&ot, false));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot, false));
+        assert!(OrderField::TimeInForce.is_visible_for(&ot, false));
+        assert!(OrderField::Submit.is_visible_for(&ot, false));
+        assert!(OrderField::Bracket.is_visible_for(&ot, false));
     }
 
     #[test]
     fn order_field_visibility_limit() {
         let ot = FullOrderType::Limit;
-        assert!(OrderField::Price.is_visible_for(&ot));
-        assert!(!OrderField::StopPrice.is_visible_for(&ot));
-        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
-        assert!(!OrderField::TrailMode.is_visible_for(&ot));
-        assert!(OrderField::ExtendedHours.is_visible_for(&ot));
+        assert!(OrderField::Price.is_visible_for(&ot, false));
+        assert!(!OrderField::StopPrice.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailMode.is_visible_for(&ot, false));
+        assert!(OrderField::ExtendedHours.is_visible_for(&ot, false));
+        assert!(OrderField::Bracket.is_visible_for(&ot, false));
     }
 
     #[test]
     fn order_field_visibility_stop() {
         let ot = FullOrderType::Stop;
-        assert!(!OrderField::Price.is_visible_for(&ot));
-        assert!(OrderField::StopPrice.is_visible_for(&ot));
-        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
-        assert!(!OrderField::TrailMode.is_visible_for(&ot));
-        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+        assert!(!OrderField::Price.is_visible_for(&ot, false));
+        assert!(OrderField::StopPrice.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailMode.is_visible_for(&ot, false));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot, false));
+        assert!(!OrderField::Bracket.is_visible_for(&ot, false));
     }
 
     #[test]
     fn order_field_visibility_stop_limit() {
         let ot = FullOrderType::StopLimit;
-        assert!(OrderField::Price.is_visible_for(&ot));
-        assert!(OrderField::StopPrice.is_visible_for(&ot));
-        assert!(!OrderField::TrailAmount.is_visible_for(&ot));
-        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+        assert!(OrderField::Price.is_visible_for(&ot, false));
+        assert!(OrderField::StopPrice.is_visible_for(&ot, false));
+        assert!(!OrderField::TrailAmount.is_visible_for(&ot, false));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot, false));
+        assert!(!OrderField::Bracket.is_visible_for(&ot, false));
     }
 
     #[test]
     fn order_field_visibility_trailing_stop() {
         let ot = FullOrderType::TrailingStop;
-        assert!(!OrderField::Price.is_visible_for(&ot));
-        assert!(!OrderField::StopPrice.is_visible_for(&ot));
-        assert!(OrderField::TrailAmount.is_visible_for(&ot));
-        assert!(OrderField::TrailMode.is_visible_for(&ot));
-        assert!(!OrderField::ExtendedHours.is_visible_for(&ot));
+        assert!(!OrderField::Price.is_visible_for(&ot, false));
+        assert!(!OrderField::StopPrice.is_visible_for(&ot, false));
+        assert!(OrderField::TrailAmount.is_visible_for(&ot, false));
+        assert!(OrderField::TrailMode.is_visible_for(&ot, false));
+        assert!(!OrderField::ExtendedHours.is_visible_for(&ot, false));
+        assert!(!OrderField::Bracket.is_visible_for(&ot, false));
+    }
+
+    #[test]
+    fn order_field_visibility_bracket_fields() {
+        let market = FullOrderType::Market;
+        let limit = FullOrderType::Limit;
+        let stop = FullOrderType::Stop;
+        assert!(OrderField::Bracket.is_visible_for(&market, false));
+        assert!(OrderField::Bracket.is_visible_for(&limit, false));
+        assert!(!OrderField::Bracket.is_visible_for(&stop, false));
+        // Sub-fields hidden when bracket=false, visible when bracket=true
+        assert!(!OrderField::TakeProfit.is_visible_for(&market, false));
+        assert!(OrderField::TakeProfit.is_visible_for(&market, true));
+        assert!(!OrderField::StopLoss.is_visible_for(&limit, false));
+        assert!(OrderField::StopLoss.is_visible_for(&limit, true));
+        assert!(!OrderField::StopLossLimit.is_visible_for(&stop, true));
     }
 
     // ── OrderEntryState::next_field / prev_field ──────────────────────────────
@@ -1312,8 +1371,36 @@ mod tests {
         let mut s = OrderEntryState::new("AAPL".into());
         s.order_type = FullOrderType::Market;
         s.focused_field = OrderField::Qty;
-        // Price, StopPrice, TrailAmount, TrailMode, ExtendedHours are invisible → skip to TIF
+        // Price, StopPrice, TrailAmount, TrailMode, ExtendedHours invisible → skip to TIF
         assert_eq!(s.next_field(), OrderField::TimeInForce);
+    }
+
+    #[test]
+    fn next_field_market_tif_to_bracket() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.focused_field = OrderField::TimeInForce;
+        // Bracket is visible for Market
+        assert_eq!(s.next_field(), OrderField::Bracket);
+    }
+
+    #[test]
+    fn next_field_market_bracket_to_submit_when_disabled() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.bracket = false;
+        s.focused_field = OrderField::Bracket;
+        // TakeProfit/StopLoss/StopLossLimit invisible when bracket=false → Submit
+        assert_eq!(s.next_field(), OrderField::Submit);
+    }
+
+    #[test]
+    fn next_field_market_bracket_to_take_profit_when_enabled() {
+        let mut s = OrderEntryState::new("AAPL".into());
+        s.order_type = FullOrderType::Market;
+        s.bracket = true;
+        s.focused_field = OrderField::Bracket;
+        assert_eq!(s.next_field(), OrderField::TakeProfit);
     }
 
     #[test]
@@ -1334,7 +1421,7 @@ mod tests {
         s.focused_field = OrderField::Price;
         assert_eq!(s.next_field(), OrderField::StopPrice);
         s.focused_field = OrderField::StopPrice;
-        // TrailAmount, TrailMode, ExtendedHours invisible → skip to TIF
+        // TrailAmount, TrailMode, ExtendedHours, Bracket (Stop not bracket-eligible) invisible → TIF
         assert_eq!(s.next_field(), OrderField::TimeInForce);
     }
 
@@ -1348,7 +1435,7 @@ mod tests {
         s.focused_field = OrderField::TrailAmount;
         assert_eq!(s.next_field(), OrderField::TrailMode);
         s.focused_field = OrderField::TrailMode;
-        // ExtendedHours invisible → TIF
+        // ExtendedHours and Bracket invisible for TrailingStop → TIF
         assert_eq!(s.next_field(), OrderField::TimeInForce);
     }
 

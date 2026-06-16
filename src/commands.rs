@@ -27,6 +27,12 @@ pub enum Command {
         time_in_force: String,
         /// Allow execution during extended hours; only valid for limit/day orders.
         extended_hours: bool,
+        /// Take-profit limit price for bracket orders; `None` for simple orders.
+        take_profit_price: Option<String>,
+        /// Stop-loss stop price for bracket orders; `None` for simple orders.
+        stop_loss_price: Option<String>,
+        /// Stop-loss limit price for bracket orders (makes it a stop-limit leg); `None` for market SL.
+        stop_loss_limit_price: Option<String>,
     },
     /// Cancel an open order identified by its Alpaca order ID.
     CancelOrder(String),

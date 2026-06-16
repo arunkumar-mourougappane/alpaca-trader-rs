@@ -8,7 +8,7 @@ use crate::client::AlpacaClient;
 use crate::commands::Command;
 
 use crate::events::Event;
-use crate::types::{OrderRequest, TimeInForce};
+use crate::types::{OrderRequest, StopLossLeg, TakeProfitLeg, TimeInForce};
 
 /// Exposed for testing — executes a single command without the loop.
 #[cfg(test)]
@@ -52,6 +52,9 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
             trail_percent,
             time_in_force,
             extended_hours,
+            take_profit_price,
+            stop_loss_price,
+            stop_loss_limit_price,
         } => {
             if client.is_dry_run() {
                 let price_display = limit_price
@@ -59,8 +62,17 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
                     .map(|p| format!(" @ limit ${p}"))
                     .unwrap_or_default();
                 let qty_display = qty.as_deref().unwrap_or("?");
+                let bracket_display = if take_profit_price.is_some() {
+                    format!(
+                        " [bracket TP:{} SL:{}]",
+                        take_profit_price.as_deref().unwrap_or(""),
+                        stop_loss_price.as_deref().unwrap_or("")
+                    )
+                } else {
+                    String::new()
+                };
                 let msg = format!(
-                    "[DRY-RUN] Order NOT sent: {symbol} {side} {qty_display}{price_display}"
+                    "[DRY-RUN] Order NOT sent: {symbol} {side} {qty_display}{price_display}{bracket_display}"
                 );
                 info!(symbol = %symbol, side = %side, "dry-run: skipping order submission");
                 let _ = tx.send(Event::StatusMsg(msg)).await;
@@ -69,6 +81,24 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
             let tif = match time_in_force.as_str() {
                 "gtc" => TimeInForce::Gtc,
                 _ => TimeInForce::Day,
+            };
+            let (order_class, take_profit, stop_loss) = if let (Some(tp), Some(sl)) =
+                (take_profit_price.as_deref(), stop_loss_price.as_deref())
+            {
+                (
+                    Some("bracket".into()),
+                    Some(TakeProfitLeg {
+                        limit_price: tp.into(),
+                    }),
+                    Some(StopLossLeg {
+                        stop_price: sl.into(),
+                        limit_price: stop_loss_limit_price
+                            .filter(|s| !s.is_empty())
+                            .map(Into::into),
+                    }),
+                )
+            } else {
+                (None, None, None)
             };
             let req = OrderRequest {
                 symbol: symbol.clone(),
@@ -82,6 +112,9 @@ async fn handle(cmd: Command, tx: &Sender<Event>, client: &AlpacaClient, refresh
                 trail_price,
                 trail_percent,
                 extended_hours: if extended_hours { Some(true) } else { None },
+                order_class,
+                take_profit,
+                stop_loss,
             };
             info!(symbol = %symbol, "submitting order");
             match client.submit_order(&req).await {
@@ -280,6 +313,9 @@ mod tests {
                 trail_percent: None,
                 time_in_force: "day".into(),
                 extended_hours: false,
+                take_profit_price: None,
+                stop_loss_price: None,
+                stop_loss_limit_price: None,
             },
             &tx,
             &client,
@@ -321,6 +357,9 @@ mod tests {
                 trail_percent: None,
                 time_in_force: "day".into(),
                 extended_hours: false,
+                take_profit_price: None,
+                stop_loss_price: None,
+                stop_loss_limit_price: None,
             },
             &tx,
             &client,
@@ -534,6 +573,9 @@ mod tests {
                 trail_percent: None,
                 time_in_force: "day".into(),
                 extended_hours: false,
+                take_profit_price: None,
+                stop_loss_price: None,
+                stop_loss_limit_price: None,
             },
             &tx,
             &client,
@@ -583,6 +625,9 @@ mod tests {
                 trail_percent: None,
                 time_in_force: "gtc".into(),
                 extended_hours: false,
+                take_profit_price: None,
+                stop_loss_price: None,
+                stop_loss_limit_price: None,
             },
             &tx,
             &client,

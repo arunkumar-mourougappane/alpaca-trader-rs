@@ -489,6 +489,23 @@ impl TimeInForce {
     }
 }
 
+/// Take-profit leg for a bracket order.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TakeProfitLeg {
+    /// Limit price at which the take-profit leg executes.
+    pub limit_price: String,
+}
+
+/// Stop-loss leg for a bracket order.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct StopLossLeg {
+    /// Stop trigger price for the stop-loss leg.
+    pub stop_price: String,
+    /// Optional limit price; when set the SL leg becomes a stop-limit order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit_price: Option<String>,
+}
+
 /// Request body sent to `POST /orders`.
 ///
 /// Either `qty` or `notional` must be set; not both.
@@ -524,6 +541,15 @@ pub struct OrderRequest {
     /// Allow execution during extended hours (pre/after-market); only valid for limit orders.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extended_hours: Option<bool>,
+    /// Order class — `"bracket"` for bracket orders; omitted for simple orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_class: Option<String>,
+    /// Take-profit leg; required when `order_class` is `"bracket"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub take_profit: Option<TakeProfitLeg>,
+    /// Stop-loss leg; required when `order_class` is `"bracket"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_loss: Option<StopLossLeg>,
 }
 
 /// Current market clock from `GET /clock`.
