@@ -609,4 +609,48 @@ mod tests {
         state.stop_loss_limit_price = "bad".into();
         assert!(validate(&state, 10_000.0, true, false).is_some());
     }
+
+    #[test]
+    fn bracket_zero_take_profit_fails() {
+        let mut state = base_bracket_state();
+        state.take_profit_price = "0".into();
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(msg.to_lowercase().contains("take-profit"), "got: {msg}");
+    }
+
+    #[test]
+    fn bracket_zero_stop_loss_fails() {
+        let mut state = base_bracket_state();
+        state.stop_loss_price = "0".into();
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(msg.to_lowercase().contains("stop-loss"), "got: {msg}");
+    }
+
+    #[test]
+    fn bracket_zero_sl_limit_price_fails() {
+        let mut state = base_bracket_state();
+        state.stop_loss_limit_price = "0".into();
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(msg.to_lowercase().contains("stop-loss limit"), "got: {msg}");
+    }
+
+    #[test]
+    fn bracket_sell_tp_above_sl_fails() {
+        use crate::app::OrderSide;
+        let mut state = base_bracket_state();
+        state.side = OrderSide::Sell;
+        // For a sell bracket, TP must be below SL. TP=185, SL=165 → TP > SL → should fail.
+        let msg = validate(&state, 10_000.0, true, false).expect("should fail");
+        assert!(msg.to_lowercase().contains("take-profit"), "got: {msg}");
+    }
+
+    #[test]
+    fn bracket_sell_valid_tp_below_sl_passes() {
+        use crate::app::OrderSide;
+        let mut state = base_bracket_state();
+        state.side = OrderSide::Sell;
+        state.take_profit_price = "165.00".into();
+        state.stop_loss_price = "185.00".into();
+        assert_eq!(validate(&state, 10_000.0, true, false), None);
+    }
 }
