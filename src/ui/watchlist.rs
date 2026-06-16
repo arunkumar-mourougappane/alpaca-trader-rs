@@ -375,4 +375,53 @@ mod tests {
             "expected AAPL 🔔 to be rendered in the watchlist, got: {output}"
         );
     }
+
+    #[test]
+    fn watchlist_loading_shows_loading_message_when_watchlist_is_none() {
+        let mut app = make_test_app();
+        app.watchlist = None;
+        app.watchlist_unavailable = false;
+        let output = render_watchlist_to_string(&mut app);
+        assert!(
+            output.contains("Loading watchlist"),
+            "expected loading message when watchlist is None, got: {output}"
+        );
+    }
+
+    #[test]
+    fn watchlist_with_search_active_renders_search_box() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL", "TSLA"]));
+        app.searching = true;
+        app.search_query = "AAPL".to_string();
+        let output = render_watchlist_to_string(&mut app);
+        assert!(
+            output.contains("Search:"),
+            "expected search box to be rendered when searching=true, got: {output}"
+        );
+    }
+
+    #[test]
+    fn watchlist_shows_negative_pct_change() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["MSFT"]));
+        app.snapshots.insert(
+            "MSFT".to_string(),
+            Snapshot {
+                latest_trade: Some(SnapshotTrade { p: 90.0 }),
+                latest_quote: None,
+                daily_bar: None,
+                prev_daily_bar: Some(SnapshotBar {
+                    c: 100.0,
+                    v: 0.0,
+                    ..Default::default()
+                }),
+            },
+        );
+        let output = render_watchlist_to_string(&mut app);
+        assert!(
+            output.contains("-10.00%"),
+            "expected negative pct change, got: {output}"
+        );
+    }
 }

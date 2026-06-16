@@ -446,4 +446,40 @@ fill_notifications_enabled = false
         assert_eq!(p.app, AppSection::default());
         assert_eq!(p.stream, StreamSection::default());
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn load_from_unreadable_file_returns_defaults() {
+        use std::os::unix::fs::PermissionsExt;
+        let f = write_toml("[app]\ndefault_env = \"paper\"\n");
+        let path = f.path().to_path_buf();
+        // Make the file unreadable.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let p = AppPrefs::load_from(&path);
+        // Restore permissions so the temp file can be cleaned up.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            p,
+            AppPrefs::default(),
+            "unreadable file should yield defaults"
+        );
+    }
+
+    #[test]
+    fn load_from_write_failure_returns_defaults() {
+        // Pass a path whose parent directory does not exist and cannot be created
+        // (a file used as if it were a directory). This causes write_to to fail
+        // but load_from should still return defaults without panicking.
+        let f = write_toml("");
+        // Use the existing *file* as the "parent directory" — the child path
+        // cannot exist, so path.exists() is false, and write_to will fail when
+        // it tries to create_dir_all on a path whose ancestor is a regular file.
+        let bogus_path = f.path().join("subdir").join("config.toml");
+        let p = AppPrefs::load_from(&bogus_path);
+        assert_eq!(
+            p,
+            AppPrefs::default(),
+            "write failure path should still return defaults"
+        );
+    }
 }

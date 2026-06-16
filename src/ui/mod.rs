@@ -84,3 +84,72 @@ pub fn popup_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
         ])
         .split(vertical[1])[1]
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use crate::app::test_helpers::make_test_app;
+    use crate::app::{Modal, Tab};
+
+    fn render_app_to_string(app: &mut crate::app::App) -> String {
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| super::render(frame, app)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let mut out = String::new();
+        for row in 0..buf.area.height {
+            for col in 0..buf.area.width {
+                out.push_str(buf[(col, row)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn render_account_tab_does_not_panic() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Account;
+        render_app_to_string(&mut app);
+    }
+
+    #[test]
+    fn render_watchlist_tab_does_not_panic() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Watchlist;
+        render_app_to_string(&mut app);
+    }
+
+    #[test]
+    fn render_positions_tab_does_not_panic() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Positions;
+        render_app_to_string(&mut app);
+    }
+
+    #[test]
+    fn render_orders_tab_does_not_panic() {
+        let mut app = make_test_app();
+        app.active_tab = Tab::Orders;
+        render_app_to_string(&mut app);
+    }
+
+    #[test]
+    fn render_with_help_modal_does_not_panic() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        render_app_to_string(&mut app);
+    }
+
+    #[test]
+    fn popup_area_is_centered_within_parent() {
+        use ratatui::layout::Rect;
+        let area = Rect::new(0, 0, 100, 50);
+        let result = super::popup_area(area, 60, 40);
+        assert_eq!(result.width, 60);
+        assert_eq!(result.height, 20);
+        assert_eq!(result.x, 20);
+        assert_eq!(result.y, 15);
+    }
+}
