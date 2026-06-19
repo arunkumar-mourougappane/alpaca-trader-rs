@@ -56,4 +56,4 @@ Before contributing significant architectural changes or new UI panels, please f
 
 ## Licensing
 
-By contributing to `alpaca-trader-rs`, you agree that your contributions will be dual-licensed under the **MIT License** and the **Apache License, Version 2.0**, matching the rest of the project. See [docs/licensing.md](docs/licensing.md) for more details.
+By contributing to `alpaca-trader-rs`, you agree that your contributions will be licensed under the **MIT License**, matching the rest of the project. See [docs/licensing.md](docs/licensing.md) for more details.

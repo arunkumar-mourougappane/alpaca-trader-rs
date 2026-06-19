@@ -228,7 +228,7 @@ supports cannot be placed or managed through this project.
 | Interactive TUI | Full dashboard | None (CLI companion `apcacli` only) |
 | Feature flags | None | N/A |
 | Maturity | v0.4.0 | v0.30.0, 46 releases |
-| License | MIT / Apache-2.0 | GPL-3.0 |
+| License | MIT | GPL-3.0 |
 
 The credential management story and the interactive TUI are structural advantages that
 `apca` cannot match without a major redesign. Completing Tiers 1 and 2 above closes the
