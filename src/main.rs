@@ -82,7 +82,8 @@ use update::update;
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    #[cfg(feature = "dev-env")]
+    // Load .env in debug builds only; release builds rely solely on the OS keychain.
+    #[cfg(debug_assertions)]
     dotenvy::dotenv().ok();
 
     // ── --reset: delete keychain credentials and exit ──────────────────────────
