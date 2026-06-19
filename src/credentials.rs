@@ -170,8 +170,8 @@ pub fn reset(env: AlpacaEnv) {
     };
 
     // ── Report env var sources ────────────────────────────────────────────────
-    // dotenvy::dotenv() is called before reset() in main, so vars from .env
-    // files are already in the environment at this point.
+    // When the dev-env feature is enabled, dotenvy::dotenv() is called before
+    // reset() in main, so vars from .env files are already in the environment.
     let has_unified = std::env::var("ALPACA_API_KEY")
         .ok()
         .filter(|s| !s.is_empty())

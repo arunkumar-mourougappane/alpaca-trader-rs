@@ -82,6 +82,7 @@ use update::update;
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    #[cfg(feature = "dev-env")]
     dotenvy::dotenv().ok();
 
     // ── --reset: delete keychain credentials and exit ──────────────────────────
