@@ -297,7 +297,7 @@ Triggered by `A` (uppercase) from any context. Displays app metadata, author inf
 ║   docs.rs/alpaca-trader-rs                ║
 ║                                           ║
 ║  ── License ────────────────────────────  ║
-║   MIT OR Apache-2.0                       ║
+║   MIT                                     ║
 ║                                           ║
 ║              Press any key to close       ║
 ╚═══════════════════════════════════════════╝
