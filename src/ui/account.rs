@@ -591,6 +591,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_equity_chart_non_oneday_uses_static_end_label() {
+        // Non-OneDay ranges (e.g. OneWeek) skip bar_time_label and use the
+        // static x_labels() end label ("Fri"), covering the else branch.
+        use ratatui::{backend::TestBackend, Terminal};
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = crate::app::test_helpers::make_test_app();
+        app.equity_range = crate::app::EquityRange::OneWeek;
+        app.equity_history = (0..10).map(|i| 10_000_000u64 + i * 500).collect();
+        terminal
+            .draw(|frame| render_equity_chart(frame, frame.area(), &app))
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        let output = (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("Mon") || output.contains("Fri"),
+            "OneWeek range should show static Mon/Fri labels, got:\n{}",
+            output
+        );
+    }
+
     // ── index_to_time ─────────────────────────────────────────────────────────
 
     #[test]
