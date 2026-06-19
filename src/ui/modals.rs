@@ -861,13 +861,20 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                 }
             }
 
+            let last_bar_label = charts::bar_time_label((n as usize).saturating_sub(1));
+            let y_min_label = format!("{:.2}", y_min);
+            let y_max_label = format!("{:.2}", y_max);
             let chart = Chart::new(datasets)
                 .x_axis(
                     Axis::default()
                         .bounds([0.0, (n - 1.0).max(0.0)])
-                        .labels(["09:30", "16:00"]),
+                        .labels(["09:30", last_bar_label.as_str()]),
                 )
-                .y_axis(Axis::default().bounds([y_min, y_max]));
+                .y_axis(
+                    Axis::default()
+                        .bounds([y_min, y_max])
+                        .labels([y_min_label.as_str(), y_max_label.as_str()]),
+                );
 
             frame.render_widget(chart, chunks[6]);
         }
@@ -1340,13 +1347,20 @@ fn render_position_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App
                 .style(Style::default().fg(line_color))
                 .data(&data_points);
 
+            let last_bar_label = charts::bar_time_label((n as usize).saturating_sub(1));
+            let y_min_label = format!("{:.2}", y_min);
+            let y_max_label = format!("{:.2}", y_max);
             let chart = Chart::new(vec![dataset])
                 .x_axis(
                     Axis::default()
                         .bounds([0.0, (n - 1.0).max(0.0)])
-                        .labels(["09:30", "16:00"]),
+                        .labels(["09:30", last_bar_label.as_str()]),
                 )
-                .y_axis(Axis::default().bounds([y_min, y_max]));
+                .y_axis(
+                    Axis::default()
+                        .bounds([y_min, y_max])
+                        .labels([y_min_label.as_str(), y_max_label.as_str()]),
+                );
 
             frame.render_widget(chart, outer[1]);
         }
@@ -1727,6 +1741,54 @@ mod tests {
         assert!(
             output.contains("Intraday"),
             "out-of-bounds crosshair should fall back to static label; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_chart_dynamic_x_axis_label() {
+        // 3 bars → last bar is index 2 → bar_time_label(2) = "09:32" (not "16:00")
+        let mut app = make_test_app();
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15100, 15050]);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("09:32"),
+            "x-axis end label should reflect last bar time (09:32), got:\n{}",
+            output
+        );
+        assert!(
+            !output.contains("16:00"),
+            "x-axis end label must not be hardcoded 16:00 for partial data, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_chart_y_axis_labels_show_price_range() {
+        let mut app = make_test_app();
+        // Prices: $150.00, $151.00, $152.00 → y_bounds pads by 0.1%:
+        // y_min=149.85, y_max=152.15
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15100, 15200]);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("149.85") || output.contains("152.15"),
+            "y-axis should show padded price range labels; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_chart_full_day_shows_market_close_label() {
+        // 391 bars (index 0–390) → bar_time_label(390) = "16:00"
+        let bars: Vec<u64> = (0..391).map(|i| 15000 + i as u64).collect();
+        let mut app = make_test_app();
+        app.intraday_bars.insert("AAPL".into(), bars);
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("16:00"),
+            "full-day chart should show 16:00 as end label; got:\n{}",
             output
         );
     }
@@ -2974,10 +3036,43 @@ mod tests {
         app.intraday_bars
             .insert("AAPL".into(), vec![15000, 15100, 15050]);
         let output = render_position_detail_to_string(&mut app, "AAPL");
-        // chart x-axis labels
+        // 3 bars → end label is "09:32" (dynamic), start label is "09:30"
         assert!(
-            output.contains("09:30") || output.contains("16:00"),
-            "expected chart time labels, got: {output}"
+            output.contains("09:30") || output.contains("09:32"),
+            "expected dynamic chart time labels, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_chart_dynamic_x_axis_label() {
+        // 3 bars → bar_time_label(2) = "09:32" (not hardcoded "16:00")
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15100, 15050]);
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("09:32"),
+            "x-axis end label should reflect last bar (09:32), got: {output}"
+        );
+        assert!(
+            !output.contains("16:00"),
+            "x-axis end label must not be hardcoded 16:00 for partial data, got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_chart_y_axis_labels_show_price_range() {
+        // Prices: $150.00, $151.00, $150.50 → y_bounds pads by 0.1%:
+        // y_min=149.85, y_max=151.15
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15000, 15100, 15050]);
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("149.85") || output.contains("151.15"),
+            "y-axis should display padded price range labels; got: {output}"
         );
     }
 
