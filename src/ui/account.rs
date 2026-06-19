@@ -148,7 +148,14 @@ fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
         .style(Style::default().fg(line_color))
         .data(&data_points);
 
-    let [x_start, x_end] = app.equity_range.x_labels();
+    let [x_start, x_end_static] = app.equity_range.x_labels();
+    let x_end_owned: String;
+    let x_end = if app.equity_range == crate::app::EquityRange::OneDay {
+        x_end_owned = charts::bar_time_label((n as usize).saturating_sub(1));
+        x_end_owned.as_str()
+    } else {
+        x_end_static
+    };
 
     let chart = Chart::new(vec![dataset])
         .block(block)
@@ -562,11 +569,24 @@ mod tests {
 
     #[test]
     fn render_equity_chart_shows_time_labels() {
+        // 10 bars → end label = bar_time_label(9) = "09:39" (not the hardcoded "16:00")
         let history: Vec<u64> = (0..10).map(|i| 10_000_000u64 + i * 500).collect();
         let output = render_equity_chart_to_string(history);
         assert!(
+            output.contains("09:30") && output.contains("09:39"),
+            "should show dynamic time labels on x-axis, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_equity_chart_full_day_shows_market_close_label() {
+        // 391 bars covers market open through close → end label = bar_time_label(390) = "16:00"
+        let history: Vec<u64> = (0..391).map(|i| 10_000_000u64 + i * 10).collect();
+        let output = render_equity_chart_to_string(history);
+        assert!(
             output.contains("09:30") && output.contains("16:00"),
-            "should show time labels on x-axis, got:\n{}",
+            "full-day equity chart should show 09:30..16:00 labels, got:\n{}",
             output
         );
     }
