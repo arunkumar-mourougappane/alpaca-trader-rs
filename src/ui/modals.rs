@@ -4222,10 +4222,7 @@ mod tests {
         state.section = PrefsSection::Ui;
         state.draft.ui.show_watchlist = false;
         let output = render_preferences_to_string(&mut app, &state);
-        assert!(
-            output.contains("[ ]"),
-            "false bool should render as [ ]"
-        );
+        assert!(output.contains("[ ]"), "false bool should render as [ ]");
     }
 
     // ── edit_or_value with editing_buf active ─────────────────────────────────

@@ -617,10 +617,8 @@ mod tests {
         let result = save_to_keychain(AlpacaEnv::Live, "test-cov-key", "test-cov-secret");
         #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         if result.is_ok() {
-            let _ = keyring::Entry::new(SERVICE, "live-api-key")
-                .map(|e| e.delete_credential());
-            let _ = keyring::Entry::new(SERVICE, "live-api-secret")
-                .map(|e| e.delete_credential());
+            let _ = keyring::Entry::new(SERVICE, "live-api-key").map(|e| e.delete_credential());
+            let _ = keyring::Entry::new(SERVICE, "live-api-secret").map(|e| e.delete_credential());
         }
         // Accept both Ok and Err (keychain may be unavailable in CI).
         let _ = result;
@@ -631,10 +629,8 @@ mod tests {
         let result = save_to_keychain(AlpacaEnv::Paper, "test-cov-key", "test-cov-secret");
         #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         if result.is_ok() {
-            let _ = keyring::Entry::new(SERVICE, "paper-api-key")
-                .map(|e| e.delete_credential());
-            let _ = keyring::Entry::new(SERVICE, "paper-api-secret")
-                .map(|e| e.delete_credential());
+            let _ = keyring::Entry::new(SERVICE, "paper-api-key").map(|e| e.delete_credential());
+            let _ = keyring::Entry::new(SERVICE, "paper-api-secret").map(|e| e.delete_credential());
         }
         let _ = result;
     }
