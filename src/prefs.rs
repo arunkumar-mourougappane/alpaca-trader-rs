@@ -542,10 +542,7 @@ fill_notifications_enabled = false
     #[test]
     fn chart_marker_to_ratatui_maps_all_variants() {
         use ratatui::symbols;
-        assert_eq!(
-            ChartMarker::Braille.to_ratatui(),
-            symbols::Marker::Braille
-        );
+        assert_eq!(ChartMarker::Braille.to_ratatui(), symbols::Marker::Braille);
         assert_eq!(ChartMarker::Dot.to_ratatui(), symbols::Marker::Dot);
         assert_eq!(ChartMarker::Block.to_ratatui(), symbols::Marker::Block);
         assert_eq!(ChartMarker::Bar.to_ratatui(), symbols::Marker::Bar);
@@ -591,7 +588,11 @@ chart_marker = "dot"
     fn chart_marker_invalid_value_falls_back_to_defaults() {
         let f = write_toml("[ui]\nchart_marker = \"invalid_value\"\n");
         let p = AppPrefs::load_from(f.path());
-        assert_eq!(p, AppPrefs::default(), "invalid chart_marker should fall back to defaults");
+        assert_eq!(
+            p,
+            AppPrefs::default(),
+            "invalid chart_marker should fall back to defaults"
+        );
     }
 
     #[test]
