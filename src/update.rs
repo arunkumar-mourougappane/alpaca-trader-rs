@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use crate::app::{App, Modal, StatusMessage, Tab};
+use crate::app::{App, Modal, PrefsState, StatusMessage, Tab};
 use crate::clipboard;
 use crate::commands::Command;
 use crate::events::{Event, StreamKind};
@@ -227,6 +227,9 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
         KeyCode::Char('T') => {
             app.cycle_theme();
             app.push_transient_status(format!("Theme: {}", app.current_theme.display_name()));
+        }
+        KeyCode::Char('P') => {
+            app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
         }
         // Copy focused symbol to clipboard (Watchlist, Positions, Orders)
         KeyCode::Char('c') if app.active_tab != Tab::Orders => {
