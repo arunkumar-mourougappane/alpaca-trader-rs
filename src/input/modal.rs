@@ -3512,7 +3512,10 @@ mod tests {
         state.editing_buf = Some("2000".to_string());
         app.modal = Some(Modal::Preferences(state));
         press(&mut app, KeyCode::Enter);
-        assert_eq!(prefs_state(&app).draft.stream.reconnect_backoff_base_ms, 2000);
+        assert_eq!(
+            prefs_state(&app).draft.stream.reconnect_backoff_base_ms,
+            2000
+        );
     }
 
     #[test]
@@ -3525,7 +3528,10 @@ mod tests {
         app.modal = Some(Modal::Preferences(state));
         press(&mut app, KeyCode::Enter);
         assert_eq!(
-            prefs_state(&app).draft.notifications.fill_notification_ttl_ms,
+            prefs_state(&app)
+                .draft
+                .notifications
+                .fill_notification_ttl_ms,
             3000
         );
     }
@@ -3719,7 +3725,10 @@ mod tests {
         app.modal = Some(Modal::Preferences(state));
         press(&mut app, KeyCode::Enter);
         let s = prefs_state(&app);
-        assert!(s.editing_buf.is_none(), "invalid field should not open edit mode");
+        assert!(
+            s.editing_buf.is_none(),
+            "invalid field should not open edit mode"
+        );
     }
 
     #[test]
