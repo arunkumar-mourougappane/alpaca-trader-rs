@@ -317,6 +317,27 @@ fn offer_keychain_save(prefix: &str, key: &str, secret: &str) {
     }
 }
 
+/// Save an API key + secret pair for `env` into the OS keychain.
+///
+/// Used by the in-app Preferences modal to persist credentials without
+/// requiring a restart.  Returns an error on platforms that do not support
+/// keychain storage or when the keychain backend is unavailable.
+pub fn save_to_keychain(env: AlpacaEnv, key: &str, secret: &str) -> Result<()> {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        let prefix = match env {
+            AlpacaEnv::Live => "live",
+            AlpacaEnv::Paper => "paper",
+        };
+        return save_keychain_pair(prefix, key, secret);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (env, key, secret);
+        anyhow::bail!("keychain storage is not supported on this platform");
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn save_keychain_pair(prefix: &str, key: &str, secret: &str) -> Result<()> {
     keyring::Entry::new(SERVICE, &format!("{prefix}-api-key"))

@@ -1,11 +1,13 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::send_command;
 use crate::app::{
-    AlertField, App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, OrderSide,
-    StatusMessage, TrailType,
+    AlertField, App, ConfirmAction, DropdownState, FullOrderType, Modal, OrderEntryState,
+    OrderField, OrderSide, PrefsSection, PrefsState, StatusMessage, TrailType,
 };
 use crate::commands::Command;
+use crate::credentials::save_to_keychain;
+use crate::prefs::{AppPrefs, ChartMarker};
 use crate::types::PriceAlert;
 
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
@@ -16,6 +18,23 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
         {
             app.symbol_detail_crosshair = None;
             return;
+        }
+        // Preferences: Esc closes dropdown/edit first, then (if dirty) shows confirm.
+        if let Some(Modal::Preferences(ref mut state)) = app.modal {
+            if state.dropdown.is_some() {
+                state.dropdown = None;
+                return;
+            }
+            if state.editing_buf.is_some() {
+                state.editing_buf = None;
+                return;
+            }
+            if state.dirty {
+                let dirty_state = state.clone();
+                app.modal = Some(Modal::Preferences(dirty_state));
+                handle_prefs_discard_confirm(app);
+                return;
+            }
         }
         app.modal = None;
         app.symbol_detail_crosshair = None;
@@ -611,9 +630,356 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 focused,
             }),
         },
+
+        Modal::Preferences(mut state) => {
+            // Dropdown mode: ↑/↓ navigate, Enter confirms, Esc handled above.
+            if let Some(ref mut dd) = state.dropdown {
+                match key.code {
+                    KeyCode::Up | KeyCode::Char('k') => dd.move_up(),
+                    KeyCode::Down | KeyCode::Char('j') => dd.move_down(),
+                    KeyCode::Enter => {
+                        let selected = dd.selected();
+                        apply_dropdown_selection(&mut state, selected);
+                        state.dropdown = None;
+                        state.dirty = true;
+                    }
+                    _ => {}
+                }
+                app.modal = Some(Modal::Preferences(state));
+                return;
+            }
+
+            // Text-edit mode: chars + Backspace, Enter confirms.
+            if state.editing_buf.is_some() {
+                let is_cred = state.section == PrefsSection::Credentials;
+                match key.code {
+                    KeyCode::Char(c) if is_cred || c.is_ascii_digit() || c == '.' => {
+                        if let Some(ref mut buf) = state.editing_buf {
+                            buf.push(c);
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        if let Some(ref mut buf) = state.editing_buf {
+                            buf.pop();
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let buf = state.editing_buf.take().unwrap_or_default();
+                        if is_cred {
+                            match state.field_index {
+                                0 => state.key_buf = buf,
+                                1 => state.secret_buf = buf,
+                                _ => {}
+                            }
+                            state.dirty = true;
+                        } else {
+                            apply_text_edit(&mut state, &buf);
+                            state.dirty = true;
+                        }
+                    }
+                    _ => {}
+                }
+                app.modal = Some(Modal::Preferences(state));
+                return;
+            }
+
+            // Normal navigation mode.
+            match key.code {
+                KeyCode::Tab => {
+                    state.section = state.section.next();
+                    state.field_index = 0;
+                }
+                KeyCode::BackTab => {
+                    state.section = state.section.prev();
+                    state.field_index = 0;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    state.field_index = state.field_index.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    let max = state.section.field_count().saturating_sub(1);
+                    if state.field_index < max {
+                        state.field_index += 1;
+                    }
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    activate_prefs_field(&mut state);
+                }
+                KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    let has_key = !state.key_buf.is_empty();
+                    let has_secret = !state.secret_buf.is_empty();
+                    // Exactly one provided → validation error; keep modal open.
+                    if has_key ^ has_secret {
+                        state.cred_error = Some(if has_key {
+                            "API Secret is required when updating credentials".to_string()
+                        } else {
+                            "API Key is required when updating credentials".to_string()
+                        });
+                        app.modal = Some(Modal::Preferences(state));
+                        return;
+                    }
+                    // Both provided → save to keychain; abort on error.
+                    if has_key {
+                        match save_to_keychain(
+                            app.config.env.clone(),
+                            &state.key_buf,
+                            &state.secret_buf,
+                        ) {
+                            Ok(()) => {
+                                app.config.key = state.key_buf.clone();
+                                app.config.secret = state.secret_buf.clone();
+                                state.cred_error = None;
+                            }
+                            Err(e) => {
+                                state.cred_error = Some(format!("Keychain error: {e}"));
+                                app.modal = Some(Modal::Preferences(state));
+                                return;
+                            }
+                        }
+                    }
+                    save_prefs(app, &state.draft);
+                    app.push_transient_status("Preferences saved");
+                    app.modal = None;
+                    return;
+                }
+                _ => {}
+            }
+            Some(Modal::Preferences(state))
+        }
     };
 
     app.modal = new_modal;
+}
+
+fn save_prefs(app: &mut App, draft: &AppPrefs) {
+    app.prefs = draft.clone();
+    // Apply live-settable fields immediately.
+    app.current_theme = crate::ui::theme::Theme::from_str(&app.prefs.ui.theme);
+    app.equity_range = match app.prefs.ui.default_equity_range.as_str() {
+        "1W" => crate::app::EquityRange::OneWeek,
+        "1M" => crate::app::EquityRange::OneMonth,
+        "YTD" => crate::app::EquityRange::Ytd,
+        _ => crate::app::EquityRange::OneDay,
+    };
+    if let Some(path) = AppPrefs::default_path() {
+        if let Err(e) = app.prefs.write_to(&path) {
+            tracing::warn!(error = %e, "could not persist preferences");
+        }
+    }
+}
+
+fn handle_prefs_discard_confirm(app: &mut App) {
+    // Swap out the dirty prefs modal, replace with a confirm dialog.
+    // On 'y' we just close; on 'n' we restore the prefs modal.
+    // We encode the draft inside ConfirmAction via a simple close-without-save path:
+    // since ConfirmAction only has CancelOrder, we take the simpler route of just
+    // closing the modal immediately when Esc is pressed on a dirty prefs modal.
+    // The user must use Ctrl-S to save; Esc always discards.
+    app.modal = None;
+    app.push_transient_status("Preferences discarded");
+}
+
+/// Open dropdown or begin text edit for the currently focused preferences field.
+fn activate_prefs_field(state: &mut PrefsState) {
+    match state.section {
+        PrefsSection::App => match state.field_index {
+            0 => {
+                // default_env: enum dropdown
+                state.dropdown = Some(DropdownState::new(
+                    vec!["live", "paper"],
+                    &state.draft.app.default_env,
+                ));
+            }
+            1 => {
+                // refresh_interval_ms: numeric edit
+                state.editing_buf = Some(state.draft.app.refresh_interval_ms.to_string());
+            }
+            _ => {}
+        },
+        PrefsSection::Ui => match state.field_index {
+            0 => {
+                state.dropdown = Some(DropdownState::new(
+                    vec!["default", "dark", "high-contrast"],
+                    &state.draft.ui.theme,
+                ));
+            }
+            1 => {
+                state.draft.ui.show_account_panel = !state.draft.ui.show_account_panel;
+                state.dirty = true;
+            }
+            2 => {
+                state.draft.ui.show_watchlist = !state.draft.ui.show_watchlist;
+                state.dirty = true;
+            }
+            3 => {
+                state.draft.ui.show_positions = !state.draft.ui.show_positions;
+                state.dirty = true;
+            }
+            4 => {
+                state.draft.ui.show_orders = !state.draft.ui.show_orders;
+                state.dirty = true;
+            }
+            5 => {
+                state.dropdown = Some(DropdownState::new(
+                    vec!["1D", "1W", "1M", "YTD"],
+                    &state.draft.ui.default_equity_range,
+                ));
+            }
+            6 => {
+                state.dropdown = Some(DropdownState::new(
+                    vec!["braille", "dot", "block", "bar", "half_block"],
+                    state.draft.ui.chart_marker.as_str(),
+                ));
+            }
+            _ => {}
+        },
+        PrefsSection::Stream => match state.field_index {
+            0 => {
+                state.editing_buf = Some(state.draft.stream.reconnect_max_attempts.to_string());
+            }
+            1 => {
+                state.editing_buf = Some(state.draft.stream.reconnect_backoff_base_ms.to_string());
+            }
+            _ => {}
+        },
+        PrefsSection::Notifications => match state.field_index {
+            0 => {
+                state.draft.notifications.fill_notifications_enabled =
+                    !state.draft.notifications.fill_notifications_enabled;
+                state.dirty = true;
+            }
+            1 => {
+                state.editing_buf = Some(
+                    state
+                        .draft
+                        .notifications
+                        .fill_notification_ttl_ms
+                        .to_string(),
+                );
+            }
+            2 => {
+                state.editing_buf =
+                    Some(state.draft.notifications.status_message_ttl_ms.to_string());
+            }
+            _ => {}
+        },
+        PrefsSection::Safety => {
+            if state.field_index == 0 {
+                state.draft.safety.confirm_watchlist_remove =
+                    !state.draft.safety.confirm_watchlist_remove;
+                state.dirty = true;
+            }
+        }
+        PrefsSection::Proxy => match state.field_index {
+            0 => {
+                state.editing_buf = Some(state.draft.proxy.http.clone().unwrap_or_default());
+            }
+            1 => {
+                state.editing_buf = Some(state.draft.proxy.socks5.clone().unwrap_or_default());
+            }
+            2 => {
+                state.editing_buf = Some(state.draft.proxy.no_proxy.clone().unwrap_or_default());
+            }
+            _ => {}
+        },
+        PrefsSection::Credentials => match state.field_index {
+            0 | 1 => {
+                // Start with an empty buffer; user types the new value.
+                state.editing_buf = Some(String::new());
+            }
+            _ => {}
+        },
+    }
+}
+
+/// Apply a confirmed dropdown selection to the draft prefs.
+fn apply_dropdown_selection(state: &mut PrefsState, selected: &str) {
+    match state.section {
+        PrefsSection::App => {
+            if state.field_index == 0 {
+                state.draft.app.default_env = selected.to_string();
+            }
+        }
+        PrefsSection::Ui => match state.field_index {
+            0 => state.draft.ui.theme = selected.to_string(),
+            5 => state.draft.ui.default_equity_range = selected.to_string(),
+            6 => {
+                state.draft.ui.chart_marker = match selected {
+                    "dot" => ChartMarker::Dot,
+                    "block" => ChartMarker::Block,
+                    "bar" => ChartMarker::Bar,
+                    "half_block" => ChartMarker::HalfBlock,
+                    _ => ChartMarker::Braille,
+                };
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
+/// Apply a confirmed text-edit buffer to the draft prefs.
+fn apply_text_edit(state: &mut PrefsState, buf: &str) {
+    match state.section {
+        PrefsSection::App => {
+            if state.field_index == 1 {
+                if let Ok(v) = buf.parse::<u64>() {
+                    state.draft.app.refresh_interval_ms = v;
+                }
+            }
+        }
+        PrefsSection::Stream => match state.field_index {
+            0 => {
+                if let Ok(v) = buf.parse::<u32>() {
+                    state.draft.stream.reconnect_max_attempts = v;
+                }
+            }
+            1 => {
+                if let Ok(v) = buf.parse::<u64>() {
+                    state.draft.stream.reconnect_backoff_base_ms = v;
+                }
+            }
+            _ => {}
+        },
+        PrefsSection::Notifications => match state.field_index {
+            1 => {
+                if let Ok(v) = buf.parse::<u64>() {
+                    state.draft.notifications.fill_notification_ttl_ms = v;
+                }
+            }
+            2 => {
+                if let Ok(v) = buf.parse::<u64>() {
+                    state.draft.notifications.status_message_ttl_ms = v;
+                }
+            }
+            _ => {}
+        },
+        PrefsSection::Proxy => match state.field_index {
+            0 => {
+                state.draft.proxy.http = if buf.is_empty() {
+                    None
+                } else {
+                    Some(buf.to_string())
+                };
+            }
+            1 => {
+                state.draft.proxy.socks5 = if buf.is_empty() {
+                    None
+                } else {
+                    Some(buf.to_string())
+                };
+            }
+            2 => {
+                state.draft.proxy.no_proxy = if buf.is_empty() {
+                    None
+                } else {
+                    Some(buf.to_string())
+                };
+            }
+            _ => {}
+        },
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -2446,6 +2812,418 @@ mod tests {
             format!("{:?}", initial),
             format!("{:?}", after),
             "Up on TrailMode should toggle trail_type"
+        );
+    }
+
+    // ── Preferences modal ─────────────────────────────────────────────────────
+
+    use crate::app::{DropdownState, PrefsSection, PrefsState};
+
+    fn prefs_state(app: &crate::app::App) -> PrefsState {
+        match &app.modal {
+            Some(Modal::Preferences(s)) => s.clone(),
+            other => panic!("expected Preferences modal, got {:?}", other),
+        }
+    }
+
+    fn press_ctrl(app: &mut crate::app::App, code: KeyCode) {
+        let event = KeyEvent::new(code, KeyModifiers::CONTROL);
+        super::handle_modal_key(app, event);
+    }
+
+    #[test]
+    fn prefs_tab_cycles_sections() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
+        assert_eq!(prefs_state(&app).section, PrefsSection::App);
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(prefs_state(&app).section, PrefsSection::Ui);
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(prefs_state(&app).section, PrefsSection::Stream);
+    }
+
+    #[test]
+    fn prefs_backtab_cycles_sections_backward() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
+        press(&mut app, KeyCode::BackTab);
+        assert_eq!(
+            prefs_state(&app).section,
+            PrefsSection::Credentials,
+            "BackTab from App should wrap to Credentials"
+        );
+    }
+
+    #[test]
+    fn prefs_down_increments_field_index() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
+        assert_eq!(prefs_state(&app).field_index, 0);
+        press(&mut app, KeyCode::Down);
+        assert_eq!(prefs_state(&app).field_index, 1);
+    }
+
+    #[test]
+    fn prefs_up_does_not_go_below_zero() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
+        press(&mut app, KeyCode::Up);
+        assert_eq!(prefs_state(&app).field_index, 0);
+    }
+
+    #[test]
+    fn prefs_down_clamps_at_section_max() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Safety; // 1 field
+        app.modal = Some(Modal::Preferences(state));
+        for _ in 0..5 {
+            press(&mut app, KeyCode::Down);
+        }
+        assert_eq!(prefs_state(&app).field_index, 0);
+    }
+
+    #[test]
+    fn prefs_tab_resets_field_index() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.field_index = 1;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(prefs_state(&app).field_index, 0);
+    }
+
+    #[test]
+    fn prefs_enter_on_bool_toggles_value_and_sets_dirty() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Safety;
+        state.field_index = 0;
+        let original = state.draft.safety.confirm_watchlist_remove;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(
+            s.draft.safety.confirm_watchlist_remove, !original,
+            "bool should be toggled"
+        );
+        assert!(s.dirty, "dirty should be set after bool toggle");
+    }
+
+    #[test]
+    fn prefs_ctrl_s_syncs_equity_range() {
+        use crate::app::EquityRange;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.ui.default_equity_range = "1W".to_string();
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert_eq!(app.equity_range, EquityRange::OneWeek);
+    }
+
+    #[test]
+    fn prefs_notifications_bool_toggle_sets_dirty() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 0; // fill_notifications_enabled
+        let original = state.draft.notifications.fill_notifications_enabled;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(s.draft.notifications.fill_notifications_enabled, !original);
+        assert!(s.dirty);
+    }
+
+    #[test]
+    fn prefs_enter_on_numeric_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1; // refresh_interval_ms
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            prefs_state(&app).editing_buf.is_some(),
+            "Enter on numeric field should open edit mode"
+        );
+    }
+
+    #[test]
+    fn prefs_enter_on_enum_opens_dropdown() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 0; // default_env
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            prefs_state(&app).dropdown.is_some(),
+            "Enter on enum field should open dropdown"
+        );
+    }
+
+    #[test]
+    fn prefs_dropdown_down_moves_cursor() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 0;
+        state.dropdown = Some(DropdownState::new(vec!["live", "paper"], "live"));
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Down);
+        assert_eq!(prefs_state(&app).dropdown.as_ref().unwrap().cursor, 1);
+    }
+
+    #[test]
+    fn prefs_dropdown_enter_applies_selection() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 0;
+        state.dropdown = Some(DropdownState::new(vec!["live", "paper"], "live"));
+        state.dropdown.as_mut().unwrap().cursor = 1;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(s.draft.app.default_env, "paper");
+        assert!(
+            s.dropdown.is_none(),
+            "dropdown should close after selection"
+        );
+        assert!(s.dirty);
+    }
+
+    #[test]
+    fn prefs_edit_mode_appends_chars() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1;
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Char('1'));
+        press(&mut app, KeyCode::Char('0'));
+        assert_eq!(prefs_state(&app).editing_buf.as_deref(), Some("10"));
+    }
+
+    #[test]
+    fn prefs_edit_mode_backspace_removes_char() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1;
+        state.editing_buf = Some("500".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(prefs_state(&app).editing_buf.as_deref(), Some("50"));
+    }
+
+    #[test]
+    fn prefs_edit_mode_enter_applies_value() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1; // refresh_interval_ms
+        state.editing_buf = Some("8000".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(s.draft.app.refresh_interval_ms, 8000);
+        assert!(s.editing_buf.is_none());
+        assert!(s.dirty);
+    }
+
+    #[test]
+    fn prefs_esc_closes_dropdown_before_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.dropdown = Some(DropdownState::new(vec!["live", "paper"], "live"));
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Esc);
+        let s = prefs_state(&app);
+        assert!(
+            s.dropdown.is_none(),
+            "first Esc should close dropdown, not modal"
+        );
+    }
+
+    #[test]
+    fn prefs_esc_on_clean_closes_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
+        press(&mut app, KeyCode::Esc);
+        assert!(app.modal.is_none(), "Esc on clean prefs should close modal");
+    }
+
+    #[test]
+    fn prefs_esc_on_dirty_closes_and_discards() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Esc);
+        assert!(
+            app.modal.is_none(),
+            "Esc on dirty prefs should close and discard"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_saves_and_closes() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.app.default_env = "paper".to_string();
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert!(app.modal.is_none(), "Ctrl-S should close the modal");
+        assert_eq!(
+            app.prefs.app.default_env, "paper",
+            "Ctrl-S should apply draft to app.prefs"
+        );
+    }
+
+    #[test]
+    fn prefs_ui_chart_marker_dropdown_cycles_all_variants() {
+        use crate::prefs::ChartMarker;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 6; // chart_marker
+        state.dropdown = Some(DropdownState::new(
+            vec!["braille", "dot", "block", "bar", "half_block"],
+            "braille",
+        ));
+        state.dropdown.as_mut().unwrap().cursor = 2; // "block"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.chart_marker, ChartMarker::Block);
+    }
+
+    #[test]
+    fn prefs_credentials_enter_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.field_index = 0;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(
+            s.editing_buf.is_some(),
+            "Enter on credential field should open edit mode"
+        );
+    }
+
+    #[test]
+    fn prefs_credentials_edit_mode_accepts_all_chars() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.field_index = 0;
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Char('A'));
+        press(&mut app, KeyCode::Char('-'));
+        press(&mut app, KeyCode::Char('1'));
+        let s = prefs_state(&app);
+        assert_eq!(
+            s.editing_buf.as_deref(),
+            Some("A-1"),
+            "credential edit accepts all chars"
+        );
+    }
+
+    #[test]
+    fn prefs_credentials_enter_confirms_key_to_key_buf() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.field_index = 0;
+        state.editing_buf = Some("MYKEY".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(
+            s.key_buf, "MYKEY",
+            "Enter should store key_buf from editing_buf"
+        );
+        assert!(s.editing_buf.is_none(), "editing_buf should be cleared");
+    }
+
+    #[test]
+    fn prefs_credentials_enter_confirms_secret_to_secret_buf() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.field_index = 1;
+        state.editing_buf = Some("MYSECRET".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(
+            s.secret_buf, "MYSECRET",
+            "Enter should store secret_buf from editing_buf"
+        );
+        assert!(s.editing_buf.is_none(), "editing_buf should be cleared");
+    }
+
+    #[test]
+    fn prefs_ctrl_s_with_only_key_sets_error_and_keeps_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.key_buf = "SOMEKEY".to_string();
+        state.secret_buf = String::new();
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(
+            s.cred_error.is_some(),
+            "should set cred_error when only key provided"
+        );
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("Secret"),
+            "error should mention Secret"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_with_only_secret_sets_error_and_keeps_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.key_buf = String::new();
+        state.secret_buf = "SOMESECRET".to_string();
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(
+            s.cred_error.is_some(),
+            "should set cred_error when only secret provided"
+        );
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("Key"),
+            "error should mention Key"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_with_empty_creds_skips_keychain_and_saves() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.key_buf = String::new();
+        state.secret_buf = String::new();
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        // modal should close (no keychain call needed when both empty)
+        assert!(
+            app.modal.is_none(),
+            "modal should close when no new creds to save"
         );
     }
 }

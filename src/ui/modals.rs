@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
         Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, Paragraph, Row,
@@ -10,7 +10,8 @@ use ratatui::{
 };
 
 use crate::app::{
-    AlertField, App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField, TrailType,
+    AlertField, App, ConfirmAction, FullOrderType, Modal, OrderEntryState, OrderField,
+    PrefsSection, PrefsState, TrailType,
 };
 use crate::ui::{charts, popup_area};
 
@@ -28,6 +29,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
         Modal::GlobalSearch { .. } => popup_area(area, 35, 20),
         Modal::PositionDetail { .. } => popup_area(area, 60, 90),
         Modal::SetAlert { .. } => popup_area(area, 42, 30),
+        Modal::Preferences(_) => popup_area(area, 75, 80),
     });
 
     match modal {
@@ -52,6 +54,7 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
             below_input,
             focused,
         } => render_set_alert(frame, area, symbol, above_input, below_input, focused, app),
+        Modal::Preferences(state) => render_preferences(frame, area, state, app),
     }
 }
 
@@ -96,6 +99,7 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         ("", ""),
         ("GLOBAL", ""),
         ("T", "Cycle theme (Default → Dark → High-contrast)"),
+        ("P", "Open Preferences editor"),
         ("q / Ctrl-C", "Quit"),
         ("?", "This help screen"),
         ("A", "About this app (non-Watchlist tabs)"),
@@ -1500,6 +1504,286 @@ fn render_position_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App
         )])),
         outer[3],
     );
+}
+
+fn render_preferences(frame: &mut Frame, area: Rect, state: &PrefsState, app: &App) {
+    let popup = popup_area(area, 75, 80);
+    frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
+
+    let title = if state.dirty {
+        " Preferences ● "
+    } else {
+        " Preferences "
+    };
+    let outer_block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(c.accent_style());
+    let inner = outer_block.inner(popup);
+    frame.render_widget(outer_block, popup);
+
+    // Split inner into sidebar (left 22 cols) + field pane (rest).
+    let panes = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(22), Constraint::Min(10)])
+        .split(inner);
+
+    // ── Sidebar ───────────────────────────────────────────────────────────────
+    let sidebar_block = Block::default()
+        .borders(Borders::RIGHT)
+        .border_style(c.dim_style());
+    let sidebar_inner = sidebar_block.inner(panes[0]);
+    frame.render_widget(sidebar_block, panes[0]);
+
+    let section_rows: Vec<Row> = PrefsSection::ALL
+        .iter()
+        .map(|s| {
+            let label = s.label();
+            if *s == state.section {
+                Row::new(vec![
+                    Cell::from(format!("▶ {label}")).style(c.accent_style())
+                ])
+            } else {
+                Row::new(vec![Cell::from(format!("  {label}")).style(c.dim_style())])
+            }
+        })
+        .collect();
+    let sidebar_table = Table::new(section_rows, [Constraint::Min(18)]);
+    frame.render_widget(sidebar_table, sidebar_inner);
+
+    // ── Field pane ────────────────────────────────────────────────────────────
+    let field_block = Block::default()
+        .title(format!(" {} ", state.section.label()))
+        .borders(Borders::NONE);
+    let field_inner = field_block.inner(panes[1]);
+    frame.render_widget(field_block, panes[1]);
+
+    let fields = prefs_fields_for_section(state, app);
+    let field_rows: Vec<Row> = fields
+        .iter()
+        .enumerate()
+        .map(|(i, (label, value))| {
+            let focused = i == state.field_index;
+            let label_cell = Cell::from(format!("  {label:<26}")).style(c.dim_style());
+            let value_cell = if focused {
+                Cell::from(value.as_str()).style(c.accent_style())
+            } else {
+                Cell::from(value.as_str())
+            };
+            Row::new(vec![label_cell, value_cell])
+        })
+        .collect();
+
+    let field_table = Table::new(field_rows, [Constraint::Length(30), Constraint::Min(10)]);
+    frame.render_widget(field_table, field_inner);
+
+    // ── Credential error banner ───────────────────────────────────────────────
+    if let Some(ref err) = state.cred_error {
+        let err_y = field_inner.y + field_inner.height.saturating_sub(3);
+        let err_rect = Rect {
+            x: field_inner.x,
+            y: err_y,
+            width: field_inner.width,
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(format!("  ✗ {err}"))
+                .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            err_rect,
+        );
+    }
+
+    // ── Dropdown overlay ──────────────────────────────────────────────────────
+    if let Some(dd) = &state.dropdown {
+        let dd_height = dd.options.len() as u16 + 2;
+        let dd_y = field_inner
+            .y
+            .saturating_add(state.field_index as u16)
+            .saturating_add(1);
+        let dd_x = field_inner.x + 30;
+        let dd_rect = Rect {
+            x: dd_x.min(popup.x + popup.width.saturating_sub(20)),
+            y: dd_y.min(popup.y + popup.height.saturating_sub(dd_height + 1)),
+            width: 18,
+            height: dd_height,
+        };
+        frame.render_widget(Clear, dd_rect);
+        let dd_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(c.accent_style());
+        let dd_inner = dd_block.inner(dd_rect);
+        frame.render_widget(dd_block, dd_rect);
+        let dd_rows: Vec<Row> = dd
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, opt)| {
+                if i == dd.cursor {
+                    Row::new(vec![Cell::from(format!("▶ {opt}")).style(c.accent_style())])
+                } else {
+                    Row::new(vec![Cell::from(format!("  {opt}")).style(c.dim_style())])
+                }
+            })
+            .collect();
+        frame.render_widget(Table::new(dd_rows, [Constraint::Min(14)]), dd_inner);
+    }
+
+    // ── Footer hint ───────────────────────────────────────────────────────────
+    let hint_y = inner.y + inner.height.saturating_sub(1);
+    let hint_rect = Rect {
+        x: inner.x,
+        y: hint_y,
+        width: inner.width,
+        height: 1,
+    };
+    frame.render_widget(
+        Paragraph::new("  Tab:Section  ↑/↓:Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel")
+            .style(c.dim_style()),
+        hint_rect,
+    );
+}
+
+/// Build the `(label, display_value)` pairs for the currently focused section.
+fn mask_cred(state: &PrefsState, field_idx: usize, buf: &str, saved: &str) -> String {
+    if state.field_index == field_idx {
+        if let Some(ref edit) = state.editing_buf {
+            // actively editing — show masked typed chars + cursor
+            return format!("{}▋", "*".repeat(edit.len()));
+        }
+    }
+    if !buf.is_empty() {
+        // typed but not yet confirmed
+        return "*".repeat(buf.len());
+    }
+    if !saved.is_empty() {
+        return "●".repeat(saved.len().min(24));
+    }
+    "[ not set ]".to_string()
+}
+
+fn prefs_fields_for_section<'a>(state: &'a PrefsState, app: &App) -> Vec<(&'static str, String)> {
+    let d = &state.draft;
+    match state.section {
+        PrefsSection::Credentials => vec![
+            (
+                "APCA-API-KEY-ID",
+                mask_cred(state, 0, &state.key_buf, &app.config.key),
+            ),
+            (
+                "APCA-API-SECRET",
+                mask_cred(state, 1, &state.secret_buf, &app.config.secret),
+            ),
+        ],
+        PrefsSection::App => vec![
+            ("default_env", d.app.default_env.clone()),
+            (
+                "refresh_interval_ms",
+                edit_or_value(state, 1, d.app.refresh_interval_ms.to_string()),
+            ),
+        ],
+        PrefsSection::Ui => vec![
+            ("theme", dropdown_or_value(state, 0, d.ui.theme.clone())),
+            ("show_account_panel", bool_display(d.ui.show_account_panel)),
+            ("show_watchlist", bool_display(d.ui.show_watchlist)),
+            ("show_positions", bool_display(d.ui.show_positions)),
+            ("show_orders", bool_display(d.ui.show_orders)),
+            (
+                "default_equity_range",
+                dropdown_or_value(state, 5, d.ui.default_equity_range.clone()),
+            ),
+            (
+                "chart_marker",
+                dropdown_or_value(state, 6, d.ui.chart_marker.as_str().to_string()),
+            ),
+        ],
+        PrefsSection::Stream => vec![
+            (
+                "reconnect_max_attempts",
+                edit_or_value(state, 0, d.stream.reconnect_max_attempts.to_string()),
+            ),
+            (
+                "reconnect_backoff_base_ms",
+                edit_or_value(state, 1, d.stream.reconnect_backoff_base_ms.to_string()),
+            ),
+        ],
+        PrefsSection::Notifications => vec![
+            (
+                "fill_notifications_enabled",
+                bool_display(d.notifications.fill_notifications_enabled),
+            ),
+            (
+                "fill_notification_ttl_ms",
+                edit_or_value(
+                    state,
+                    1,
+                    d.notifications.fill_notification_ttl_ms.to_string(),
+                ),
+            ),
+            (
+                "status_message_ttl_ms",
+                edit_or_value(state, 2, d.notifications.status_message_ttl_ms.to_string()),
+            ),
+        ],
+        PrefsSection::Safety => vec![(
+            "confirm_watchlist_remove",
+            bool_display(d.safety.confirm_watchlist_remove),
+        )],
+        PrefsSection::Proxy => vec![
+            (
+                "http",
+                edit_or_value(
+                    state,
+                    0,
+                    d.proxy.http.clone().unwrap_or_else(|| "—".to_string()),
+                ),
+            ),
+            (
+                "socks5",
+                edit_or_value(
+                    state,
+                    1,
+                    d.proxy.socks5.clone().unwrap_or_else(|| "—".to_string()),
+                ),
+            ),
+            (
+                "no_proxy",
+                edit_or_value(
+                    state,
+                    2,
+                    d.proxy.no_proxy.clone().unwrap_or_else(|| "—".to_string()),
+                ),
+            ),
+        ],
+    }
+}
+
+fn bool_display(v: bool) -> String {
+    if v {
+        "[✓]".to_string()
+    } else {
+        "[ ]".to_string()
+    }
+}
+
+fn edit_or_value(state: &PrefsState, field_idx: usize, fallback: String) -> String {
+    if state.field_index == field_idx {
+        if let Some(ref buf) = state.editing_buf {
+            return format!("{buf}▋");
+        }
+    }
+    fallback
+}
+
+fn dropdown_or_value(state: &PrefsState, field_idx: usize, fallback: String) -> String {
+    if state.field_index == field_idx {
+        if let Some(ref dd) = state.dropdown {
+            return format!("{} ▾", dd.selected());
+        }
+    }
+    fallback
 }
 
 #[cfg(test)]
@@ -3585,5 +3869,281 @@ mod tests {
         assert!(output.contains("🔔"));
         assert!(output.contains("Set Alert — AAPL"));
         assert!(output.contains("Active: above $185.00, below $165.00"));
+    }
+
+    // ── render_preferences ────────────────────────────────────────────────────
+
+    fn render_preferences_to_string(app: &mut App, state: &PrefsState) -> String {
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_preferences(frame, area, state, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let width = buffer.area().width as usize;
+        let height = buffer.area().height as usize;
+        (0..height)
+            .map(|row| {
+                (0..width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_preferences_shows_title() {
+        let app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("Preferences"),
+            "should show Preferences title"
+        );
+    }
+
+    #[test]
+    fn render_preferences_dirty_shows_dot_in_title() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.dirty = true;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("Preferences ●"),
+            "dirty state should show ● in title; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_preferences_shows_all_sections_in_sidebar() {
+        let app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        for section in PrefsSection::ALL {
+            assert!(
+                output.contains(section.label()),
+                "sidebar should contain section label '{}'; got:\n{}",
+                section.label(),
+                output
+            );
+        }
+    }
+
+    #[test]
+    fn render_preferences_app_section_shows_fields() {
+        let app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("default_env"),
+            "should show default_env field"
+        );
+        assert!(
+            output.contains("refresh_interval_ms"),
+            "should show refresh_interval_ms field"
+        );
+    }
+
+    #[test]
+    fn render_preferences_ui_section_shows_fields() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(output.contains("theme"), "should show theme field");
+        assert!(
+            output.contains("chart_marker"),
+            "should show chart_marker field"
+        );
+        assert!(
+            output.contains("show_watchlist"),
+            "should show show_watchlist field"
+        );
+    }
+
+    #[test]
+    fn render_preferences_bool_field_shows_checkbox() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Safety;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("[✓]") || output.contains("[ ]"),
+            "bool field should render as checkbox; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_preferences_footer_hint_present() {
+        let app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("Ctrl-S:Save"),
+            "footer should contain Ctrl-S:Save hint"
+        );
+    }
+
+    #[test]
+    fn render_preferences_notifications_section() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("fill_notification"),
+            "should show fill_notification field"
+        );
+        assert!(
+            output.contains("status_message_ttl"),
+            "should show status_message_ttl field"
+        );
+    }
+
+    #[test]
+    fn render_preferences_stream_section() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("reconnect_max_attempts"),
+            "should show reconnect_max_attempts"
+        );
+        assert!(
+            output.contains("reconnect_backoff_base_ms"),
+            "should show reconnect_backoff_base_ms"
+        );
+    }
+
+    #[test]
+    fn render_preferences_proxy_section() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(output.contains("http"), "should show http field");
+        assert!(output.contains("socks5"), "should show socks5 field");
+        assert!(output.contains("no_proxy"), "should show no_proxy field");
+    }
+
+    #[test]
+    fn render_preferences_credentials_section_not_set() {
+        let mut app = make_test_app();
+        app.config.key = String::new();
+        app.config.secret = String::new();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("APCA-API-KEY-ID"),
+            "should show key field label"
+        );
+        assert!(
+            output.contains("APCA-API-SECRET"),
+            "should show secret field label"
+        );
+        assert!(
+            output.contains("[ not set ]"),
+            "should show [ not set ] when no saved creds"
+        );
+    }
+
+    #[test]
+    fn render_preferences_credentials_section_saved_creds_masked() {
+        let mut app = make_test_app();
+        app.config.key = "MYAPIKEY12345".to_string();
+        app.config.secret = "MYSECRET98765".to_string();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        let output = render_preferences_to_string(&mut app, &state);
+        // saved keys shown as bullet dots, not plaintext
+        assert!(output.contains('●'), "saved key should be masked with ●");
+        assert!(
+            !output.contains("MYAPIKEY12345"),
+            "plaintext key must not appear"
+        );
+        assert!(
+            !output.contains("MYSECRET98765"),
+            "plaintext secret must not appear"
+        );
+    }
+
+    #[test]
+    fn render_preferences_credentials_typed_buf_masked_with_asterisks() {
+        let mut app = make_test_app();
+        app.config.key = String::new();
+        app.config.secret = String::new();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.key_buf = "NEWKEY".to_string();
+        state.secret_buf = "NEWSECRET".to_string();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("******"),
+            "typed key buf should render as *"
+        );
+        assert!(
+            !output.contains("NEWKEY"),
+            "typed key must not appear in plaintext"
+        );
+        assert!(
+            !output.contains("NEWSECRET"),
+            "typed secret must not appear in plaintext"
+        );
+    }
+
+    #[test]
+    fn render_preferences_credentials_error_banner_shown() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.cred_error = Some("API Secret is required when updating credentials".to_string());
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("API Secret is required"),
+            "should show cred_error message"
+        );
+    }
+
+    #[test]
+    fn render_preferences_credentials_editing_shows_cursor() {
+        let mut app = make_test_app();
+        app.config.key = String::new();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.field_index = 0;
+        state.editing_buf = Some("ABC".to_string());
+        let output = render_preferences_to_string(&mut app, &state);
+        // editing shows masked chars + cursor block
+        assert!(
+            output.contains('▋'),
+            "cursor block should appear while editing"
+        );
+        assert!(output.contains("***"), "editing chars should be masked");
     }
 }

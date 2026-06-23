@@ -463,6 +463,133 @@ impl OrderEntryState {
     }
 }
 
+/// Section tabs in the [`Modal::Preferences`] dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefsSection {
+    App,
+    Ui,
+    Stream,
+    Notifications,
+    Safety,
+    Proxy,
+    Credentials,
+}
+
+impl PrefsSection {
+    pub const ALL: &'static [PrefsSection] = &[
+        Self::App,
+        Self::Ui,
+        Self::Stream,
+        Self::Notifications,
+        Self::Safety,
+        Self::Proxy,
+        Self::Credentials,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::App => "App",
+            Self::Ui => "UI",
+            Self::Stream => "Stream",
+            Self::Notifications => "Notifications",
+            Self::Safety => "Safety",
+            Self::Proxy => "Proxy",
+            Self::Credentials => "Credentials",
+        }
+    }
+
+    pub fn field_count(self) -> usize {
+        match self {
+            Self::App => 2,
+            Self::Ui => 7,
+            Self::Stream => 2,
+            Self::Notifications => 3,
+            Self::Safety => 1,
+            Self::Proxy => 3,
+            Self::Credentials => 2,
+        }
+    }
+
+    pub fn next(self) -> Self {
+        let idx = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    pub fn prev(self) -> Self {
+        let idx = Self::ALL.iter().position(|s| *s == self).unwrap_or(0);
+        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+}
+
+/// Open dropdown overlay state for [`PrefsState`].
+#[derive(Debug, Clone)]
+pub struct DropdownState {
+    pub options: Vec<&'static str>,
+    pub cursor: usize,
+}
+
+impl DropdownState {
+    pub fn new(options: Vec<&'static str>, current: &str) -> Self {
+        let cursor = options.iter().position(|o| *o == current).unwrap_or(0);
+        Self { options, cursor }
+    }
+
+    pub fn move_up(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if self.cursor + 1 < self.options.len() {
+            self.cursor += 1;
+        }
+    }
+
+    pub fn selected(&self) -> &'static str {
+        self.options[self.cursor]
+    }
+}
+
+/// Buffered state for the in-app preferences editor ([`Modal::Preferences`]).
+#[derive(Debug, Clone)]
+pub struct PrefsState {
+    /// Working copy; applied to `App::prefs` and saved to disk on `Ctrl-S`.
+    pub draft: crate::prefs::AppPrefs,
+    /// Which section column is focused in the sidebar.
+    pub section: PrefsSection,
+    /// Which row within the current section has focus.
+    pub field_index: usize,
+    /// When `Some`, a dropdown is open for the focused enum field.
+    pub dropdown: Option<DropdownState>,
+    /// When `Some`, a numeric/string field is being edited in-place.
+    pub editing_buf: Option<String>,
+    /// `true` when `draft` differs from the original prefs at open time.
+    pub dirty: bool,
+    /// New API key typed in the Credentials section (empty = no change).
+    pub key_buf: String,
+    /// New API secret typed in the Credentials section (empty = no change).
+    pub secret_buf: String,
+    /// Validation or keychain error from the last Ctrl-S attempt.
+    pub cred_error: Option<String>,
+}
+
+impl PrefsState {
+    pub fn new(current: &crate::prefs::AppPrefs) -> Self {
+        Self {
+            draft: current.clone(),
+            section: PrefsSection::App,
+            field_index: 0,
+            dropdown: None,
+            editing_buf: None,
+            dirty: false,
+            key_buf: String::new(),
+            secret_buf: String::new(),
+            cred_error: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
     CancelOrder(String),
@@ -542,6 +669,11 @@ pub enum Modal {
         /// Which input field currently has keyboard focus.
         focused: AlertField,
     },
+    /// In-app preferences editor.
+    ///
+    /// Triggered by `P`; edits a draft copy of [`AppPrefs`] across six
+    /// sections. `Ctrl-S` saves to `config.toml`; `Esc` discards.
+    Preferences(PrefsState),
 }
 
 /// Date range for the equity-history chart.
