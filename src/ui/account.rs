@@ -1,7 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Position as TermPos, Rect},
     style::Style,
-    symbols,
     text::{Line, Span},
     widgets::{Axis, Block, Borders, Chart, Clear, Dataset, GraphType, Paragraph},
     Frame,
@@ -143,7 +142,7 @@ fn render_equity_chart(frame: &mut Frame, area: Rect, app: &App) {
     let line_color = charts::trend_color(&data_points, &c);
 
     let dataset = Dataset::default()
-        .marker(symbols::Marker::Braille)
+        .marker(app.prefs.ui.chart_marker.to_ratatui())
         .graph_type(GraphType::Line)
         .style(Style::default().fg(line_color))
         .data(&data_points);
