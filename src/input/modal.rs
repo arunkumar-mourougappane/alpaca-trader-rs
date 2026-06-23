@@ -3298,4 +3298,463 @@ mod tests {
             "modal should close when no new creds to save"
         );
     }
+
+    // ── Esc closes editing_buf before modal ───────────────────────────────────
+
+    #[test]
+    fn prefs_esc_closes_editing_buf_before_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.editing_buf = Some("123".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Esc);
+        // editing_buf closed, but modal stays open
+        let s = prefs_state(&app);
+        assert!(
+            s.editing_buf.is_none(),
+            "Esc should close editing_buf first"
+        );
+    }
+
+    // ── Dropdown Up ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn prefs_dropdown_up_moves_cursor() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 0;
+        let mut dd = DropdownState::new(vec!["default", "dark", "high-contrast"], "dark");
+        dd.cursor = 1;
+        state.dropdown = Some(dd);
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Up);
+        assert_eq!(prefs_state(&app).dropdown.unwrap().cursor, 0);
+    }
+
+    #[test]
+    fn prefs_dropdown_unhandled_key_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.dropdown = Some(DropdownState::new(vec!["default", "dark"], "default"));
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Char('x'));
+        assert!(prefs_state(&app).dropdown.is_some(), "dropdown stays open");
+    }
+
+    // ── Text-edit non-digit filter ────────────────────────────────────────────
+
+    #[test]
+    fn prefs_edit_mode_ignores_non_digit_for_numeric_field() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1;
+        state.editing_buf = Some("5".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Char('x')); // non-digit, not a cred field
+        assert_eq!(
+            prefs_state(&app).editing_buf.as_deref(),
+            Some("5"),
+            "non-digit should be ignored for numeric field"
+        );
+    }
+
+    #[test]
+    fn prefs_edit_mode_backspace_removes_last_char() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1;
+        state.editing_buf = Some("123".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Backspace);
+        assert_eq!(
+            prefs_state(&app).editing_buf.as_deref(),
+            Some("12"),
+            "Backspace should remove last char"
+        );
+    }
+
+    #[test]
+    fn prefs_edit_mode_unhandled_key_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1;
+        state.editing_buf = Some("5".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::F(1));
+        assert_eq!(
+            prefs_state(&app).editing_buf.as_deref(),
+            Some("5"),
+            "unhandled key in edit mode should not change buf"
+        );
+    }
+
+    // ── activate_prefs_field: Stream / Notifications / Safety / Proxy ─────────
+
+    #[test]
+    fn prefs_stream_field0_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 0;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            prefs_state(&app).editing_buf.is_some(),
+            "field 0 in Stream should open edit mode"
+        );
+    }
+
+    #[test]
+    fn prefs_stream_field1_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 1;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).editing_buf.is_some());
+    }
+
+    #[test]
+    fn prefs_notifications_field1_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 1;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).editing_buf.is_some());
+    }
+
+    #[test]
+    fn prefs_notifications_field2_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 2;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).editing_buf.is_some());
+    }
+
+    #[test]
+    fn prefs_safety_field0_toggles_and_sets_dirty() {
+        let mut app = make_test_app();
+        let before = app.prefs.safety.confirm_watchlist_remove;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Safety;
+        state.field_index = 0;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(s.draft.safety.confirm_watchlist_remove, !before);
+        assert!(s.dirty);
+    }
+
+    #[test]
+    fn prefs_proxy_field0_opens_edit_with_existing_value() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 0;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).editing_buf.is_some());
+    }
+
+    #[test]
+    fn prefs_proxy_field1_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 1;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).editing_buf.is_some());
+    }
+
+    #[test]
+    fn prefs_proxy_field2_opens_edit_mode() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 2;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).editing_buf.is_some());
+    }
+
+    // ── apply_text_edit: Stream / Notifications / Proxy ───────────────────────
+
+    #[test]
+    fn prefs_stream_edit_applies_reconnect_max_attempts() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 0;
+        state.editing_buf = Some("7".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.stream.reconnect_max_attempts, 7);
+    }
+
+    #[test]
+    fn prefs_stream_edit_applies_reconnect_backoff_base_ms() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 1;
+        state.editing_buf = Some("2000".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.stream.reconnect_backoff_base_ms, 2000);
+    }
+
+    #[test]
+    fn prefs_notifications_edit_applies_fill_ttl() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 1;
+        state.editing_buf = Some("3000".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.notifications.fill_notification_ttl_ms,
+            3000
+        );
+    }
+
+    #[test]
+    fn prefs_notifications_edit_applies_status_message_ttl() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 2;
+        state.editing_buf = Some("4000".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.notifications.status_message_ttl_ms,
+            4000
+        );
+    }
+
+    #[test]
+    fn prefs_proxy_edit_sets_http() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 0;
+        state.editing_buf = Some("http://proxy:3128".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.proxy.http.as_deref(),
+            Some("http://proxy:3128")
+        );
+    }
+
+    #[test]
+    fn prefs_proxy_edit_clears_http_on_empty_input() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 0;
+        state.draft.proxy.http = Some("old".to_string());
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).draft.proxy.http.is_none());
+    }
+
+    #[test]
+    fn prefs_proxy_edit_sets_socks5() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 1;
+        state.editing_buf = Some("socks5://proxy:1080".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.proxy.socks5.as_deref(),
+            Some("socks5://proxy:1080")
+        );
+    }
+
+    #[test]
+    fn prefs_proxy_edit_clears_socks5_on_empty_input() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 1;
+        state.draft.proxy.socks5 = Some("old".to_string());
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).draft.proxy.socks5.is_none());
+    }
+
+    #[test]
+    fn prefs_proxy_edit_sets_no_proxy() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 2;
+        state.editing_buf = Some("localhost,127.0.0.1".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.proxy.no_proxy.as_deref(),
+            Some("localhost,127.0.0.1")
+        );
+    }
+
+    #[test]
+    fn prefs_proxy_edit_clears_no_proxy_on_empty_input() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 2;
+        state.draft.proxy.no_proxy = Some("old".to_string());
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(prefs_state(&app).draft.proxy.no_proxy.is_none());
+    }
+
+    // ── apply_dropdown_selection: App default_env ─────────────────────────────
+
+    #[test]
+    fn prefs_app_dropdown_applies_default_env() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 0;
+        state.dropdown = Some(DropdownState::new(vec!["live", "paper"], "paper"));
+        state.dropdown.as_mut().unwrap().cursor = 0; // "live"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.app.default_env, "live");
+    }
+
+    // ── Normal nav: unhandled key in normal mode ───────────────────────────────
+
+    #[test]
+    fn prefs_unhandled_key_in_normal_mode_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.field_index = 0;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::F(2));
+        // Modal should still be open and state unchanged
+        assert!(matches!(app.modal, Some(Modal::Preferences(_))));
+    }
+
+    // ── Paper-secret-only validation error ────────────────────────────────────
+
+    #[test]
+    fn prefs_ctrl_s_with_only_paper_secret_sets_error_and_keeps_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.paper_secret_buf = "SOMESECRET".to_string();
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(s.cred_error.is_some(), "should set cred_error");
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("Key"),
+            "error should mention Key"
+        );
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("paper"),
+            "error should mention paper"
+        );
+    }
+
+    // ── 1M equity range synced on save ────────────────────────────────────────
+
+    #[test]
+    fn prefs_ctrl_s_syncs_one_month_equity_range() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.ui.default_equity_range = "1M".to_string();
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert!(
+            matches!(app.equity_range, crate::app::EquityRange::OneMonth),
+            "1M should sync to OneMonth"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_syncs_ytd_equity_range() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.ui.default_equity_range = "YTD".to_string();
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert!(
+            matches!(app.equity_range, crate::app::EquityRange::Ytd),
+            "YTD should sync to Ytd"
+        );
+    }
+
+    // ── Out-of-range field_index wildcard arms ────────────────────────────────
+
+    #[test]
+    fn prefs_app_out_of_range_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 99; // beyond any valid App field
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(s.editing_buf.is_none(), "invalid field should not open edit mode");
+    }
+
+    #[test]
+    fn prefs_stream_out_of_range_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 99;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(s.editing_buf.is_none());
+    }
+
+    #[test]
+    fn prefs_notifications_out_of_range_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 99;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(s.editing_buf.is_none());
+    }
+
+    #[test]
+    fn prefs_credentials_out_of_range_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        state.field_index = 99;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(s.editing_buf.is_none());
+    }
 }

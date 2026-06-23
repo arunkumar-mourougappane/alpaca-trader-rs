@@ -1297,6 +1297,72 @@ mod tests {
     use super::*;
     use crate::types::AccountInfo;
 
+    // ── PrefsSection ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn prefs_section_field_count_all_variants() {
+        assert_eq!(PrefsSection::App.field_count(), 2);
+        assert_eq!(PrefsSection::Ui.field_count(), 7);
+        assert_eq!(PrefsSection::Stream.field_count(), 2);
+        assert_eq!(PrefsSection::Notifications.field_count(), 3);
+        assert_eq!(PrefsSection::Safety.field_count(), 1);
+        assert_eq!(PrefsSection::Proxy.field_count(), 3);
+        assert_eq!(PrefsSection::Credentials.field_count(), 4);
+    }
+
+    #[test]
+    fn prefs_section_label_all_variants() {
+        assert_eq!(PrefsSection::App.label(), "App");
+        assert_eq!(PrefsSection::Ui.label(), "UI");
+        assert_eq!(PrefsSection::Stream.label(), "Stream");
+        assert_eq!(PrefsSection::Notifications.label(), "Notifications");
+        assert_eq!(PrefsSection::Safety.label(), "Safety");
+        assert_eq!(PrefsSection::Proxy.label(), "Proxy");
+        assert_eq!(PrefsSection::Credentials.label(), "Credentials");
+    }
+
+    #[test]
+    fn prefs_section_next_wraps_at_end() {
+        assert_eq!(PrefsSection::Credentials.next(), PrefsSection::App);
+    }
+
+    #[test]
+    fn prefs_section_prev_wraps_at_start() {
+        assert_eq!(PrefsSection::App.prev(), PrefsSection::Credentials);
+    }
+
+    // ── DropdownState ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn dropdown_move_up_decrements_cursor() {
+        let mut dd = DropdownState::new(vec!["a", "b", "c"], "b");
+        assert_eq!(dd.cursor, 1);
+        dd.move_up();
+        assert_eq!(dd.cursor, 0);
+    }
+
+    #[test]
+    fn dropdown_move_up_at_zero_is_noop() {
+        let mut dd = DropdownState::new(vec!["a", "b", "c"], "a");
+        assert_eq!(dd.cursor, 0);
+        dd.move_up();
+        assert_eq!(dd.cursor, 0);
+    }
+
+    #[test]
+    fn dropdown_move_down_at_last_is_noop() {
+        let mut dd = DropdownState::new(vec!["a", "b", "c"], "c");
+        assert_eq!(dd.cursor, 2);
+        dd.move_down();
+        assert_eq!(dd.cursor, 2);
+    }
+
+    #[test]
+    fn dropdown_selected_returns_current_option() {
+        let dd = DropdownState::new(vec!["x", "y", "z"], "y");
+        assert_eq!(dd.selected(), "y");
+    }
+
     // ── Tab navigation ────────────────────────────────────────────────────────
 
     #[test]

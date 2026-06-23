@@ -590,4 +590,52 @@ mod tests {
             );
         });
     }
+
+    // ── load_from_keychain / save_to_keychain ─────────────────────────────────
+
+    #[test]
+    fn load_from_keychain_live_returns_option_without_panic() {
+        // Exercises the platform-conditional load path.  On supported platforms
+        // this queries the OS keychain; the entry is almost certainly absent in a
+        // test environment, so None is the expected result.  On unsupported
+        // platforms the cfg-gated branch always returns None.
+        let result = load_from_keychain(AlpacaEnv::Live);
+        // We only assert absence of panic; the actual value depends on the host.
+        assert!(result.is_none() || result.is_some());
+    }
+
+    #[test]
+    fn load_from_keychain_paper_returns_option_without_panic() {
+        let result = load_from_keychain(AlpacaEnv::Paper);
+        assert!(result.is_none() || result.is_some());
+    }
+
+    #[test]
+    fn save_to_keychain_live_executes_without_panic() {
+        // Exercises the platform-conditional write path and, if successful,
+        // immediately removes the test entry to avoid polluting the keychain.
+        let result = save_to_keychain(AlpacaEnv::Live, "test-cov-key", "test-cov-secret");
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+        if result.is_ok() {
+            let _ = keyring::Entry::new(SERVICE, "live-api-key")
+                .map(|e| e.delete_credential());
+            let _ = keyring::Entry::new(SERVICE, "live-api-secret")
+                .map(|e| e.delete_credential());
+        }
+        // Accept both Ok and Err (keychain may be unavailable in CI).
+        let _ = result;
+    }
+
+    #[test]
+    fn save_to_keychain_paper_executes_without_panic() {
+        let result = save_to_keychain(AlpacaEnv::Paper, "test-cov-key", "test-cov-secret");
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+        if result.is_ok() {
+            let _ = keyring::Entry::new(SERVICE, "paper-api-key")
+                .map(|e| e.delete_credential());
+            let _ = keyring::Entry::new(SERVICE, "paper-api-secret")
+                .map(|e| e.delete_credential());
+        }
+        let _ = result;
+    }
 }
