@@ -4186,11 +4186,139 @@ mod tests {
         state.field_index = 0;
         state.editing_buf = Some("ABC".to_string());
         let output = render_preferences_to_string(&mut app, &state);
-        // editing shows masked chars + cursor block
         assert!(
             output.contains('▋'),
             "cursor block should appear while editing"
         );
         assert!(output.contains("***"), "editing chars should be masked");
+    }
+
+    // ── Dropdown overlay render ───────────────────────────────────────────────
+
+    #[test]
+    fn render_preferences_with_open_dropdown_shows_options() {
+        use crate::app::DropdownState;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 0; // theme
+        state.dropdown = Some(DropdownState::new(
+            vec!["default", "dark", "high-contrast"],
+            "default",
+        ));
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("default") || output.contains("dark"),
+            "dropdown overlay should render option text"
+        );
+    }
+
+    // ── bool_display false branch ─────────────────────────────────────────────
+
+    #[test]
+    fn render_preferences_bool_false_shows_unchecked() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.draft.ui.show_watchlist = false;
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("[ ]"),
+            "false bool should render as [ ]"
+        );
+    }
+
+    // ── edit_or_value with editing_buf active ─────────────────────────────────
+
+    #[test]
+    fn render_preferences_edit_or_value_shows_buf_with_cursor() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1; // refresh_interval_ms
+        state.editing_buf = Some("250".to_string());
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("250▋"),
+            "edit_or_value should show buf with cursor"
+        );
+    }
+
+    // ── dropdown_or_value with open dropdown ──────────────────────────────────
+
+    #[test]
+    fn render_preferences_dropdown_or_value_shows_selected_with_arrow() {
+        use crate::app::DropdownState;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 0; // theme
+        state.dropdown = Some(DropdownState::new(
+            vec!["default", "dark", "high-contrast"],
+            "dark",
+        ));
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("dark ▾"),
+            "dropdown_or_value should show selected with ▾"
+        );
+    }
+
+    // ── Credentials fallback to app.config for active env ─────────────────────
+
+    #[test]
+    fn render_preferences_credentials_live_env_shows_config_key_as_bullets() {
+        use crate::config::AlpacaEnv;
+        let mut app = make_test_app();
+        app.config.env = AlpacaEnv::Live;
+        app.config.key = "LIVEKEY123".to_string();
+        app.config.secret = "LIVESECRET456".to_string();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        // No live_saved set — falls back to app.config.key for the live env
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(output.contains('●'), "live env key should render as ●");
+        assert!(
+            !output.contains("LIVEKEY123"),
+            "plaintext key must not appear"
+        );
+    }
+
+    #[test]
+    fn render_preferences_credentials_inactive_env_shows_not_set() {
+        use crate::config::AlpacaEnv;
+        let mut app = make_test_app();
+        // Active env is Paper, so Live fields have no source → [ not set ]
+        app.config.env = AlpacaEnv::Paper;
+        app.config.key = "PAPERKEY".to_string();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        // live_saved is None and env != Live → live key shows [ not set ]
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("[ not set ]"),
+            "inactive env live key should show [ not set ]"
+        );
+    }
+
+    // ── render dispatch covers Preferences variant ────────────────────────────
+
+    #[test]
+    fn render_modal_dispatches_preferences() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        app.modal = Some(Modal::Preferences(state));
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                if let Some(modal) = &app.modal.clone() {
+                    render(frame, area, modal, &mut app);
+                }
+            })
+            .unwrap();
+        // If we got here without panic, the Preferences dispatch path executed.
     }
 }

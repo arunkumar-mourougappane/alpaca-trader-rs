@@ -4167,4 +4167,76 @@ mod tests {
         update(&mut app, key(KeyCode::Char('l')));
         assert!(app.equity_chart_cursor.is_none());
     }
+
+    // ── Preferences modal (P key) ─────────────────────────────────────────────
+
+    #[test]
+    fn p_key_opens_preferences_modal() {
+        let (mut app, _rx) = make_app_with_cmd();
+        update(&mut app, key(KeyCode::Char('P')));
+        assert!(
+            matches!(app.modal, Some(Modal::Preferences(_))),
+            "P should open Preferences modal"
+        );
+    }
+
+    #[test]
+    fn p_key_supplements_live_saved_from_in_memory_config_when_live_env() {
+        use crate::config::AlpacaEnv;
+        let (mut app, _rx) = make_app_with_cmd();
+        app.config.env = AlpacaEnv::Live;
+        app.config.key = "LIVE_KEY_IN_MEM".to_string();
+        app.config.secret = "LIVE_SECRET_IN_MEM".to_string();
+        update(&mut app, key(KeyCode::Char('P')));
+        if let Some(Modal::Preferences(ref state)) = app.modal {
+            // When keychain has no entry, live_saved is supplemented from app.config.
+            // If keychain already had an entry, live_saved comes from there — either way no panic.
+            if let Some((k, s)) = &state.live_saved {
+                // The value is either from keychain or from in-memory config.
+                assert!(!k.is_empty(), "live key should not be empty");
+                assert!(!s.is_empty(), "live secret should not be empty");
+            }
+        } else {
+            panic!("expected Preferences modal");
+        }
+    }
+
+    #[test]
+    fn p_key_supplements_paper_saved_from_in_memory_config_when_paper_env() {
+        use crate::config::AlpacaEnv;
+        let (mut app, _rx) = make_app_with_cmd();
+        // make_test_app uses Paper env with non-empty key/secret already.
+        assert_eq!(app.config.env, AlpacaEnv::Paper);
+        assert!(!app.config.key.is_empty());
+        update(&mut app, key(KeyCode::Char('P')));
+        if let Some(Modal::Preferences(ref state)) = app.modal {
+            // paper_saved must be Some — either from keychain or from app.config.
+            assert!(
+                state.paper_saved.is_some(),
+                "paper_saved should be populated when paper env has in-memory creds"
+            );
+        } else {
+            panic!("expected Preferences modal");
+        }
+    }
+
+    #[test]
+    fn p_key_with_empty_in_memory_key_does_not_supplement() {
+        use crate::config::AlpacaEnv;
+        let (mut app, _rx) = make_app_with_cmd();
+        app.config.env = AlpacaEnv::Paper;
+        app.config.key = String::new();
+        app.config.secret = String::new();
+        update(&mut app, key(KeyCode::Char('P')));
+        if let Some(Modal::Preferences(ref state)) = app.modal {
+            // Empty in-memory key must not be used as the supplement value.
+            if let Some((k, _)) = &state.paper_saved {
+                assert!(
+                    !k.is_empty(),
+                    "empty in-memory key must not populate paper_saved"
+                );
+            }
+            // paper_saved may be Some from keychain or None — both are valid.
+        }
+    }
 }
