@@ -667,8 +667,10 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                         let buf = state.editing_buf.take().unwrap_or_default();
                         if is_cred {
                             match state.field_index {
-                                0 => state.key_buf = buf,
-                                1 => state.secret_buf = buf,
+                                0 => state.live_key_buf = buf,
+                                1 => state.live_secret_buf = buf,
+                                2 => state.paper_key_buf = buf,
+                                3 => state.paper_secret_buf = buf,
                                 _ => {}
                             }
                             state.dirty = true;
@@ -706,32 +708,67 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                     activate_prefs_field(&mut state);
                 }
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    let has_key = !state.key_buf.is_empty();
-                    let has_secret = !state.secret_buf.is_empty();
-                    // Exactly one provided → validation error; keep modal open.
-                    if has_key ^ has_secret {
-                        state.cred_error = Some(if has_key {
-                            "API Secret is required when updating credentials".to_string()
+                    let has_live_key = !state.live_key_buf.is_empty();
+                    let has_live_secret = !state.live_secret_buf.is_empty();
+                    let has_paper_key = !state.paper_key_buf.is_empty();
+                    let has_paper_secret = !state.paper_secret_buf.is_empty();
+                    // Validate: each pair must be complete (both or neither).
+                    if has_live_key ^ has_live_secret {
+                        state.cred_error = Some(if has_live_key {
+                            "Live API Secret is required when updating live credentials".to_string()
                         } else {
-                            "API Key is required when updating credentials".to_string()
+                            "Live API Key is required when updating live credentials".to_string()
                         });
                         app.modal = Some(Modal::Preferences(state));
                         return;
                     }
-                    // Both provided → save to keychain; abort on error.
-                    if has_key {
+                    if has_paper_key ^ has_paper_secret {
+                        state.cred_error = Some(if has_paper_key {
+                            "Paper API Secret is required when updating paper credentials"
+                                .to_string()
+                        } else {
+                            "Paper API Key is required when updating paper credentials".to_string()
+                        });
+                        app.modal = Some(Modal::Preferences(state));
+                        return;
+                    }
+                    // Save live pair if provided.
+                    if has_live_key {
                         match save_to_keychain(
-                            app.config.env.clone(),
-                            &state.key_buf,
-                            &state.secret_buf,
+                            crate::config::AlpacaEnv::Live,
+                            &state.live_key_buf,
+                            &state.live_secret_buf,
                         ) {
                             Ok(()) => {
-                                app.config.key = state.key_buf.clone();
-                                app.config.secret = state.secret_buf.clone();
+                                if app.config.env == crate::config::AlpacaEnv::Live {
+                                    app.config.key = state.live_key_buf.clone();
+                                    app.config.secret = state.live_secret_buf.clone();
+                                }
                                 state.cred_error = None;
                             }
                             Err(e) => {
-                                state.cred_error = Some(format!("Keychain error: {e}"));
+                                state.cred_error = Some(format!("Keychain error (live): {e}"));
+                                app.modal = Some(Modal::Preferences(state));
+                                return;
+                            }
+                        }
+                    }
+                    // Save paper pair if provided.
+                    if has_paper_key {
+                        match save_to_keychain(
+                            crate::config::AlpacaEnv::Paper,
+                            &state.paper_key_buf,
+                            &state.paper_secret_buf,
+                        ) {
+                            Ok(()) => {
+                                if app.config.env == crate::config::AlpacaEnv::Paper {
+                                    app.config.key = state.paper_key_buf.clone();
+                                    app.config.secret = state.paper_secret_buf.clone();
+                                }
+                                state.cred_error = None;
+                            }
+                            Err(e) => {
+                                state.cred_error = Some(format!("Keychain error (paper): {e}"));
                                 app.modal = Some(Modal::Preferences(state));
                                 return;
                             }
@@ -883,8 +920,7 @@ fn activate_prefs_field(state: &mut PrefsState) {
             _ => {}
         },
         PrefsSection::Credentials => match state.field_index {
-            0 | 1 => {
-                // Start with an empty buffer; user types the new value.
+            0..=3 => {
                 state.editing_buf = Some(String::new());
             }
             _ => {}
@@ -3137,73 +3173,99 @@ mod tests {
     }
 
     #[test]
-    fn prefs_credentials_enter_confirms_key_to_key_buf() {
+    fn prefs_credentials_enter_on_field0_stores_live_key_buf() {
         let mut app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
         state.section = PrefsSection::Credentials;
         state.field_index = 0;
-        state.editing_buf = Some("MYKEY".to_string());
+        state.editing_buf = Some("LIVEKEY".to_string());
         app.modal = Some(Modal::Preferences(state));
         press(&mut app, KeyCode::Enter);
         let s = prefs_state(&app);
         assert_eq!(
-            s.key_buf, "MYKEY",
-            "Enter should store key_buf from editing_buf"
+            s.live_key_buf, "LIVEKEY",
+            "field 0 should store live_key_buf"
         );
         assert!(s.editing_buf.is_none(), "editing_buf should be cleared");
     }
 
     #[test]
-    fn prefs_credentials_enter_confirms_secret_to_secret_buf() {
+    fn prefs_credentials_enter_on_field1_stores_live_secret_buf() {
         let mut app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
         state.section = PrefsSection::Credentials;
         state.field_index = 1;
-        state.editing_buf = Some("MYSECRET".to_string());
+        state.editing_buf = Some("LIVESECRET".to_string());
         app.modal = Some(Modal::Preferences(state));
         press(&mut app, KeyCode::Enter);
         let s = prefs_state(&app);
         assert_eq!(
-            s.secret_buf, "MYSECRET",
-            "Enter should store secret_buf from editing_buf"
+            s.live_secret_buf, "LIVESECRET",
+            "field 1 should store live_secret_buf"
         );
         assert!(s.editing_buf.is_none(), "editing_buf should be cleared");
     }
 
     #[test]
-    fn prefs_ctrl_s_with_only_key_sets_error_and_keeps_modal() {
+    fn prefs_credentials_enter_on_field2_stores_paper_key_buf() {
         let mut app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
         state.section = PrefsSection::Credentials;
-        state.key_buf = "SOMEKEY".to_string();
-        state.secret_buf = String::new();
+        state.field_index = 2;
+        state.editing_buf = Some("PAPERKEY".to_string());
         app.modal = Some(Modal::Preferences(state));
-        press_ctrl(&mut app, KeyCode::Char('s'));
+        press(&mut app, KeyCode::Enter);
         let s = prefs_state(&app);
-        assert!(
-            s.cred_error.is_some(),
-            "should set cred_error when only key provided"
-        );
-        assert!(
-            s.cred_error.as_deref().unwrap().contains("Secret"),
-            "error should mention Secret"
+        assert_eq!(
+            s.paper_key_buf, "PAPERKEY",
+            "field 2 should store paper_key_buf"
         );
     }
 
     #[test]
-    fn prefs_ctrl_s_with_only_secret_sets_error_and_keeps_modal() {
+    fn prefs_credentials_enter_on_field3_stores_paper_secret_buf() {
         let mut app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
         state.section = PrefsSection::Credentials;
-        state.key_buf = String::new();
-        state.secret_buf = "SOMESECRET".to_string();
+        state.field_index = 3;
+        state.editing_buf = Some("PAPERSECRET".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(
+            s.paper_secret_buf, "PAPERSECRET",
+            "field 3 should store paper_secret_buf"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_with_only_live_key_sets_error_and_keeps_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.live_key_buf = "SOMEKEY".to_string();
         app.modal = Some(Modal::Preferences(state));
         press_ctrl(&mut app, KeyCode::Char('s'));
         let s = prefs_state(&app);
+        assert!(s.cred_error.is_some(), "should set cred_error");
         assert!(
-            s.cred_error.is_some(),
-            "should set cred_error when only secret provided"
+            s.cred_error.as_deref().unwrap().contains("Secret"),
+            "error should mention Secret"
         );
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("live"),
+            "error should mention live"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_with_only_live_secret_sets_error_and_keeps_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.live_secret_buf = "SOMESECRET".to_string();
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(s.cred_error.is_some(), "should set cred_error");
         assert!(
             s.cred_error.as_deref().unwrap().contains("Key"),
             "error should mention Key"
@@ -3211,16 +3273,27 @@ mod tests {
     }
 
     #[test]
+    fn prefs_ctrl_s_with_only_paper_key_sets_error_and_keeps_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.paper_key_buf = "PAPERKEY".to_string();
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(s.cred_error.is_some(), "should set cred_error");
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("paper"),
+            "error should mention paper"
+        );
+    }
+
+    #[test]
     fn prefs_ctrl_s_with_empty_creds_skips_keychain_and_saves() {
         let mut app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
-        state.section = PrefsSection::Credentials;
-        state.key_buf = String::new();
-        state.secret_buf = String::new();
         state.dirty = true;
         app.modal = Some(Modal::Preferences(state));
         press_ctrl(&mut app, KeyCode::Char('s'));
-        // modal should close (no keychain call needed when both empty)
         assert!(
             app.modal.is_none(),
             "modal should close when no new creds to save"

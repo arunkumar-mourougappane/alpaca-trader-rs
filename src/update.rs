@@ -229,7 +229,26 @@ fn handle_key(app: &mut App, key: crossterm::event::KeyEvent) {
             app.push_transient_status(format!("Theme: {}", app.current_theme.display_name()));
         }
         KeyCode::Char('P') => {
-            app.modal = Some(Modal::Preferences(PrefsState::new(&app.prefs)));
+            let mut state = PrefsState::new(&app.prefs);
+            state.live_saved =
+                crate::credentials::load_from_keychain(crate::config::AlpacaEnv::Live);
+            state.paper_saved =
+                crate::credentials::load_from_keychain(crate::config::AlpacaEnv::Paper);
+            // Supplement with in-memory creds for the active env when keychain
+            // returned nothing (e.g. credentials loaded from env vars this session).
+            if state.live_saved.is_none()
+                && app.config.env == crate::config::AlpacaEnv::Live
+                && !app.config.key.is_empty()
+            {
+                state.live_saved = Some((app.config.key.clone(), app.config.secret.clone()));
+            }
+            if state.paper_saved.is_none()
+                && app.config.env == crate::config::AlpacaEnv::Paper
+                && !app.config.key.is_empty()
+            {
+                state.paper_saved = Some((app.config.key.clone(), app.config.secret.clone()));
+            }
+            app.modal = Some(Modal::Preferences(state));
         }
         // Copy focused symbol to clipboard (Watchlist, Positions, Orders)
         KeyCode::Char('c') if app.active_tab != Tab::Orders => {
