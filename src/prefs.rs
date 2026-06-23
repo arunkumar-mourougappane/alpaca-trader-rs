@@ -14,7 +14,54 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use ratatui::symbols;
 use serde::{Deserialize, Serialize};
+
+// ── Chart marker ──────────────────────────────────────────────────────────────
+
+/// Chart dataset marker style.
+///
+/// Controls the glyph used to draw line and scatter chart datasets.
+/// Corresponds 1:1 to [`ratatui::symbols::Marker`].
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChartMarker {
+    /// High-resolution braille dots (requires UTF-8 + braille font).
+    #[default]
+    Braille,
+    /// Simple dot (`·`); works on all terminals.
+    Dot,
+    /// Solid block (`█`).
+    Block,
+    /// Vertical bar (`|`).
+    Bar,
+    /// Half-block (`▄`); medium resolution, wide support.
+    HalfBlock,
+}
+
+impl ChartMarker {
+    /// Converts to the corresponding [`ratatui::symbols::Marker`] variant.
+    pub fn to_ratatui(self) -> symbols::Marker {
+        match self {
+            Self::Braille => symbols::Marker::Braille,
+            Self::Dot => symbols::Marker::Dot,
+            Self::Block => symbols::Marker::Block,
+            Self::Bar => symbols::Marker::Bar,
+            Self::HalfBlock => symbols::Marker::HalfBlock,
+        }
+    }
+
+    /// Returns the snake_case TOML string representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Braille => "braille",
+            Self::Dot => "dot",
+            Self::Block => "block",
+            Self::Bar => "bar",
+            Self::HalfBlock => "half_block",
+        }
+    }
+}
 
 // ── Sub-sections ──────────────────────────────────────────────────────────────
 
@@ -57,6 +104,9 @@ pub struct UiSection {
     /// `"1D"` | `"1W"` | `"1M"` | `"YTD"`.  Range-picker UI is tracked in
     /// issue #77.
     pub default_equity_range: String,
+    /// Marker style used for all chart datasets.  Accepted values:
+    /// `"braille"` | `"dot"` | `"block"` | `"bar"` | `"half_block"`.
+    pub chart_marker: ChartMarker,
 }
 
 impl Default for UiSection {
@@ -68,6 +118,7 @@ impl Default for UiSection {
             show_positions: true,
             show_orders: true,
             default_equity_range: "1D".into(),
+            chart_marker: ChartMarker::default(),
         }
     }
 }
@@ -264,6 +315,8 @@ show_positions     = {show_positions}
 show_orders        = {show_orders}
 # Default equity chart range. Accepted values: "1D" | "1W" | "1M" | "YTD"
 default_equity_range = "{equity_range}"
+# Chart marker style. Accepted values: "braille" | "dot" | "block" | "bar" | "half_block"
+chart_marker = "{chart_marker}"
 
 [stream]
 # Max reconnect attempts (0 = unlimited)
@@ -294,6 +347,7 @@ confirm_watchlist_remove = {confirm_remove}
             show_positions = self.ui.show_positions,
             show_orders = self.ui.show_orders,
             equity_range = self.ui.default_equity_range,
+            chart_marker = self.ui.chart_marker.as_str(),
             reconnect_max = self.stream.reconnect_max_attempts,
             reconnect_base = self.stream.reconnect_backoff_base_ms,
             fill_enabled = self.notifications.fill_notifications_enabled,
@@ -463,6 +517,97 @@ fill_notifications_enabled = false
             AppPrefs::default(),
             "unreadable file should yield defaults"
         );
+    }
+
+    #[test]
+    fn default_chart_marker_is_braille() {
+        let p = AppPrefs::default();
+        assert_eq!(p.ui.chart_marker, ChartMarker::Braille);
+    }
+
+    #[test]
+    fn chart_marker_as_str_round_trips() {
+        let cases = [
+            (ChartMarker::Braille, "braille"),
+            (ChartMarker::Dot, "dot"),
+            (ChartMarker::Block, "block"),
+            (ChartMarker::Bar, "bar"),
+            (ChartMarker::HalfBlock, "half_block"),
+        ];
+        for (variant, expected) in cases {
+            assert_eq!(variant.as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn chart_marker_to_ratatui_maps_all_variants() {
+        use ratatui::symbols;
+        assert_eq!(
+            ChartMarker::Braille.to_ratatui(),
+            symbols::Marker::Braille
+        );
+        assert_eq!(ChartMarker::Dot.to_ratatui(), symbols::Marker::Dot);
+        assert_eq!(ChartMarker::Block.to_ratatui(), symbols::Marker::Block);
+        assert_eq!(ChartMarker::Bar.to_ratatui(), symbols::Marker::Bar);
+        assert_eq!(
+            ChartMarker::HalfBlock.to_ratatui(),
+            symbols::Marker::HalfBlock
+        );
+    }
+
+    #[test]
+    fn chart_marker_parses_from_toml() {
+        let f = write_toml(
+            r#"
+[ui]
+chart_marker = "dot"
+"#,
+        );
+        let p = AppPrefs::load_from(f.path());
+        assert_eq!(p.ui.chart_marker, ChartMarker::Dot);
+    }
+
+    #[test]
+    fn chart_marker_all_variants_parse_from_toml() {
+        let cases = [
+            ("braille", ChartMarker::Braille),
+            ("dot", ChartMarker::Dot),
+            ("block", ChartMarker::Block),
+            ("bar", ChartMarker::Bar),
+            ("half_block", ChartMarker::HalfBlock),
+        ];
+        for (toml_val, expected) in cases {
+            let content = format!("[ui]\nchart_marker = \"{toml_val}\"\n");
+            let f = write_toml(&content);
+            let p = AppPrefs::load_from(f.path());
+            assert_eq!(
+                p.ui.chart_marker, expected,
+                "chart_marker = {toml_val:?} should parse to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn chart_marker_invalid_value_falls_back_to_defaults() {
+        let f = write_toml("[ui]\nchart_marker = \"invalid_value\"\n");
+        let p = AppPrefs::load_from(f.path());
+        assert_eq!(p, AppPrefs::default(), "invalid chart_marker should fall back to defaults");
+    }
+
+    #[test]
+    fn chart_marker_missing_falls_back_to_braille() {
+        let f = write_toml("[ui]\ntheme = \"dark\"\n");
+        let p = AppPrefs::load_from(f.path());
+        assert_eq!(p.ui.chart_marker, ChartMarker::Braille);
+    }
+
+    #[test]
+    fn chart_marker_round_trips_through_toml_string() {
+        let mut p = AppPrefs::default();
+        p.ui.chart_marker = ChartMarker::HalfBlock;
+        let toml_str = p.to_toml_string();
+        let p2: AppPrefs = toml::from_str(&toml_str).unwrap();
+        assert_eq!(p2.ui.chart_marker, ChartMarker::HalfBlock);
     }
 
     #[test]

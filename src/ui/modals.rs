@@ -1,7 +1,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    symbols,
     text::{Line, Span},
     widgets::{
         Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, Paragraph, Row,
@@ -833,8 +832,9 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             let [y_min, y_max] = charts::y_bounds(&data_points);
             let line_color = charts::trend_color(&data_points, &c);
 
+            let marker = app.prefs.ui.chart_marker.to_ratatui();
             let dataset = Dataset::default()
-                .marker(symbols::Marker::Braille)
+                .marker(marker)
                 .graph_type(GraphType::Line)
                 .style(Style::default().fg(line_color))
                 .data(&data_points);
@@ -853,7 +853,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                         .collect();
                     datasets.push(
                         Dataset::default()
-                            .marker(symbols::Marker::Braille)
+                            .marker(marker)
                             .graph_type(GraphType::Scatter)
                             .style(Style::default().fg(c.accent))
                             .data(&crosshair_pts),
@@ -1342,7 +1342,7 @@ fn render_position_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App
             let line_color = charts::trend_color(&data_points, &c);
 
             let dataset = Dataset::default()
-                .marker(symbols::Marker::Braille)
+                .marker(app.prefs.ui.chart_marker.to_ratatui())
                 .graph_type(GraphType::Line)
                 .style(Style::default().fg(line_color))
                 .data(&data_points);
