@@ -506,7 +506,7 @@ impl PrefsSection {
             Self::Notifications => 3,
             Self::Safety => 1,
             Self::Proxy => 3,
-            Self::Credentials => 2,
+            Self::Credentials => 4,
         }
     }
 
@@ -566,10 +566,18 @@ pub struct PrefsState {
     pub editing_buf: Option<String>,
     /// `true` when `draft` differs from the original prefs at open time.
     pub dirty: bool,
-    /// New API key typed in the Credentials section (empty = no change).
-    pub key_buf: String,
-    /// New API secret typed in the Credentials section (empty = no change).
-    pub secret_buf: String,
+    /// New live API key typed (empty = no change).
+    pub live_key_buf: String,
+    /// New live API secret typed (empty = no change).
+    pub live_secret_buf: String,
+    /// New paper API key typed (empty = no change).
+    pub paper_key_buf: String,
+    /// New paper API secret typed (empty = no change).
+    pub paper_secret_buf: String,
+    /// Previously-saved live credentials loaded from keychain at modal open.
+    pub live_saved: Option<(String, String)>,
+    /// Previously-saved paper credentials loaded from keychain at modal open.
+    pub paper_saved: Option<(String, String)>,
     /// Validation or keychain error from the last Ctrl-S attempt.
     pub cred_error: Option<String>,
 }
@@ -583,8 +591,12 @@ impl PrefsState {
             dropdown: None,
             editing_buf: None,
             dirty: false,
-            key_buf: String::new(),
-            secret_buf: String::new(),
+            live_key_buf: String::new(),
+            live_secret_buf: String::new(),
+            paper_key_buf: String::new(),
+            paper_secret_buf: String::new(),
+            live_saved: None,
+            paper_saved: None,
             cred_error: None,
         }
     }

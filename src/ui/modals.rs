@@ -1647,19 +1647,17 @@ fn render_preferences(frame: &mut Frame, area: Rect, state: &PrefsState, app: &A
 }
 
 /// Build the `(label, display_value)` pairs for the currently focused section.
-fn mask_cred(state: &PrefsState, field_idx: usize, buf: &str, saved: &str) -> String {
+fn mask_cred(state: &PrefsState, field_idx: usize, buf: &str, saved: Option<&str>) -> String {
     if state.field_index == field_idx {
         if let Some(ref edit) = state.editing_buf {
-            // actively editing — show masked typed chars + cursor
             return format!("{}▋", "*".repeat(edit.len()));
         }
     }
     if !buf.is_empty() {
-        // typed but not yet confirmed
         return "*".repeat(buf.len());
     }
-    if !saved.is_empty() {
-        return "●".repeat(saved.len().min(24));
+    if let Some(s) = saved.filter(|s| !s.is_empty()) {
+        return "●".repeat(s.len().min(24));
     }
     "[ not set ]".to_string()
 }
@@ -1667,16 +1665,70 @@ fn mask_cred(state: &PrefsState, field_idx: usize, buf: &str, saved: &str) -> St
 fn prefs_fields_for_section<'a>(state: &'a PrefsState, app: &App) -> Vec<(&'static str, String)> {
     let d = &state.draft;
     match state.section {
-        PrefsSection::Credentials => vec![
-            (
-                "APCA-API-KEY-ID",
-                mask_cred(state, 0, &state.key_buf, &app.config.key),
-            ),
-            (
-                "APCA-API-SECRET",
-                mask_cred(state, 1, &state.secret_buf, &app.config.secret),
-            ),
-        ],
+        PrefsSection::Credentials => {
+            let live_key = state
+                .live_saved
+                .as_ref()
+                .map(|(k, _)| k.as_str())
+                .or_else(|| {
+                    if app.config.env == crate::config::AlpacaEnv::Live {
+                        Some(app.config.key.as_str())
+                    } else {
+                        None
+                    }
+                });
+            let live_secret = state
+                .live_saved
+                .as_ref()
+                .map(|(_, s)| s.as_str())
+                .or_else(|| {
+                    if app.config.env == crate::config::AlpacaEnv::Live {
+                        Some(app.config.secret.as_str())
+                    } else {
+                        None
+                    }
+                });
+            let paper_key = state
+                .paper_saved
+                .as_ref()
+                .map(|(k, _)| k.as_str())
+                .or_else(|| {
+                    if app.config.env == crate::config::AlpacaEnv::Paper {
+                        Some(app.config.key.as_str())
+                    } else {
+                        None
+                    }
+                });
+            let paper_secret = state
+                .paper_saved
+                .as_ref()
+                .map(|(_, s)| s.as_str())
+                .or_else(|| {
+                    if app.config.env == crate::config::AlpacaEnv::Paper {
+                        Some(app.config.secret.as_str())
+                    } else {
+                        None
+                    }
+                });
+            vec![
+                (
+                    "[LIVE]  APCA-API-KEY-ID",
+                    mask_cred(state, 0, &state.live_key_buf, live_key),
+                ),
+                (
+                    "[LIVE]  APCA-API-SECRET",
+                    mask_cred(state, 1, &state.live_secret_buf, live_secret),
+                ),
+                (
+                    "[PAPER] APCA-API-KEY-ID",
+                    mask_cred(state, 2, &state.paper_key_buf, paper_key),
+                ),
+                (
+                    "[PAPER] APCA-API-SECRET",
+                    mask_cred(state, 3, &state.paper_secret_buf, paper_secret),
+                ),
+            ]
+        }
         PrefsSection::App => vec![
             ("default_env", d.app.default_env.clone()),
             (
@@ -4076,44 +4128,39 @@ mod tests {
     #[test]
     fn render_preferences_credentials_section_saved_creds_masked() {
         let mut app = make_test_app();
-        app.config.key = "MYAPIKEY12345".to_string();
-        app.config.secret = "MYSECRET98765".to_string();
         let mut state = PrefsState::new(&app.prefs);
         state.section = PrefsSection::Credentials;
+        // Simulate saved credentials loaded from keychain into state.
+        state.live_saved = Some(("MYAPIKEY12345".to_string(), "MYSECRET98765".to_string()));
+        state.paper_saved = Some(("PAPKEY12345".to_string(), "PAPSECRET98765".to_string()));
         let output = render_preferences_to_string(&mut app, &state);
-        // saved keys shown as bullet dots, not plaintext
         assert!(output.contains('●'), "saved key should be masked with ●");
         assert!(
             !output.contains("MYAPIKEY12345"),
-            "plaintext key must not appear"
+            "plaintext live key must not appear"
         );
         assert!(
-            !output.contains("MYSECRET98765"),
-            "plaintext secret must not appear"
+            !output.contains("PAPKEY12345"),
+            "plaintext paper key must not appear"
         );
     }
 
     #[test]
     fn render_preferences_credentials_typed_buf_masked_with_asterisks() {
         let mut app = make_test_app();
-        app.config.key = String::new();
-        app.config.secret = String::new();
         let mut state = PrefsState::new(&app.prefs);
         state.section = PrefsSection::Credentials;
-        state.key_buf = "NEWKEY".to_string();
-        state.secret_buf = "NEWSECRET".to_string();
+        state.live_key_buf = "NEWLIVEKEY".to_string();
+        state.paper_key_buf = "NEWPAPERKEY".to_string();
         let output = render_preferences_to_string(&mut app, &state);
+        assert!(output.contains("**"), "typed buf should render as *");
         assert!(
-            output.contains("******"),
-            "typed key buf should render as *"
+            !output.contains("NEWLIVEKEY"),
+            "typed live key must not appear in plaintext"
         );
         assert!(
-            !output.contains("NEWKEY"),
-            "typed key must not appear in plaintext"
-        );
-        assert!(
-            !output.contains("NEWSECRET"),
-            "typed secret must not appear in plaintext"
+            !output.contains("NEWPAPERKEY"),
+            "typed paper key must not appear in plaintext"
         );
     }
 

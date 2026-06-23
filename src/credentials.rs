@@ -317,6 +317,26 @@ fn offer_keychain_save(prefix: &str, key: &str, secret: &str) {
     }
 }
 
+/// Try to read saved credentials for `env` from the OS keychain.
+///
+/// Returns `Some((key, secret))` if both entries exist, `None` otherwise.
+/// Silently swallows errors so callers (e.g. the UI layer) need not handle them.
+pub fn load_from_keychain(env: AlpacaEnv) -> Option<(String, String)> {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    {
+        let prefix = match env {
+            AlpacaEnv::Live => "live",
+            AlpacaEnv::Paper => "paper",
+        };
+        return try_keychain_load(prefix).ok().flatten();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = env;
+        None
+    }
+}
+
 /// Save an API key + secret pair for `env` into the OS keychain.
 ///
 /// Used by the in-app Preferences modal to persist credentials without
