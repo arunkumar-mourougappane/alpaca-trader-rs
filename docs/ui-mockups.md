@@ -437,6 +437,151 @@ Mouse support requires `crossterm` with the `event-stream` feature and `crosster
 
 ---
 
+## Modal — Preferences
+
+Triggered by `P` (uppercase) from any context. Two-pane layout: left sidebar
+lists sections, right pane shows editable fields for the selected section.
+Changes are buffered in modal state and written to `config.toml` only on
+explicit save (`Ctrl-S` or `Enter` on the Save button).
+
+### Default view (App section focused)
+
+```
+╔═ Preferences ════════════════════════════════════════════════════════╗
+║                                                                      ║
+║  ┌─ Sections ──────┐  ┌─ App ──────────────────────────────────┐   ║
+║  │▶ App            │  │                                          │   ║
+║  │  UI             │  │  default_env          [ live     ▾ ]    │   ║
+║  │  Stream         │  │  refresh_interval_ms  [ 5000      ]     │   ║
+║  │  Notifications  │  │                                          │   ║
+║  │  Safety         │  │                                          │   ║
+║  │  Proxy          │  │                                          │   ║
+║  └─────────────────┘  └──────────────────────────────────────── ┘   ║
+║                                                                      ║
+║  Tab:Next Section  ↑/↓:Move Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+### UI section
+
+```
+╔═ Preferences ════════════════════════════════════════════════════════╗
+║                                                                      ║
+║  ┌─ Sections ──────┐  ┌─ UI ───────────────────────────────────┐   ║
+║  │  App            │  │                                          │   ║
+║  │▶ UI             │  │  theme               [ default   ▾ ]    │   ║
+║  │  Stream         │  │  show_account_panel  [✓]               │   ║
+║  │  Notifications  │  │  show_watchlist      [✓]               │   ║
+║  │  Safety         │  │  show_positions      [✓]               │   ║
+║  │  Proxy          │  │  show_orders         [✓]               │   ║
+║  └─────────────────┘  │  default_equity_range [ 1D       ▾ ]    │   ║
+║                        │  chart_marker         [ braille  ▾ ]    │   ║
+║                        └──────────────────────────────────────── ┘   ║
+║                                                                      ║
+║  Tab:Next Section  ↑/↓:Move Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+### Dropdown open (chart_marker field)
+
+```
+╔═ Preferences ════════════════════════════════════════════════════════╗
+║                                                                      ║
+║  ┌─ Sections ──────┐  ┌─ UI ───────────────────────────────────┐   ║
+║  │  App            │  │  theme               [ default   ▾ ]    │   ║
+║  │▶ UI             │  │  show_account_panel  [✓]               │   ║
+║  │  Stream         │  │  show_watchlist      [✓]               │   ║
+║  │  Notifications  │  │  show_positions      [✓]               │   ║
+║  │  Safety         │  │  show_orders         [✓]               │   ║
+║  │  Proxy          │  │  default_equity_range [ 1D       ▾ ]    │   ║
+║  └─────────────────┘  │  chart_marker         [ braille  ▾ ]    │   ║
+║                        │                      ┌──────────────┐   │   ║
+║                        │                      │▶ braille     │   │   ║
+║                        │                      │  dot         │   │   ║
+║                        │                      │  block       │   │   ║
+║                        │                      │  bar         │   │   ║
+║                        │                      │  half_block  │   │   ║
+║                        │                      └──────────────┘   │   ║
+║                        └──────────────────────────────────────── ┘   ║
+║  ↑/↓:Select  Enter:Confirm  Esc:Cancel                               ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+### Notifications section
+
+```
+╔═ Preferences ════════════════════════════════════════════════════════╗
+║                                                                      ║
+║  ┌─ Sections ──────┐  ┌─ Notifications ────────────────────────┐   ║
+║  │  App            │  │                                          │   ║
+║  │  UI             │  │  fill_notifications_enabled  [✓]        │   ║
+║  │  Stream         │  │  fill_notification_ttl_ms    [ 4000  ]  │   ║
+║  │▶ Notifications  │  │  status_message_ttl_ms       [ 2000  ]  │   ║
+║  │  Safety         │  │                                          │   ║
+║  │  Proxy          │  │                                          │   ║
+║  └─────────────────┘  └──────────────────────────────────────── ┘   ║
+║                                                                      ║
+║  Tab:Next Section  ↑/↓:Move Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+### Unsaved changes indicator
+
+```
+╔═ Preferences ● ══════════════════════════════════════════════════════╗
+```
+
+A `●` dot appears in the title bar when there are unsaved changes.
+`Ctrl-S` or Tab to the implicit `[ Save ]` row clears the indicator and
+writes to disk. `Esc` prompts "Unsaved changes — discard? (y/N)" before
+closing.
+
+---
+
+**Keyboard map**
+
+| Key | Action |
+|---|---|
+| `Tab` / `Shift-Tab` | Next / previous section in sidebar |
+| `↑` / `k` | Move field cursor up |
+| `↓` / `j` | Move field cursor down |
+| `Enter` / `Space` | Toggle bool field; open dropdown for enum/string fields; begin editing numeric field |
+| `↑` / `↓` (dropdown open) | Move dropdown cursor |
+| `Enter` (dropdown open) | Confirm selection, close dropdown |
+| `Esc` (dropdown open) | Cancel dropdown, keep original value |
+| Char / `Backspace` (numeric edit) | Edit digit in place |
+| `Enter` (numeric edit) | Confirm numeric value |
+| `Esc` (numeric edit) | Abandon numeric edit |
+| `Ctrl-S` | Save all changes to `config.toml` and close |
+| `Esc` (no changes) | Close modal |
+| `Esc` (unsaved changes) | Show "Discard changes? y/N" confirmation |
+
+---
+
+**State struct (proposed)**
+
+```rust
+pub struct PrefsState {
+    pub draft: AppPrefs,           // working copy; saved on Ctrl-S
+    pub section: PrefsSection,     // focused sidebar item
+    pub field_index: usize,        // focused field within section
+    pub dropdown: Option<DropdownState>,  // Some when a dropdown is open
+    pub editing: bool,             // true while a numeric field is being typed
+    pub dirty: bool,               // true when draft ≠ original prefs
+}
+
+pub enum PrefsSection {
+    App,
+    Ui,
+    Stream,
+    Notifications,
+    Safety,
+    Proxy,
+}
+```
+
+---
+
 ## ratatui Widget Mapping
 
 | UI Element | ratatui Widget |
