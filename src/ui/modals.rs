@@ -1662,7 +1662,7 @@ fn mask_cred(state: &PrefsState, field_idx: usize, buf: &str, saved: Option<&str
     "[ not set ]".to_string()
 }
 
-fn prefs_fields_for_section<'a>(state: &'a PrefsState, app: &App) -> Vec<(&'static str, String)> {
+fn prefs_fields_for_section(state: &PrefsState, app: &App) -> Vec<(&'static str, String)> {
     let d = &state.draft;
     match state.section {
         PrefsSection::Credentials => {
