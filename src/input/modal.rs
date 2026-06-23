@@ -919,12 +919,11 @@ fn activate_prefs_field(state: &mut PrefsState) {
             }
             _ => {}
         },
-        PrefsSection::Credentials => match state.field_index {
-            0..=3 => {
+        PrefsSection::Credentials => {
+            if let 0..=3 = state.field_index {
                 state.editing_buf = Some(String::new());
             }
-            _ => {}
-        },
+        }
     }
 }
 

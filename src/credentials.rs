@@ -328,7 +328,7 @@ pub fn load_from_keychain(env: AlpacaEnv) -> Option<(String, String)> {
             AlpacaEnv::Live => "live",
             AlpacaEnv::Paper => "paper",
         };
-        return try_keychain_load(prefix).ok().flatten();
+        try_keychain_load(prefix).ok().flatten()
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
@@ -349,7 +349,7 @@ pub fn save_to_keychain(env: AlpacaEnv, key: &str, secret: &str) -> Result<()> {
             AlpacaEnv::Live => "live",
             AlpacaEnv::Paper => "paper",
         };
-        return save_keychain_pair(prefix, key, secret);
+        save_keychain_pair(prefix, key, secret)
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
