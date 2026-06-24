@@ -4099,6 +4099,65 @@ mod tests {
     }
 
     #[test]
+    fn render_preferences_footer_app_text_field_shows_edit_hint() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1; // refresh_interval_ms — text edit field
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("Enter:Edit"),
+            "App text field hint should say Enter:Edit; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_preferences_footer_ui_toggle_field_shows_toggle_hint() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 1; // show_account_panel — bool toggle
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("Toggle"),
+            "Ui bool field hint should mention Toggle; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_preferences_footer_notifications_text_field_shows_edit_hint() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 1; // fill_notification_ttl_ms — text edit
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("Enter:Edit"),
+            "Notifications text field hint should say Enter:Edit; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_preferences_credentials_title_shows_active_env() {
+        let app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Credentials;
+        let mut app = make_test_app();
+        let output = render_preferences_to_string(&mut app, &state);
+        assert!(
+            output.contains("active:"),
+            "Credentials pane title should show active env; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
     fn render_preferences_notifications_section() {
         let app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
