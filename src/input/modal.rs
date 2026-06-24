@@ -410,22 +410,39 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                 format!("Cancelling {}…", &id[..id.len().min(8)]),
                             );
                         }
+                        ConfirmAction::DiscardPrefs(_) => {
+                            app.push_transient_status("Preferences discarded");
+                        }
                     }
                     app.modal = None;
                     return;
                 }
-                None
+                // 'n' — restore prefs modal for DiscardPrefs, close otherwise.
+                match action {
+                    ConfirmAction::DiscardPrefs(state) => Some(Modal::Preferences(*state)),
+                    _ => None,
+                }
             }
             KeyCode::Enter => {
                 if confirmed {
+                    match &action {
+                        ConfirmAction::CancelOrder(_) => {}
+                        ConfirmAction::DiscardPrefs(_) => {
+                            app.push_transient_status("Preferences discarded");
+                        }
+                    }
                     app.modal = None;
                     return;
                 }
-                Some(Modal::Confirm {
-                    message,
-                    action,
-                    confirmed,
-                })
+                // Enter while not confirmed: restore for DiscardPrefs, keep open otherwise.
+                match action {
+                    ConfirmAction::DiscardPrefs(state) => Some(Modal::Preferences(*state)),
+                    _ => Some(Modal::Confirm {
+                        message,
+                        action,
+                        confirmed,
+                    }),
+                }
             }
             _ => Some(Modal::Confirm {
                 message,
@@ -690,10 +707,12 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 KeyCode::Tab => {
                     state.section = state.section.next();
                     state.field_index = 0;
+                    state.cred_error = None;
                 }
                 KeyCode::BackTab => {
                     state.section = state.section.prev();
                     state.field_index = 0;
+                    state.cred_error = None;
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
                     state.field_index = state.field_index.saturating_sub(1);
@@ -774,6 +793,23 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                             }
                         }
                     }
+                    // Validate proxy URLs before writing to disk.
+                    if let Some(ref url) = state.draft.proxy.http {
+                        if !url.starts_with("http://") && !url.starts_with("https://") {
+                            state.cred_error =
+                                Some("HTTP proxy must start with http:// or https://".to_string());
+                            app.modal = Some(Modal::Preferences(state));
+                            return;
+                        }
+                    }
+                    if let Some(ref url) = state.draft.proxy.socks5 {
+                        if !url.starts_with("socks5://") {
+                            state.cred_error =
+                                Some("SOCKS5 proxy must start with socks5://".to_string());
+                            app.modal = Some(Modal::Preferences(state));
+                            return;
+                        }
+                    }
                     save_prefs(app, &state.draft);
                     app.push_transient_status("Preferences saved");
                     app.modal = None;
@@ -806,14 +842,18 @@ fn save_prefs(app: &mut App, draft: &AppPrefs) {
 }
 
 fn handle_prefs_discard_confirm(app: &mut App) {
-    // Swap out the dirty prefs modal, replace with a confirm dialog.
-    // On 'y' we just close; on 'n' we restore the prefs modal.
-    // We encode the draft inside ConfirmAction via a simple close-without-save path:
-    // since ConfirmAction only has CancelOrder, we take the simpler route of just
-    // closing the modal immediately when Esc is pressed on a dirty prefs modal.
-    // The user must use Ctrl-S to save; Esc always discards.
-    app.modal = None;
-    app.push_transient_status("Preferences discarded");
+    let dirty_state = match app.modal.take() {
+        Some(Modal::Preferences(s)) => s,
+        other => {
+            app.modal = other;
+            return;
+        }
+    };
+    app.modal = Some(Modal::Confirm {
+        message: "Discard unsaved preferences?".to_string(),
+        action: ConfirmAction::DiscardPrefs(Box::new(dirty_state)),
+        confirmed: false,
+    });
 }
 
 /// Open dropdown or begin text edit for the currently focused preferences field.
@@ -959,19 +999,22 @@ fn apply_text_edit(state: &mut PrefsState, buf: &str) {
         PrefsSection::App => {
             if state.field_index == 1 {
                 if let Ok(v) = buf.parse::<u64>() {
-                    state.draft.app.refresh_interval_ms = v;
+                    // Floor at 100 ms; 0 would cause infinite-loop polling.
+                    state.draft.app.refresh_interval_ms = v.max(100);
                 }
             }
         }
         PrefsSection::Stream => match state.field_index {
             0 => {
                 if let Ok(v) = buf.parse::<u32>() {
+                    // 0 = unlimited retries; any value is valid.
                     state.draft.stream.reconnect_max_attempts = v;
                 }
             }
             1 => {
                 if let Ok(v) = buf.parse::<u64>() {
-                    state.draft.stream.reconnect_backoff_base_ms = v;
+                    // Floor at 100 ms to prevent degenerate backoff bursts.
+                    state.draft.stream.reconnect_backoff_base_ms = v.max(100);
                 }
             }
             _ => {}
@@ -979,12 +1022,13 @@ fn apply_text_edit(state: &mut PrefsState, buf: &str) {
         PrefsSection::Notifications => match state.field_index {
             1 => {
                 if let Ok(v) = buf.parse::<u64>() {
-                    state.draft.notifications.fill_notification_ttl_ms = v;
+                    // Floor at 500 ms; shorter is unreadable.
+                    state.draft.notifications.fill_notification_ttl_ms = v.max(500);
                 }
             }
             2 => {
                 if let Ok(v) = buf.parse::<u64>() {
-                    state.draft.notifications.status_message_ttl_ms = v;
+                    state.draft.notifications.status_message_ttl_ms = v.max(500);
                 }
             }
             _ => {}
@@ -3093,15 +3137,43 @@ mod tests {
     }
 
     #[test]
-    fn prefs_esc_on_dirty_closes_and_discards() {
+    fn prefs_esc_on_dirty_shows_confirm_dialog() {
         let mut app = make_test_app();
         let mut state = PrefsState::new(&app.prefs);
         state.dirty = true;
         app.modal = Some(Modal::Preferences(state));
         press(&mut app, KeyCode::Esc);
         assert!(
+            matches!(app.modal, Some(Modal::Confirm { .. })),
+            "Esc on dirty prefs should open a discard confirm dialog"
+        );
+    }
+
+    #[test]
+    fn prefs_esc_dirty_confirm_y_discards() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('y'));
+        assert!(
             app.modal.is_none(),
-            "Esc on dirty prefs should close and discard"
+            "'y' on discard confirm should close modal"
+        );
+    }
+
+    #[test]
+    fn prefs_esc_dirty_confirm_n_restores_prefs_modal() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.dirty = true;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Esc);
+        press(&mut app, KeyCode::Char('n'));
+        assert!(
+            matches!(app.modal, Some(Modal::Preferences(_))),
+            "'n' on discard confirm should restore the Preferences modal"
         );
     }
 

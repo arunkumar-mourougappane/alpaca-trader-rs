@@ -605,6 +605,8 @@ impl PrefsState {
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
     CancelOrder(String),
+    /// User pressed Esc on dirty preferences; stashes the draft so 'n' can restore it.
+    DiscardPrefs(Box<PrefsState>),
 }
 
 /// Focusable input field in the [`Modal::SetAlert`] dialog.
