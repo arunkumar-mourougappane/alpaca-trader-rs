@@ -3838,4 +3838,498 @@ mod tests {
         let s = prefs_state(&app);
         assert!(s.editing_buf.is_none());
     }
+
+    // ── DiscardPrefs confirm: Enter paths ─────────────────────────────────────
+
+    #[test]
+    fn prefs_discard_confirm_enter_while_confirmed_closes_modal() {
+        // Construct the Confirm modal directly with confirmed=true to exercise
+        // the Enter+confirmed path in the DiscardPrefs arm.
+        let mut app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        app.modal = Some(Modal::Confirm {
+            message: "Discard unsaved preferences?".to_string(),
+            action: ConfirmAction::DiscardPrefs(Box::new(state)),
+            confirmed: true,
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            app.modal.is_none(),
+            "Enter while confirmed should close modal"
+        );
+    }
+
+    #[test]
+    fn prefs_discard_confirm_enter_while_not_confirmed_restores_prefs() {
+        // Construct the Confirm modal directly with confirmed=false to exercise
+        // the Enter+not-confirmed path for DiscardPrefs.
+        let mut app = make_test_app();
+        let state = PrefsState::new(&app.prefs);
+        app.modal = Some(Modal::Confirm {
+            message: "Discard unsaved preferences?".to_string(),
+            action: ConfirmAction::DiscardPrefs(Box::new(state)),
+            confirmed: false,
+        });
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(app.modal, Some(Modal::Preferences(_))),
+            "Enter while not confirmed should restore Preferences modal"
+        );
+    }
+
+    // ── handle_prefs_discard_confirm: non-Preferences modal fallback ──────────
+
+    #[test]
+    fn prefs_discard_confirm_with_non_prefs_modal_is_noop() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::Help);
+        super::handle_prefs_discard_confirm(&mut app);
+        assert!(
+            matches!(app.modal, Some(Modal::Help)),
+            "handle_prefs_discard_confirm on non-Preferences modal should leave modal unchanged"
+        );
+    }
+
+    // ── Proxy URL validation ──────────────────────────────────────────────────
+
+    #[test]
+    fn prefs_ctrl_s_invalid_http_proxy_sets_error() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.proxy.http = Some("badproxy.corp.com:8080".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(
+            s.cred_error.is_some(),
+            "invalid http proxy should set error"
+        );
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("http://"),
+            "error should mention http://"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_valid_http_proxy_saves() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.proxy.http = Some("http://proxy.corp.com:8080".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert!(app.modal.is_none(), "valid http:// proxy should allow save");
+    }
+
+    #[test]
+    fn prefs_ctrl_s_valid_https_proxy_saves() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.proxy.http = Some("https://proxy.corp.com:8080".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert!(
+            app.modal.is_none(),
+            "valid https:// proxy should allow save"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_invalid_socks5_proxy_sets_error() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.proxy.socks5 = Some("badproxy.corp.com:1080".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        let s = prefs_state(&app);
+        assert!(
+            s.cred_error.is_some(),
+            "invalid socks5 proxy should set error"
+        );
+        assert!(
+            s.cred_error.as_deref().unwrap().contains("socks5://"),
+            "error should mention socks5://"
+        );
+    }
+
+    #[test]
+    fn prefs_ctrl_s_valid_socks5_proxy_saves() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.draft.proxy.socks5 = Some("socks5://proxy.corp.com:1080".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press_ctrl(&mut app, KeyCode::Char('s'));
+        assert!(
+            app.modal.is_none(),
+            "valid socks5:// proxy should allow save"
+        );
+    }
+
+    // ── activate_prefs_field: Ui section ──────────────────────────────────────
+
+    #[test]
+    fn prefs_ui_field0_opens_theme_dropdown() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 0;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            prefs_state(&app).dropdown.is_some(),
+            "field 0 in Ui should open theme dropdown"
+        );
+    }
+
+    #[test]
+    fn prefs_ui_field1_toggles_show_account_panel() {
+        let mut app = make_test_app();
+        let before = app.prefs.ui.show_account_panel;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 1;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(s.draft.ui.show_account_panel, !before);
+        assert!(s.dirty);
+    }
+
+    #[test]
+    fn prefs_ui_field2_toggles_show_watchlist() {
+        let mut app = make_test_app();
+        let before = app.prefs.ui.show_watchlist;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 2;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.show_watchlist, !before);
+    }
+
+    #[test]
+    fn prefs_ui_field3_toggles_show_positions() {
+        let mut app = make_test_app();
+        let before = app.prefs.ui.show_positions;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 3;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.show_positions, !before);
+    }
+
+    #[test]
+    fn prefs_ui_field4_toggles_show_orders() {
+        let mut app = make_test_app();
+        let before = app.prefs.ui.show_orders;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 4;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.show_orders, !before);
+    }
+
+    #[test]
+    fn prefs_ui_field5_opens_equity_range_dropdown() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 5;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            prefs_state(&app).dropdown.is_some(),
+            "field 5 in Ui should open equity_range dropdown"
+        );
+    }
+
+    #[test]
+    fn prefs_ui_field6_opens_chart_marker_dropdown() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 6;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert!(
+            prefs_state(&app).dropdown.is_some(),
+            "field 6 in Ui should open chart_marker dropdown"
+        );
+    }
+
+    #[test]
+    fn prefs_ui_out_of_range_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 99;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(s.editing_buf.is_none() && s.dropdown.is_none());
+    }
+
+    // ── apply_dropdown_selection: Ui section ──────────────────────────────────
+
+    #[test]
+    fn prefs_ui_dropdown_applies_theme() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 0;
+        state.dropdown = Some(DropdownState::new(
+            vec!["default", "dark", "high-contrast"],
+            "default",
+        ));
+        state.dropdown.as_mut().unwrap().cursor = 1; // "dark"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.theme, "dark");
+    }
+
+    #[test]
+    fn prefs_ui_dropdown_applies_equity_range() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 5;
+        state.dropdown = Some(DropdownState::new(vec!["1D", "1W", "1M", "YTD"], "1D"));
+        state.dropdown.as_mut().unwrap().cursor = 2; // "1M"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.default_equity_range, "1M");
+    }
+
+    #[test]
+    fn prefs_ui_dropdown_applies_chart_marker_dot() {
+        use crate::prefs::ChartMarker;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 6;
+        state.dropdown = Some(DropdownState::new(
+            vec!["braille", "dot", "block", "bar", "half_block"],
+            "braille",
+        ));
+        state.dropdown.as_mut().unwrap().cursor = 1; // "dot"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.chart_marker, ChartMarker::Dot);
+    }
+
+    #[test]
+    fn prefs_ui_dropdown_applies_chart_marker_bar() {
+        use crate::prefs::ChartMarker;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 6;
+        state.dropdown = Some(DropdownState::new(
+            vec!["braille", "dot", "block", "bar", "half_block"],
+            "braille",
+        ));
+        state.dropdown.as_mut().unwrap().cursor = 3; // "bar"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(prefs_state(&app).draft.ui.chart_marker, ChartMarker::Bar);
+    }
+
+    #[test]
+    fn prefs_ui_dropdown_other_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 3; // show_positions — no dropdown arm
+        state.dropdown = Some(DropdownState::new(vec!["x"], "x"));
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter); // apply_dropdown_selection Ui _ => {}
+                                         // modal stays open (dropdown closed after selection)
+        assert!(matches!(app.modal, Some(Modal::Preferences(_))));
+    }
+
+    // ── apply_text_edit: numeric floor validation ─────────────────────────────
+
+    #[test]
+    fn prefs_app_refresh_ms_floors_at_100() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::App;
+        state.field_index = 1;
+        state.editing_buf = Some("0".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.app.refresh_interval_ms,
+            100,
+            "0 ms should be floored to 100"
+        );
+    }
+
+    #[test]
+    fn prefs_stream_backoff_floors_at_100() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 1;
+        state.editing_buf = Some("0".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.stream.reconnect_backoff_base_ms,
+            100,
+            "0 ms backoff should be floored to 100"
+        );
+    }
+
+    #[test]
+    fn prefs_notifications_fill_ttl_floors_at_500() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 1;
+        state.editing_buf = Some("100".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app)
+                .draft
+                .notifications
+                .fill_notification_ttl_ms,
+            500,
+            "100 ms fill TTL should be floored to 500"
+        );
+    }
+
+    #[test]
+    fn prefs_notifications_status_ttl_floors_at_500() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Notifications;
+        state.field_index = 2;
+        state.editing_buf = Some("0".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.notifications.status_message_ttl_ms,
+            500,
+            "0 ms status TTL should be floored to 500"
+        );
+    }
+
+    // ── apply_dropdown_selection: chart_marker half_block and braille default ──
+
+    #[test]
+    fn prefs_ui_dropdown_applies_chart_marker_half_block() {
+        use crate::prefs::ChartMarker;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 6;
+        state.dropdown = Some(DropdownState::new(
+            vec!["braille", "dot", "block", "bar", "half_block"],
+            "braille",
+        ));
+        state.dropdown.as_mut().unwrap().cursor = 4; // "half_block"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.ui.chart_marker,
+            ChartMarker::HalfBlock
+        );
+    }
+
+    #[test]
+    fn prefs_ui_dropdown_applies_chart_marker_braille_via_default_arm() {
+        use crate::prefs::ChartMarker;
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Ui;
+        state.field_index = 6;
+        // "braille" falls through to the `_ => ChartMarker::Braille` arm.
+        state.dropdown = Some(DropdownState::new(
+            vec!["braille", "dot", "block", "bar", "half_block"],
+            "dot",
+        ));
+        state.dropdown.as_mut().unwrap().cursor = 0; // "braille"
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.ui.chart_marker,
+            ChartMarker::Braille
+        );
+    }
+
+    // ── apply_dropdown_selection: _ => {} for non-dropdown sections ───────────
+
+    #[test]
+    fn prefs_dropdown_selection_noop_for_stream_section() {
+        // Stream has no dropdown fields; apply_dropdown_selection hits _ => {}.
+        let mut app = make_test_app();
+        let before = app.prefs.stream.reconnect_max_attempts;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 0;
+        state.dropdown = Some(DropdownState::new(vec!["5"], "5"));
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter); // triggers apply_dropdown_selection
+        assert_eq!(
+            prefs_state(&app).draft.stream.reconnect_max_attempts,
+            before,
+            "Stream section dropdown selection should be a no-op"
+        );
+    }
+
+    // ── Proxy out-of-range field: activate_prefs_field _ => {} ───────────────
+
+    #[test]
+    fn prefs_proxy_out_of_range_field_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 99;
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert!(
+            s.editing_buf.is_none(),
+            "out-of-range Proxy field should not open edit mode"
+        );
+    }
+
+    // ── apply_text_edit: Proxy out-of-range field, Safety, and overall _ => {} ─
+
+    #[test]
+    fn prefs_proxy_out_of_range_text_edit_is_noop() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 99;
+        state.editing_buf = Some("anything".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        // proxy fields should be unchanged
+        let s = prefs_state(&app);
+        assert!(s.draft.proxy.http.is_none());
+        assert!(s.draft.proxy.socks5.is_none());
+        assert!(s.draft.proxy.no_proxy.is_none());
+    }
+
+    #[test]
+    fn prefs_safety_text_edit_is_noop() {
+        // Safety has no text-edit fields; apply_text_edit hits the outer _ => {}.
+        let mut app = make_test_app();
+        let before = app.prefs.safety.confirm_watchlist_remove;
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Safety;
+        state.field_index = 0;
+        state.editing_buf = Some("true".to_string());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            prefs_state(&app).draft.safety.confirm_watchlist_remove,
+            before,
+            "Safety text edit should be a no-op (no text fields in Safety)"
+        );
+    }
 }
