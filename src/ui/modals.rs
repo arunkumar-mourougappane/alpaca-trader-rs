@@ -1506,6 +1506,38 @@ fn render_position_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App
     );
 }
 
+fn prefs_footer_hint(state: &PrefsState) -> String {
+    if state.dropdown.is_some() {
+        return "  ↑/↓:Navigate  Enter:Select  Esc:Close dropdown".to_string();
+    }
+    if state.editing_buf.is_some() {
+        return if state.section == PrefsSection::Credentials {
+            "  Type credential  Enter:Confirm  Esc:Cancel".to_string()
+        } else {
+            "  Type digits  Enter:Confirm  Esc:Cancel".to_string()
+        };
+    }
+    let action = match state.section {
+        PrefsSection::Credentials => "Enter:Edit  Ctrl-S:Keychain",
+        PrefsSection::App => match state.field_index {
+            0 => "Enter:Open dropdown  Ctrl-S:Save",
+            _ => "Enter:Edit  Ctrl-S:Save",
+        },
+        PrefsSection::Ui => match state.field_index {
+            0 | 5 | 6 => "Enter:Open dropdown  Ctrl-S:Save",
+            _ => "Space/Enter:Toggle  Ctrl-S:Save",
+        },
+        PrefsSection::Stream => "Enter:Edit  Ctrl-S:Save",
+        PrefsSection::Notifications => match state.field_index {
+            0 => "Space/Enter:Toggle  Ctrl-S:Save",
+            _ => "Enter:Edit  Ctrl-S:Save",
+        },
+        PrefsSection::Safety => "Space/Enter:Toggle  Ctrl-S:Save",
+        PrefsSection::Proxy => "Enter:Edit  Ctrl-S:Save",
+    };
+    format!("  Tab:Section  ↑/↓:Field  {action}  Esc:Cancel")
+}
+
 fn render_preferences(frame: &mut Frame, area: Rect, state: &PrefsState, app: &App) {
     let popup = popup_area(area, 75, 80);
     frame.render_widget(Clear, popup);
@@ -1555,8 +1587,18 @@ fn render_preferences(frame: &mut Frame, area: Rect, state: &PrefsState, app: &A
     frame.render_widget(sidebar_table, sidebar_inner);
 
     // ── Field pane ────────────────────────────────────────────────────────────
+    let field_pane_title = if state.section == PrefsSection::Credentials {
+        let active = if app.config.env == crate::config::AlpacaEnv::Live {
+            "LIVE"
+        } else {
+            "PAPER"
+        };
+        format!(" Credentials  (active: {active}) ")
+    } else {
+        format!(" {} ", state.section.label())
+    };
     let field_block = Block::default()
-        .title(format!(" {} ", state.section.label()))
+        .title(field_pane_title)
         .borders(Borders::NONE);
     let field_inner = field_block.inner(panes[1]);
     frame.render_widget(field_block, panes[1]);
@@ -1640,8 +1682,7 @@ fn render_preferences(frame: &mut Frame, area: Rect, state: &PrefsState, app: &A
         height: 1,
     };
     frame.render_widget(
-        Paragraph::new("  Tab:Section  ↑/↓:Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel")
-            .style(c.dim_style()),
+        Paragraph::new(prefs_footer_hint(state)).style(c.dim_style()),
         hint_rect,
     );
 }
