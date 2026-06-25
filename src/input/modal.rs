@@ -13,7 +13,8 @@ use crate::types::PriceAlert;
 pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
     if key.code == KeyCode::Esc {
         // First Esc clears an active crosshair; second Esc closes the modal.
-        if matches!(app.modal, Some(Modal::SymbolDetail(_)))
+        if (matches!(app.modal, Some(Modal::SymbolDetail(_)))
+            || matches!(app.modal, Some(Modal::PositionDetail { .. })))
             && app.symbol_detail_crosshair.is_some()
         {
             app.symbol_detail_crosshair = None;
@@ -542,6 +543,72 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             KeyCode::Char('o') => {
                 app.modal = Some(Modal::OrderEntry(OrderEntryState::new(symbol)));
                 return;
+            }
+            KeyCode::Char('s') => {
+                app.modal = Some(Modal::OrderEntry(
+                    OrderEntryState::new(symbol.clone()).with_side(OrderSide::Sell),
+                ));
+                return;
+            }
+            KeyCode::Char('w') => {
+                let in_watchlist = app
+                    .watchlist
+                    .as_ref()
+                    .map(|w| w.assets.iter().any(|a| a.symbol == symbol))
+                    .unwrap_or(false);
+                let wl_info = app
+                    .watchlist
+                    .as_ref()
+                    .map(|wl| (wl.id.clone(), in_watchlist));
+                if let Some((wl_id, remove)) = wl_info {
+                    let (cmd, msg) = if remove {
+                        (
+                            Command::RemoveFromWatchlist {
+                                watchlist_id: wl_id,
+                                symbol: symbol.clone(),
+                            },
+                            format!("Removing {}…", symbol),
+                        )
+                    } else {
+                        (
+                            Command::AddToWatchlist {
+                                watchlist_id: wl_id,
+                                symbol: symbol.clone(),
+                            },
+                            format!("Adding {}…", symbol),
+                        )
+                    };
+                    send_command(app, cmd, msg);
+                }
+                Some(Modal::PositionDetail { symbol })
+            }
+            KeyCode::Left => {
+                let len = app
+                    .intraday_bars
+                    .get(symbol.as_str())
+                    .map(|b| b.len())
+                    .unwrap_or(0);
+                if len > 0 {
+                    app.symbol_detail_crosshair = Some(match app.symbol_detail_crosshair {
+                        Some(i) => i.saturating_sub(1),
+                        None => len - 1,
+                    });
+                }
+                Some(Modal::PositionDetail { symbol })
+            }
+            KeyCode::Right => {
+                let len = app
+                    .intraday_bars
+                    .get(symbol.as_str())
+                    .map(|b| b.len())
+                    .unwrap_or(0);
+                if len > 0 {
+                    app.symbol_detail_crosshair = Some(match app.symbol_detail_crosshair {
+                        Some(i) => (i + 1).min(len - 1),
+                        None => 0,
+                    });
+                }
+                Some(Modal::PositionDetail { symbol })
             }
             _ => Some(Modal::PositionDetail { symbol }),
         },
@@ -1145,6 +1212,105 @@ mod tests {
             "expected PositionDetail to stay open, got: {:?}",
             app.modal
         );
+    }
+
+    #[test]
+    fn s_key_in_position_detail_opens_sell_order_entry() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Char('s'));
+        assert!(
+            matches!(&app.modal, Some(crate::app::Modal::OrderEntry(s)) if s.symbol == "AAPL"),
+            "expected OrderEntry modal for AAPL sell, got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn w_key_in_position_detail_adds_to_watchlist_when_not_present() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["TSLA"])); // AAPL not in list
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Char('w'));
+        assert!(
+            matches!(&app.modal, Some(Modal::PositionDetail { symbol }) if symbol == "AAPL"),
+            "PositionDetail should stay open after w; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn w_key_in_position_detail_removes_from_watchlist_when_present() {
+        let mut app = make_test_app();
+        app.watchlist = Some(make_watchlist(&["AAPL"])); // AAPL in list
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Char('w'));
+        assert!(
+            matches!(&app.modal, Some(Modal::PositionDetail { symbol }) if symbol == "AAPL"),
+            "PositionDetail should stay open after w; got: {:?}",
+            app.modal
+        );
+    }
+
+    #[test]
+    fn position_detail_left_no_op_when_no_bars() {
+        let mut app = make_test_app();
+        // No entry in intraday_bars → left key is a no-op (len == 0)
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Left);
+        assert!(
+            app.symbol_detail_crosshair.is_none(),
+            "left with no bars should not set crosshair"
+        );
+        assert!(
+            matches!(&app.modal, Some(Modal::PositionDetail { symbol }) if symbol == "AAPL"),
+            "modal should stay open"
+        );
+    }
+
+    #[test]
+    fn position_detail_right_no_op_when_no_bars() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Right);
+        assert!(
+            app.symbol_detail_crosshair.is_none(),
+            "right with no bars should not set crosshair"
+        );
+    }
+
+    #[test]
+    fn position_detail_left_moves_crosshair_left() {
+        let mut app = make_test_app();
+        app.intraday_bars.insert("AAPL".into(), vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(2);
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.symbol_detail_crosshair, Some(1));
+    }
+
+    #[test]
+    fn position_detail_right_moves_crosshair_right() {
+        let mut app = make_test_app();
+        app.intraday_bars.insert("AAPL".into(), vec![100, 200, 300]);
+        app.symbol_detail_crosshair = Some(0);
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "AAPL".into(),
+        });
+        press(&mut app, KeyCode::Right);
+        assert_eq!(app.symbol_detail_crosshair, Some(1));
     }
 
     // ── SymbolDetail crosshair ────────────────────────────────────────────────

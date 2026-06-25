@@ -22,12 +22,12 @@ pub fn render(frame: &mut Frame, area: Rect, modal: &Modal, app: &mut App) {
         Modal::Help => popup_area(area, 50, 78),
         Modal::About => popup_area(area, 50, 60),
         Modal::OrderEntry(_) => popup_area(area, 50, 80),
-        Modal::SymbolDetail(_) => popup_area(area, 55, 88),
+        Modal::SymbolDetail(_) => popup_area(area, 60, 92),
         Modal::Confirm { .. } => popup_area(area, 40, 25),
         Modal::ConfirmRemoveWatchlist { .. } => popup_area(area, 42, 22),
         Modal::AddSymbol { .. } => popup_area(area, 35, 20),
         Modal::GlobalSearch { .. } => popup_area(area, 35, 20),
-        Modal::PositionDetail { .. } => popup_area(area, 60, 90),
+        Modal::PositionDetail { .. } => popup_area(area, 60, 92),
         Modal::SetAlert { .. } => popup_area(area, 42, 30),
         Modal::Preferences(_) => popup_area(area, 75, 80),
     });
@@ -656,35 +656,17 @@ fn render_order_entry(frame: &mut Frame, area: Rect, state: &OrderEntryState, ap
     );
 }
 
-fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
-    let popup = popup_area(area, 55, 88);
-    frame.render_widget(Clear, popup);
+// ── Shared detail-modal helpers ───────────────────────────────────────────────
 
+fn render_ohlcv_section(
+    frame: &mut Frame,
+    price_area: Rect,
+    open_high_area: Rect,
+    low_vol_area: Rect,
+    symbol: &str,
+    app: &App,
+) {
     let c = app.current_theme.colors();
-
-    let asset = app
-        .watchlist
-        .as_ref()
-        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol));
-
-    let name = asset.map(|a| a.name.as_str()).unwrap_or(symbol);
-
-    let in_watchlist = app
-        .watchlist
-        .as_ref()
-        .map(|w| w.assets.iter().any(|a| a.symbol == symbol))
-        .unwrap_or(false);
-
-    let block = Block::default()
-        .title(format!(" {} — {} ", symbol, name))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(c.accent_style());
-
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    // ── Data ─────────────────────────────────────────────────────────────────
     let quote = app.quotes.get(symbol);
     let snapshot = app.snapshots.get(symbol);
     let daily = snapshot.and_then(|s| s.daily_bar.as_ref());
@@ -736,33 +718,6 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
         .map(|b| crate::ui::watchlist::format_volume(b.v))
         .unwrap_or_else(|| "—".into());
 
-    let wl_label = if in_watchlist {
-        "w:− Watchlist"
-    } else {
-        "w:+ Watchlist"
-    };
-
-    // ── Layout ───────────────────────────────────────────────────────────────
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // price + change%
-            Constraint::Length(1), // open + high
-            Constraint::Length(1), // low + volume
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // "── Intraday ──" label
-            Constraint::Length(5), // line chart
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // exchange + class
-            Constraint::Length(1), // tradable + shortable
-            Constraint::Length(1), // fractional + etb
-            Constraint::Min(0),    // filler
-            Constraint::Length(1), // footer
-        ])
-        .split(inner);
-
-    // ── OHLCV rows ───────────────────────────────────────────────────────────
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("  Price    ", c.dim_style()),
@@ -771,7 +726,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             Span::styled("Change    ", c.dim_style()),
             Span::styled(change_str, value_style),
         ])),
-        chunks[1],
+        price_area,
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -781,7 +736,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             Span::styled("High      ", c.dim_style()),
             Span::styled(high_str, c.positive_style()),
         ])),
-        chunks[2],
+        open_high_area,
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -791,13 +746,21 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
             Span::styled("Volume    ", c.dim_style()),
             Span::styled(vol_str, c.bold_style()),
         ])),
-        chunks[3],
+        low_vol_area,
     );
+}
 
-    // ── Intraday line chart ───────────────────────────────────────────────────
-    // When a crosshair is active, replace the static "── Intraday ──" label
-    // with a price/time tooltip for the highlighted bar.
-    let crosshair = app.symbol_detail_crosshair;
+fn render_intraday_chart_section(
+    frame: &mut Frame,
+    label_area: Rect,
+    chart_area: Rect,
+    symbol: &str,
+    crosshair: Option<usize>,
+    app: &App,
+) {
+    let c = app.current_theme.colors();
+
+    // Label row: static or crosshair tooltip
     let intraday_label: Line =
         if let (Some(ci), Some(bars)) = (crosshair, app.intraday_bars.get(symbol)) {
             if let Some(&price_cents) = bars.get(ci) {
@@ -816,18 +779,19 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
         } else {
             Line::from(vec![Span::styled("  ── Intraday ──", c.dim_style())])
         };
-    frame.render_widget(Paragraph::new(intraday_label), chunks[5]);
+    frame.render_widget(Paragraph::new(intraday_label), label_area);
 
     match app.intraday_bars.get(symbol) {
         None => {
-            // Command dispatched but response not yet received
-            frame.render_widget(Paragraph::new("  Loading…").style(c.dim_style()), chunks[6]);
+            frame.render_widget(
+                Paragraph::new("  Loading…").style(c.dim_style()),
+                chart_area,
+            );
         }
         Some(bars) if bars.is_empty() => {
-            // Fetched but no bars (market closed, pre-market, or error)
             frame.render_widget(
                 Paragraph::new("  No intraday data available").style(c.dim_style()),
-                chunks[6],
+                chart_area,
             );
         }
         Some(bars) => {
@@ -843,7 +807,6 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                 .style(Style::default().fg(line_color))
                 .data(&data_points);
 
-            // When a crosshair is active, add a vertical line Dataset at that index.
             let crosshair_pts: Vec<(f64, f64)>;
             let mut datasets = vec![dataset];
             if let Some(ci) = crosshair {
@@ -880,11 +843,148 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                         .labels([y_min_label.as_str(), y_max_label.as_str()]),
                 );
 
-            frame.render_widget(chart, chunks[6]);
+            frame.render_widget(chart, chart_area);
         }
     }
+}
 
-    // ── Asset flags ──────────────────────────────────────────────────────────
+fn render_position_section(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
+    let c = app.current_theme.colors();
+
+    let panes = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
+
+    // Position summary
+    let pos = app.positions.iter().find(|p| p.symbol == symbol);
+    let summary_lines: Vec<Line> = if let Some(p) = pos {
+        let pl: f64 = p.unrealized_pl.parse().unwrap_or(0.0);
+        let pl_style = if pl >= 0.0 {
+            c.positive_style()
+        } else {
+            c.negative_style()
+        };
+        let plpc: f64 = p.unrealized_plpc.parse().unwrap_or(0.0);
+        vec![
+            Line::from(vec![
+                Span::styled("  Qty        ", c.dim_style()),
+                Span::styled(p.qty.clone(), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Avg Cost   ", c.dim_style()),
+                Span::styled(format!("${}", p.avg_entry_price), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Cur Price  ", c.dim_style()),
+                Span::styled(format!("${}", p.current_price), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Mkt Value  ", c.dim_style()),
+                Span::styled(format!("${}", p.market_value), c.bold_style()),
+            ]),
+            Line::from(vec![
+                Span::styled("  Unreal P/L ", c.dim_style()),
+                Span::styled(format!("${:.2}", pl), pl_style),
+            ]),
+            Line::from(vec![
+                Span::styled("  P/L %      ", c.dim_style()),
+                Span::styled(format!("{:+.2}%", plpc * 100.0), pl_style),
+            ]),
+            Line::from(vec![
+                Span::styled("  Side       ", c.dim_style()),
+                Span::styled(p.side.clone(), c.bold_style()),
+            ]),
+        ]
+    } else {
+        vec![]
+    };
+
+    let summary_block = Block::default()
+        .title(" Position ")
+        .borders(Borders::ALL)
+        .border_style(c.dim_style());
+    let summary_inner = summary_block.inner(panes[0]);
+    frame.render_widget(summary_block, panes[0]);
+    frame.render_widget(Paragraph::new(summary_lines), summary_inner);
+
+    // Open orders
+    let open_orders: Vec<&crate::types::Order> = app
+        .orders
+        .iter()
+        .filter(|o| {
+            o.symbol == symbol
+                && matches!(
+                    o.status.as_str(),
+                    "new" | "pending_new" | "accepted" | "held" | "partially_filled"
+                )
+        })
+        .collect();
+
+    let orders_block = Block::default()
+        .title(" Open Orders ")
+        .borders(Borders::ALL)
+        .border_style(c.dim_style());
+    let orders_inner = orders_block.inner(panes[1]);
+    frame.render_widget(orders_block, panes[1]);
+
+    if open_orders.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Span::styled("  No open orders", c.dim_style())),
+            orders_inner,
+        );
+    } else {
+        let rows: Vec<Row> = open_orders
+            .iter()
+            .map(|o| {
+                let qty = o.qty.as_deref().unwrap_or("—");
+                let price = o
+                    .limit_price
+                    .as_deref()
+                    .map(|p| format!("${p}"))
+                    .unwrap_or_else(|| "mkt".into());
+                Row::new(vec![
+                    Cell::from(o.side.clone()),
+                    Cell::from(qty.to_string()),
+                    Cell::from(price),
+                    Cell::from(o.status.clone()),
+                ])
+            })
+            .collect();
+
+        let header = Row::new(vec![
+            Cell::from(Span::styled("Side", c.dim_style())),
+            Cell::from(Span::styled("Qty", c.dim_style())),
+            Cell::from(Span::styled("Price", c.dim_style())),
+            Cell::from(Span::styled("Status", c.dim_style())),
+        ]);
+
+        frame.render_widget(
+            Table::new(
+                rows,
+                [
+                    Constraint::Length(5),
+                    Constraint::Length(6),
+                    Constraint::Length(8),
+                    Constraint::Min(6),
+                ],
+            )
+            .header(header),
+            orders_inner,
+        );
+    }
+}
+
+fn render_asset_flags_section(
+    frame: &mut Frame,
+    exchange_area: Rect,
+    tradable_area: Rect,
+    fractional_area: Rect,
+    asset: Option<&crate::types::Asset>,
+    app: &App,
+) {
+    let c = app.current_theme.colors();
+
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("  Exchange ", c.dim_style()),
@@ -905,7 +1005,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                 c.bold_style(),
             ),
         ])),
-        chunks[8],
+        exchange_area,
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -921,7 +1021,7 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                 c.positive_style(),
             ),
         ])),
-        chunks[9],
+        tradable_area,
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -937,17 +1037,105 @@ fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) 
                 c.positive_style(),
             ),
         ])),
-        chunks[10],
+        fractional_area,
     );
+}
 
-    // ── Footer ───────────────────────────────────────────────────────────────
+fn detail_modal_footer(in_watchlist: bool, c: &crate::ui::theme::ThemeColors) -> Line<'static> {
+    let wl_label = if in_watchlist {
+        "w:\u{2212} Watchlist"
+    } else {
+        "w:+ Watchlist"
+    };
+    Line::from(vec![Span::styled(
+        format!("  o:Buy  s:Sell  {}  ←→:Chart  Esc:Close", wl_label),
+        c.dim_style(),
+    )])
+}
+
+// ── Unified detail modal ──────────────────────────────────────────────────────
+
+fn render_detail_modal(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
+    let popup = popup_area(area, 60, 92);
+    frame.render_widget(Clear, popup);
+
+    let c = app.current_theme.colors();
+
+    let asset = app
+        .watchlist
+        .as_ref()
+        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol));
+    let name = asset.map(|a| a.name.as_str()).unwrap_or(symbol);
+    let in_watchlist = asset.is_some();
+
+    let block = Block::default()
+        .title(format!(" {} — {} ", symbol, name))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(c.accent_style());
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let has_position = app.positions.iter().any(|p| p.symbol == symbol);
+    let pos_height: u16 = if has_position { 9 } else { 0 };
+    let pos_gap: u16 = if has_position { 1 } else { 0 };
+
+    // Layout indices:
+    // [0]  blank
+    // [1]  price + change%
+    // [2]  open + high
+    // [3]  low + volume
+    // [4]  blank
+    // [5]  intraday label / crosshair tooltip
+    // [6]  intraday chart
+    // [7]  blank
+    // [8]  position + orders pane (0 height when no position)
+    // [9]  gap after position pane (0 when no position)
+    // [10] exchange + class
+    // [11] tradable + shortable
+    // [12] fractional + etb
+    // [13] filler
+    // [14] footer
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(7),
+            Constraint::Length(1),
+            Constraint::Length(pos_height),
+            Constraint::Length(pos_gap),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    render_ohlcv_section(frame, chunks[1], chunks[2], chunks[3], symbol, app);
+
+    let crosshair = app.symbol_detail_crosshair;
+    render_intraday_chart_section(frame, chunks[5], chunks[6], symbol, crosshair, app);
+
+    if has_position {
+        render_position_section(frame, chunks[8], symbol, app);
+    }
+
+    render_asset_flags_section(frame, chunks[10], chunks[11], chunks[12], asset, app);
+
     frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(
-            format!("  o:Buy  s:Sell  {}  ←→:Chart  Esc:Close", wl_label),
-            c.dim_style(),
-        )])),
-        chunks[12],
+        Paragraph::new(detail_modal_footer(in_watchlist, &c)),
+        chunks[14],
     );
+}
+
+fn render_symbol_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
+    render_detail_modal(frame, area, symbol, app);
 }
 
 fn render_confirm(
@@ -1289,221 +1477,7 @@ fn estimate_total(state: &OrderEntryState) -> String {
 }
 
 fn render_position_detail(frame: &mut Frame, area: Rect, symbol: &str, app: &App) {
-    let popup = popup_area(area, 60, 90);
-    frame.render_widget(Clear, popup);
-
-    let c = app.current_theme.colors();
-
-    let asset = app
-        .watchlist
-        .as_ref()
-        .and_then(|w| w.assets.iter().find(|a| a.symbol == symbol));
-    let name = asset.map(|a| a.name.as_str()).unwrap_or(symbol);
-
-    let block = Block::default()
-        .title(format!(" {} — {} ", symbol, name))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(c.accent_style());
-    let inner = block.inner(popup);
-    frame.render_widget(block, popup);
-
-    // ── Outer vertical split: chart (top 50%) + detail row (bottom 50%) ───────
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),      // label
-            Constraint::Percentage(50), // intraday chart
-            Constraint::Min(0),         // position summary + orders
-            Constraint::Length(1),      // footer
-        ])
-        .split(inner);
-
-    // ── Chart label ──────────────────────────────────────────────────────────
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(
-            "  ── Intraday ──",
-            c.dim_style(),
-        )])),
-        outer[0],
-    );
-
-    // ── Intraday chart ────────────────────────────────────────────────────────
-    match app.intraday_bars.get(symbol) {
-        None => {
-            frame.render_widget(Paragraph::new("  Loading…").style(c.dim_style()), outer[1]);
-        }
-        Some(bars) if bars.is_empty() => {
-            frame.render_widget(
-                Paragraph::new("  No intraday data available").style(c.dim_style()),
-                outer[1],
-            );
-        }
-        Some(bars) => {
-            let data_points = charts::price_points(bars);
-            let n = data_points.len() as f64;
-            let [y_min, y_max] = charts::y_bounds(&data_points);
-            let line_color = charts::trend_color(&data_points, &c);
-
-            let dataset = Dataset::default()
-                .marker(app.prefs.ui.chart_marker.to_ratatui())
-                .graph_type(GraphType::Line)
-                .style(Style::default().fg(line_color))
-                .data(&data_points);
-
-            let last_bar_label = charts::bar_time_label((n as usize).saturating_sub(1));
-            let y_min_label = format!("{:.2}", y_min);
-            let y_max_label = format!("{:.2}", y_max);
-            let chart = Chart::new(vec![dataset])
-                .x_axis(
-                    Axis::default()
-                        .bounds([0.0, (n - 1.0).max(0.0)])
-                        .labels(["09:30", last_bar_label.as_str()]),
-                )
-                .y_axis(
-                    Axis::default()
-                        .bounds([y_min, y_max])
-                        .labels([y_min_label.as_str(), y_max_label.as_str()]),
-                );
-
-            frame.render_widget(chart, outer[1]);
-        }
-    }
-
-    // ── Bottom split: position summary (left) + open orders (right) ──────────
-    let bottom = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(outer[2]);
-
-    // ── Position summary ─────────────────────────────────────────────────────
-    let pos = app.positions.iter().find(|p| p.symbol == symbol);
-    let summary_lines: Vec<Line> = if let Some(p) = pos {
-        let pl: f64 = p.unrealized_pl.parse().unwrap_or(0.0);
-        let pl_style = if pl >= 0.0 {
-            c.positive_style()
-        } else {
-            c.negative_style()
-        };
-        let plpc: f64 = p.unrealized_plpc.parse().unwrap_or(0.0);
-        vec![
-            Line::from(vec![
-                Span::styled("  Qty        ", c.dim_style()),
-                Span::styled(p.qty.clone(), c.bold_style()),
-            ]),
-            Line::from(vec![
-                Span::styled("  Avg Cost   ", c.dim_style()),
-                Span::styled(format!("${}", p.avg_entry_price), c.bold_style()),
-            ]),
-            Line::from(vec![
-                Span::styled("  Cur Price  ", c.dim_style()),
-                Span::styled(format!("${}", p.current_price), c.bold_style()),
-            ]),
-            Line::from(vec![
-                Span::styled("  Mkt Value  ", c.dim_style()),
-                Span::styled(format!("${}", p.market_value), c.bold_style()),
-            ]),
-            Line::from(vec![
-                Span::styled("  Unreal P/L ", c.dim_style()),
-                Span::styled(format!("${:.2}", pl), pl_style),
-            ]),
-            Line::from(vec![
-                Span::styled("  P/L %      ", c.dim_style()),
-                Span::styled(format!("{:+.2}%", plpc * 100.0), pl_style),
-            ]),
-            Line::from(vec![
-                Span::styled("  Side       ", c.dim_style()),
-                Span::styled(p.side.clone(), c.bold_style()),
-            ]),
-        ]
-    } else {
-        vec![Line::from(Span::styled(
-            "  No position data",
-            c.dim_style(),
-        ))]
-    };
-
-    let summary_block = Block::default()
-        .title(" Position ")
-        .borders(Borders::ALL)
-        .border_style(c.dim_style());
-    let summary_inner = summary_block.inner(bottom[0]);
-    frame.render_widget(summary_block, bottom[0]);
-    frame.render_widget(Paragraph::new(summary_lines), summary_inner);
-
-    // ── Related open orders ───────────────────────────────────────────────────
-    let open_orders: Vec<&crate::types::Order> = app
-        .orders
-        .iter()
-        .filter(|o| {
-            o.symbol == symbol
-                && matches!(
-                    o.status.as_str(),
-                    "new" | "pending_new" | "accepted" | "held" | "partially_filled"
-                )
-        })
-        .collect();
-
-    let orders_block = Block::default()
-        .title(" Open Orders ")
-        .borders(Borders::ALL)
-        .border_style(c.dim_style());
-    let orders_inner = orders_block.inner(bottom[1]);
-    frame.render_widget(orders_block, bottom[1]);
-
-    if open_orders.is_empty() {
-        frame.render_widget(
-            Paragraph::new(Span::styled("  No open orders", c.dim_style())),
-            orders_inner,
-        );
-    } else {
-        let rows: Vec<Row> = open_orders
-            .iter()
-            .map(|o| {
-                let qty = o.qty.as_deref().unwrap_or("—");
-                let price = o
-                    .limit_price
-                    .as_deref()
-                    .map(|p| format!("${p}"))
-                    .unwrap_or_else(|| "mkt".into());
-                Row::new(vec![
-                    Cell::from(o.side.clone()),
-                    Cell::from(qty.to_string()),
-                    Cell::from(price),
-                    Cell::from(o.status.clone()),
-                ])
-            })
-            .collect();
-
-        let header = Row::new(vec![
-            Cell::from(Span::styled("Side", c.dim_style())),
-            Cell::from(Span::styled("Qty", c.dim_style())),
-            Cell::from(Span::styled("Price", c.dim_style())),
-            Cell::from(Span::styled("Status", c.dim_style())),
-        ]);
-
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(5),
-                Constraint::Length(6),
-                Constraint::Length(8),
-                Constraint::Min(6),
-            ],
-        )
-        .header(header);
-
-        frame.render_widget(table, orders_inner);
-    }
-
-    // ── Footer ────────────────────────────────────────────────────────────────
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![Span::styled(
-            "  o:Order  Esc:Close",
-            c.dim_style(),
-        )])),
-        outer[3],
-    );
+    render_detail_modal(frame, area, symbol, app);
 }
 
 fn prefs_footer_hint(state: &PrefsState) -> String {
@@ -3470,13 +3444,20 @@ mod tests {
     }
 
     #[test]
-    fn render_position_detail_shows_no_position_data_when_missing() {
-        // Symbol has no matching entry in app.positions
+    fn render_position_detail_shows_no_position_pane_when_missing() {
+        // When the symbol has no position, the position pane is hidden (height=0)
+        // and the OHLCV / asset flags sections are still rendered.
         let mut app = make_test_app();
         let output = render_position_detail_to_string(&mut app, "NVDA");
+        // Position pane absent → no "Position" block title
         assert!(
-            output.contains("No position data"),
-            "expected no-position message, got: {output}"
+            !output.contains("No position data"),
+            "hidden pane should not show 'No position data', got: {output}"
+        );
+        // The rest of the unified modal still renders
+        assert!(
+            output.contains("NVDA"),
+            "symbol should appear in title, got: {output}"
         );
     }
 
@@ -3553,7 +3534,14 @@ mod tests {
         let mut app = make_test_app();
         app.positions.push(make_position("AAPL"));
         let output = render_position_detail_to_string(&mut app, "AAPL");
-        assert!(output.contains("o:Order"), "expected footer, got: {output}");
+        assert!(
+            output.contains("o:Buy"),
+            "expected o:Buy in footer, got: {output}"
+        );
+        assert!(
+            output.contains("s:Sell"),
+            "expected s:Sell in footer, got: {output}"
+        );
         assert!(
             output.contains("Esc:Close"),
             "expected Esc:Close in footer, got: {output}"
@@ -3653,6 +3641,211 @@ mod tests {
         );
     }
 
+    // ── Unified layout: position detail gains OHLCV + asset flags ────────────
+
+    #[test]
+    fn render_position_detail_shows_ohlcv_labels() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Price"),
+            "position detail should show Price label; got: {output}"
+        );
+        assert!(
+            output.contains("Open"),
+            "position detail should show Open label; got: {output}"
+        );
+        assert!(
+            output.contains("High"),
+            "position detail should show High label; got: {output}"
+        );
+        assert!(
+            output.contains("Low"),
+            "position detail should show Low label; got: {output}"
+        );
+        assert!(
+            output.contains("Volume"),
+            "position detail should show Volume label; got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_intraday_label() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Intraday"),
+            "position detail should show Intraday section label; got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_shows_watchlist_toggle_in_footer() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("w:+") || output.contains("w:\u{2212}"),
+            "position detail footer should include watchlist toggle; got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_footer_shows_chart_cursor_hint() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("←→:Chart"),
+            "position detail footer should contain crosshair hint; got: {output}"
+        );
+    }
+
+    #[test]
+    fn render_position_detail_crosshair_shows_tooltip() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        app.intraday_bars
+            .insert("AAPL".into(), vec![15100, 15200, 15300]);
+        app.symbol_detail_crosshair = Some(1);
+        let output = render_position_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("09:31"),
+            "crosshair tooltip should show bar time; got: {output}"
+        );
+        assert!(
+            output.contains("152.00"),
+            "crosshair tooltip should show bar price; got: {output}"
+        );
+    }
+
+    // ── Unified layout: symbol detail gains position pane when holding ─────────
+
+    #[test]
+    fn render_symbol_detail_shows_position_pane_when_holding() {
+        let mut app = make_test_app();
+        app.positions.push(make_position("AAPL"));
+        // Use a larger terminal so the position pane fits within the popup
+        let backend = TestBackend::new(160, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_symbol_detail(frame, area, "AAPL", &app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let output: String = (0..buffer.area().height as usize)
+            .map(|row| {
+                (0..buffer.area().width as usize)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position {
+                                x: col as u16,
+                                y: row as u16,
+                            })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            output.contains("Position"),
+            "symbol detail should show Position pane when a position is held; got:\n{}",
+            output
+        );
+        assert!(
+            output.contains("Qty"),
+            "symbol detail Position pane should show Qty; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_symbol_detail_no_position_pane_without_holding() {
+        let mut app = make_test_app();
+        // No position for AAPL
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            !output.contains("No position data"),
+            "hidden pane should not emit 'No position data'; got:\n{}",
+            output
+        );
+    }
+
+    // ── PositionDetail crosshair input handler ────────────────────────────────
+
+    fn push_key(app: &mut App, code: crossterm::event::KeyCode) {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        crate::input::modal::handle_modal_key(
+            app,
+            KeyEvent {
+                code,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+            },
+        );
+    }
+
+    #[test]
+    fn position_detail_left_initialises_crosshair_at_last_bar() {
+        let mut app = make_test_app();
+        app.intraday_bars.insert("TSLA".into(), vec![100, 200, 300]);
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "TSLA".into(),
+        });
+        push_key(&mut app, crossterm::event::KeyCode::Left);
+        assert_eq!(app.symbol_detail_crosshair, Some(2));
+    }
+
+    #[test]
+    fn position_detail_right_initialises_crosshair_at_first_bar() {
+        let mut app = make_test_app();
+        app.intraday_bars.insert("TSLA".into(), vec![100, 200, 300]);
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "TSLA".into(),
+        });
+        push_key(&mut app, crossterm::event::KeyCode::Right);
+        assert_eq!(app.symbol_detail_crosshair, Some(0));
+    }
+
+    #[test]
+    fn position_detail_esc_clears_active_crosshair_without_closing_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "TSLA".into(),
+        });
+        app.symbol_detail_crosshair = Some(1);
+        push_key(&mut app, crossterm::event::KeyCode::Esc);
+        assert!(
+            app.symbol_detail_crosshair.is_none(),
+            "first Esc should clear crosshair"
+        );
+        assert!(
+            matches!(app.modal, Some(Modal::PositionDetail { .. })),
+            "modal should remain open after crosshair cleared"
+        );
+    }
+
+    #[test]
+    fn position_detail_second_esc_closes_modal() {
+        let mut app = make_test_app();
+        app.modal = Some(Modal::PositionDetail {
+            symbol: "TSLA".into(),
+        });
+        // No crosshair → first Esc closes
+        push_key(&mut app, crossterm::event::KeyCode::Esc);
+        assert!(
+            app.modal.is_none(),
+            "Esc with no crosshair should close modal"
+        );
+    }
+
     // ── render_symbol_detail: quote price edge cases ──────────────────────────
 
     #[test]
@@ -3693,6 +3886,27 @@ mod tests {
         assert!(
             output.contains("199.50"),
             "should display bid price when only bp is set; got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_ohlcv_section_shows_dash_when_both_ap_and_bp_none() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.quotes.insert(
+            "AAPL".into(),
+            Quote {
+                symbol: "AAPL".into(),
+                ap: None,
+                bp: None,
+                ..Default::default()
+            },
+        );
+        let output = render_symbol_detail_to_string(&mut app, "AAPL");
+        assert!(
+            output.contains("Price"),
+            "Price label should still appear; got:\n{}",
             output
         );
     }
