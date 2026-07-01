@@ -148,6 +148,21 @@ impl AlpacaClient {
         Ok(())
     }
 
+    /// Fetch a single order by its Alpaca order ID (`GET /orders/{id}`).
+    ///
+    /// Returns the current state of the order including fill details.
+    pub async fn get_order(&self, id: &str) -> Result<Order> {
+        self.http
+            .get(self.url(&format!("/orders/{}", id)))
+            .headers(self.auth_headers()?)
+            .send()
+            .await
+            .context("GET /orders/{id} request failed")?
+            .json::<Order>()
+            .await
+            .context("GET /orders/{id} parse failed")
+    }
+
     /// Fetch the current market clock (`GET /clock`).
     ///
     /// Returns whether the market is open and the next open/close times.
@@ -604,6 +619,79 @@ mod tests {
 
         let client = AlpacaClient::new(paper_config(server.uri()));
         client.cancel_order("order-abc").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn get_order_returns_order_with_fill_details() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orders/ord-fill-1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "ord-fill-1",
+                "symbol": "AAPL",
+                "side": "buy",
+                "order_type": "limit",
+                "status": "filled",
+                "filled_qty": "10",
+                "filled_avg_price": "185.50",
+                "filled_at": "2024-01-02T14:30:00Z",
+                "time_in_force": "day"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let order = client.get_order("ord-fill-1").await.unwrap();
+
+        assert_eq!(order.id, "ord-fill-1");
+        assert_eq!(order.symbol, "AAPL");
+        assert_eq!(order.status, "filled");
+        assert_eq!(order.filled_qty, "10");
+        assert_eq!(order.filled_avg_price.as_deref(), Some("185.50"));
+        assert_eq!(order.filled_at.as_deref(), Some("2024-01-02T14:30:00Z"));
+    }
+
+    #[tokio::test]
+    async fn get_order_hits_correct_path() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orders/specific-order-id"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "specific-order-id",
+                "symbol": "TSLA",
+                "side": "sell",
+                "order_type": "market",
+                "status": "accepted",
+                "filled_qty": "0",
+                "time_in_force": "day"
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let order = client.get_order("specific-order-id").await.unwrap();
+        assert_eq!(order.id, "specific-order-id");
+    }
+
+    #[tokio::test]
+    async fn get_order_returns_error_on_bad_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/orders/ord-bad"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let err = client.get_order("ord-bad").await.unwrap_err();
+        assert!(err.to_string().contains("parse failed"));
+    }
+
+    #[tokio::test]
+    async fn get_order_returns_error_on_request_failure() {
+        let client = AlpacaClient::new(paper_config("http://127.0.0.1:1".into()));
+        let err = client.get_order("ord-x").await.unwrap_err();
+        assert!(err.to_string().contains("request failed"));
     }
 
     #[tokio::test]
