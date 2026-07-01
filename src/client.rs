@@ -6,8 +6,9 @@ use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::config::{AlpacaConfig, AlpacaEnv};
 use crate::types::{
-    AccountInfo, Asset, BarsResponse, MarketClock, MinuteBar, Order, OrderRequest,
-    PortfolioHistory, Position, Snapshot, Watchlist, WatchlistSummary,
+    AccountInfo, Asset, BarsResponse, HistoricalBar, HistoricalBarsResponse, MarketClock,
+    MinuteBar, Order, OrderRequest, PortfolioHistory, Position, Snapshot, Watchlist,
+    WatchlistSummary,
 };
 
 /// Async HTTP client for the Alpaca Markets REST API.
@@ -356,6 +357,50 @@ impl AlpacaClient {
             .await
             .context("GET /stocks/{symbol}/bars parse failed")?
             .bars)
+    }
+
+    /// Fetch OHLCV bars for `symbol` between `start` and `end` (RFC-3339 strings)
+    /// at the given `timeframe` (e.g. `"1Min"`, `"5Min"`, `"1Hour"`, `"1Day"`).
+    ///
+    /// Handles pagination automatically and returns all bars in chronological order.
+    pub async fn get_historical_bars(
+        &self,
+        symbol: &str,
+        timeframe: &str,
+        start: &str,
+        end: &str,
+    ) -> Result<Vec<HistoricalBar>> {
+        let mut all_bars: Vec<HistoricalBar> = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let mut params: Vec<(&str, String)> = vec![
+                ("timeframe", timeframe.to_string()),
+                ("start", start.to_string()),
+                ("end", end.to_string()),
+                ("feed", "iex".to_string()),
+                ("limit", "1000".to_string()),
+            ];
+            if let Some(ref token) = page_token {
+                params.push(("page_token", token.clone()));
+            }
+            let resp = self
+                .http
+                .get(self.data_url(&format!("/stocks/{symbol}/bars")))
+                .query(&params)
+                .headers(self.auth_headers()?)
+                .send()
+                .await
+                .context("GET /stocks/{symbol}/bars request failed")?
+                .json::<HistoricalBarsResponse>()
+                .await
+                .context("GET /stocks/{symbol}/bars parse failed")?;
+            all_bars.extend(resp.bars);
+            match resp.next_page_token {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
+        }
+        Ok(all_bars)
     }
 }
 
@@ -823,5 +868,167 @@ mod tests {
         let bars = client.get_intraday_bars("AAPL").await.unwrap();
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].c, 195.5);
+    }
+
+    fn historical_bar_json(timestamp: &str, close: f64) -> serde_json::Value {
+        json!({
+            "t": timestamp,
+            "o": close - 1.0,
+            "h": close + 2.0,
+            "l": close - 2.0,
+            "c": close,
+            "v": 100000.0,
+            "vw": close + 0.5,
+            "n": 500u64
+        })
+    }
+
+    #[tokio::test]
+    async fn get_historical_bars_single_page() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/AAPL/bars"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [
+                    historical_bar_json("2024-01-02T09:30:00Z", 185.0),
+                    historical_bar_json("2024-01-03T09:30:00Z", 186.5),
+                ],
+                "next_page_token": null
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let bars = client
+            .get_historical_bars("AAPL", "1Day", "2024-01-02", "2024-01-03")
+            .await
+            .unwrap();
+
+        assert_eq!(bars.len(), 2);
+        assert_eq!(bars[0].timestamp, "2024-01-02T09:30:00Z");
+        assert_eq!(bars[0].close, 185.0);
+        assert_eq!(bars[0].open, 184.0);
+        assert_eq!(bars[0].high, 187.0);
+        assert_eq!(bars[0].low, 183.0);
+        assert_eq!(bars[0].volume, 100000.0);
+        assert_eq!(bars[0].vwap, 185.5);
+        assert_eq!(bars[0].trade_count, 500);
+        assert_eq!(bars[1].timestamp, "2024-01-03T09:30:00Z");
+        assert_eq!(bars[1].close, 186.5);
+    }
+
+    #[tokio::test]
+    async fn get_historical_bars_paginates_until_no_token() {
+        let server = MockServer::start().await;
+
+        // First request (no page_token) returns one bar and a next_page_token.
+        Mock::given(method("GET"))
+            .and(path("/stocks/TSLA/bars"))
+            .and(wiremock::matchers::query_param_is_missing("page_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [historical_bar_json("2024-01-02T09:30:00Z", 200.0)],
+                "next_page_token": "page2token"
+            })))
+            .mount(&server)
+            .await;
+
+        // Second request (page_token=page2token) returns the last bar with null token.
+        Mock::given(method("GET"))
+            .and(path("/stocks/TSLA/bars"))
+            .and(wiremock::matchers::query_param("page_token", "page2token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [historical_bar_json("2024-01-03T09:30:00Z", 205.0)],
+                "next_page_token": null
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let bars = client
+            .get_historical_bars("TSLA", "1Day", "2024-01-02", "2024-01-03")
+            .await
+            .unwrap();
+
+        assert_eq!(bars.len(), 2);
+        assert_eq!(bars[0].close, 200.0);
+        assert_eq!(bars[1].close, 205.0);
+    }
+
+    #[tokio::test]
+    async fn get_historical_bars_returns_empty_when_no_bars() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/AAPL/bars"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [],
+                "next_page_token": null
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let bars = client
+            .get_historical_bars("AAPL", "1Hour", "2024-01-02", "2024-01-02")
+            .await
+            .unwrap();
+
+        assert!(bars.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_historical_bars_returns_error_on_bad_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/AAPL/bars"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let err = client
+            .get_historical_bars("AAPL", "1Day", "2024-01-02", "2024-01-03")
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("parse failed"));
+    }
+
+    #[tokio::test]
+    async fn get_historical_bars_returns_error_on_request_failure() {
+        // Point the client at a port with nothing listening so send() fails.
+        let client = AlpacaClient::new(paper_config("http://127.0.0.1:1".into()));
+        let err = client
+            .get_historical_bars("AAPL", "1Day", "2024-01-02", "2024-01-03")
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("request failed"));
+    }
+
+    #[tokio::test]
+    async fn get_historical_bars_sends_correct_query_params() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/stocks/MSFT/bars"))
+            .and(wiremock::matchers::query_param("timeframe", "5Min"))
+            .and(wiremock::matchers::query_param("start", "2024-03-01"))
+            .and(wiremock::matchers::query_param("end", "2024-03-05"))
+            .and(wiremock::matchers::query_param("feed", "iex"))
+            .and(wiremock::matchers::query_param("limit", "1000"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "bars": [historical_bar_json("2024-03-01T09:30:00Z", 400.0)],
+                "next_page_token": null
+            })))
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let bars = client
+            .get_historical_bars("MSFT", "5Min", "2024-03-01", "2024-03-05")
+            .await
+            .unwrap();
+
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, 400.0);
     }
 }

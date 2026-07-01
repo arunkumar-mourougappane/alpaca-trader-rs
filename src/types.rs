@@ -729,6 +729,45 @@ pub struct BarsResponse {
     pub bars: Vec<MinuteBar>,
 }
 
+/// One full OHLCV bar returned by the historical bars endpoint.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HistoricalBar {
+    /// RFC-3339 timestamp for the start of the bar.
+    #[serde(rename = "t")]
+    pub timestamp: String,
+    /// Opening price.
+    #[serde(rename = "o")]
+    pub open: f64,
+    /// High price.
+    #[serde(rename = "h")]
+    pub high: f64,
+    /// Low price.
+    #[serde(rename = "l")]
+    pub low: f64,
+    /// Closing price.
+    #[serde(rename = "c")]
+    pub close: f64,
+    /// Volume (number of shares traded).
+    #[serde(rename = "v")]
+    pub volume: f64,
+    /// Volume-weighted average price for the bar.
+    #[serde(rename = "vw")]
+    pub vwap: f64,
+    /// Number of trades in the bar.
+    #[serde(rename = "n")]
+    pub trade_count: u64,
+}
+
+/// Paginated response wrapper for `GET /v2/stocks/{symbol}/bars`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct HistoricalBarsResponse {
+    /// Bars for this page, in chronological order.
+    pub bars: Vec<HistoricalBar>,
+    /// Opaque token to fetch the next page; `None` when all bars have been returned.
+    #[serde(default)]
+    pub next_page_token: Option<String>,
+}
+
 /// Latest trade returned inside a [`Snapshot`].
 #[derive(Debug, Clone, Deserialize)]
 pub struct SnapshotTrade {
