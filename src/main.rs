@@ -262,6 +262,13 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Cleanup ────────────────────────────────────────────────────────────────
     tracing::info!("shutting down");
+    if let Some(path) = AppPrefs::default_path() {
+        app.prefs.price_alerts = app.price_alerts.clone();
+        if let Err(e) = app.prefs.write_to(&path) {
+            tracing::error!(error = %e, "failed to save price alerts on exit");
+        }
+    }
+
     cancel.cancel();
     disable_raw_mode()?;
     execute!(

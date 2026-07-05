@@ -381,8 +381,9 @@ fn fill_notification_text(order: &crate::types::Order, event_type: &str) -> Opti
 /// the boundary (i.e. the condition is no longer met), allowing the alert to
 /// fire again if the price subsequently crosses the threshold once more.
 fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
+    let clean = |p: Option<f64>| p.filter(|&v| v > 0.0);
     // Derive mid-price from ask / bid; skip if no price is available.
-    let price = match (q.ap, q.bp) {
+    let price = match (clean(q.ap), clean(q.bp)) {
         (Some(a), Some(b)) => (a + b) / 2.0,
         (Some(a), None) => a,
         (None, Some(b)) => b,
@@ -1279,6 +1280,29 @@ mod tests {
             }
             other => panic!("expected SetAlert modal, got: {:?}", other),
         }
+    }
+
+    #[test]
+    fn watchlist_uppercase_c_clears_all_alerts() {
+        let mut app = watchlist_app();
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                above: Some(200.0),
+                ..Default::default()
+            },
+        );
+        app.price_alerts.insert(
+            "MSFT".into(),
+            crate::types::PriceAlert {
+                below: Some(300.0),
+                ..Default::default()
+            },
+        );
+        assert_eq!(app.price_alerts.len(), 2);
+        update(&mut app, key(KeyCode::Char('C')));
+        assert!(app.price_alerts.is_empty());
+        assert!(app.current_status_text().contains("Cleared all price alerts (2)"));
     }
 
     #[test]

@@ -826,15 +826,19 @@ pub struct PortfolioHistory {
 ///
 /// The alert fires when a real-time quote crosses the threshold: the status bar
 /// flashes a message and the terminal bell (`\x07`) is written to stdout.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct PriceAlert {
     /// Trigger when the ask or mid price rises **above** this threshold.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub above: Option<f64>,
     /// Trigger when the ask or mid price falls **below** this threshold.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub below: Option<f64>,
     /// Tracks whether the "above" alert has already fired this session,
     /// so it doesn't re-trigger on every subsequent tick above the threshold.
+    #[serde(skip, default)]
     pub above_triggered: bool,
     /// Tracks whether the "below" alert has already fired this session.
+    #[serde(skip, default)]
     pub below_triggered: bool,
 }

@@ -1014,6 +1014,7 @@ impl App {
         symbol_tx: watch::Sender<Vec<String>>,
     ) -> Self {
         let current_theme = Theme::from_str(&prefs.ui.theme);
+        let price_alerts = prefs.price_alerts.clone();
         Self {
             config,
             prefs,
@@ -1063,7 +1064,7 @@ impl App {
             orders_sort: SortState::default(),
             orders_symbol_filter: String::new(),
             orders_filter_active: false,
-            price_alerts: HashMap::new(),
+            price_alerts,
         }
     }
 
@@ -1192,6 +1193,10 @@ impl App {
             .filter_map(|p| {
                 let qty = p.qty.parse::<f64>().ok()?;
                 // Prefer live quote (ask then bid), fall back to last REST price.
+                // Note: If the market is closed, live quotes can return 0.0. To prevent zero-equity calculation bugs,
+                // we can filter out non-positive values, e.g.:
+                //     .and_then(|q| q.ap.or(q.bp).filter(|&v| v > 0.0))
+                //     .or_else(|| p.current_price.parse::<f64>().ok().filter(|&v| v > 0.0))
                 let price = self
                     .quotes
                     .get(&p.symbol)

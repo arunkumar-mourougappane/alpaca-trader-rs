@@ -672,14 +672,15 @@ fn render_ohlcv_section(
     let daily = snapshot.and_then(|s| s.daily_bar.as_ref());
     let prev = snapshot.and_then(|s| s.prev_daily_bar.as_ref());
 
+    let clean = |p: Option<f64>| p.filter(|&v| v > 0.0);
     let price: Option<f64> = quote
-        .and_then(|q| match (q.ap, q.bp) {
+        .and_then(|q| match (clean(q.ap), clean(q.bp)) {
             (Some(a), Some(b)) => Some((a + b) / 2.0),
             (Some(a), None) => Some(a),
             (None, Some(b)) => Some(b),
             _ => None,
         })
-        .or_else(|| daily.map(|b| b.c));
+        .or_else(|| daily.map(|b| b.c).filter(|&v| v > 0.0));
 
     let change_pct: Option<f64> = price.zip(prev.map(|b| b.c)).map(|(p, pc)| {
         if pc != 0.0 {

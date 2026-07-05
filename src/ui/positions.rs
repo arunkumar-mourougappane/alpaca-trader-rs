@@ -91,10 +91,11 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     let mut rows: Vec<Row> = sorted
         .iter()
         .map(|p| {
+            let clean = |v: f64| if v > 0.0 { Some(v) } else { None };
             let cur_price = app
                 .quotes
                 .get(&p.symbol)
-                .and_then(|q| q.ap.or(q.bp))
+                .and_then(|q| q.ap.or(q.bp).and_then(clean))
                 .map(|v| format!("${:.2}", v))
                 .unwrap_or_else(|| format_price(&p.current_price));
 
