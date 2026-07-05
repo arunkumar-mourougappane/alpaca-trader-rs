@@ -98,16 +98,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
             let quote = app.quotes.get(&asset.symbol);
             let snapshot = app.snapshots.get(&asset.symbol);
 
-            // Current price: prefer real-time ask/bid quote, fall back to
-            // snapshot latest quote, then latest trade (works when market closed).
-            let current_price = quote.and_then(|q| q.ap.or(q.bp)).or_else(|| {
-                snapshot.and_then(|s| {
-                    s.latest_quote
-                        .as_ref()
-                        .and_then(|lq| lq.ap.or(lq.bp))
-                        .or_else(|| s.latest_trade.as_ref().map(|lt| lt.p))
-                })
-            });
+            let clean = |p: Option<f64>| p.filter(|&v| v > 0.0);
+            let current_price = quote
+                .and_then(|q| clean(q.ap).or_else(|| clean(q.bp)))
+                .or_else(|| {
+                    snapshot.and_then(|s| {
+                        s.latest_quote
+                            .as_ref()
+                            .and_then(|lq| clean(lq.ap).or_else(|| clean(lq.bp)))
+                            .or_else(|| s.latest_trade.as_ref().and_then(|lt| clean(Some(lt.p))))
+                    })
+                });
 
             let price_text = current_price
                 .map(|p| format!("${:.2}", p))
@@ -423,5 +424,52 @@ mod tests {
             output.contains("-10.00%"),
             "expected negative pct change, got: {output}"
         );
+    }
+
+    #[test]
+    fn test_e2e_set_price_alert_renders_bell() {
+        use crate::update::update;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let key = |code: KeyCode| {
+            crate::events::Event::Input(KeyEvent::new(code, KeyModifiers::NONE))
+        };
+        let shift_key = |code: KeyCode| {
+            crate::events::Event::Input(KeyEvent::new(code, KeyModifiers::SHIFT))
+        };
+
+        // 1. App starts with watchlist AAPL
+        let mut app = make_test_app();
+        app.active_tab = crate::app::Tab::Watchlist;
+        app.watchlist = Some(make_watchlist(&["AAPL"]));
+        app.watchlist_state.select(Some(0));
+
+        // 2. Render watchlist - verify NO bell icon initially
+        let output = render_watchlist_to_string(&mut app);
+        assert!(!output.contains("AAPL 🔔"));
+
+        // 3. Press Shift-A (uppercase A) to open SetAlert modal
+        update(&mut app, shift_key(KeyCode::Char('A')));
+        assert!(matches!(app.modal, Some(crate::app::Modal::SetAlert { .. })));
+
+        // 4. Input "185.00" into the active "above" field
+        update(&mut app, key(KeyCode::Char('1')));
+        update(&mut app, key(KeyCode::Char('8')));
+        update(&mut app, key(KeyCode::Char('5')));
+        update(&mut app, key(KeyCode::Char('.')));
+        update(&mut app, key(KeyCode::Char('0')));
+        update(&mut app, key(KeyCode::Char('0')));
+
+        // 5. Press Enter to save the alert
+        update(&mut app, key(KeyCode::Enter));
+
+        // 6. Verify modal is closed and alert is stored in app.price_alerts
+        assert!(app.modal.is_none());
+        let alert = app.price_alerts.get("AAPL").expect("alert should be set");
+        assert_eq!(alert.above, Some(185.0));
+
+        // 7. Render watchlist - verify AAPL 🔔 is now rendered
+        let output2 = render_watchlist_to_string(&mut app);
+        assert!(output2.contains("AAPL 🔔"), "expected AAPL 🔔 in output, got:\n{}", output2);
     }
 }

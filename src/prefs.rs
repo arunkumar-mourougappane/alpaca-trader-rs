@@ -11,6 +11,7 @@
 //! 2. Environment variables (`PAPER_ALPACA_*`, `LIVE_ALPACA_*`)
 //! 3. `config.toml` preferences (this module)
 //! 4. Compiled defaults (defined via `Default` impls below)
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -220,6 +221,9 @@ pub struct AppPrefs {
     pub safety: SafetySection,
     /// Proxy settings (`[proxy]` section).
     pub proxy: ProxySection,
+    /// Price alerts per symbol (`[price_alerts]` section).
+    #[serde(default)]
+    pub price_alerts: HashMap<String, crate::types::PriceAlert>,
 }
 
 impl AppPrefs {
@@ -294,7 +298,7 @@ impl AppPrefs {
     /// Serialises to a TOML string with descriptive comments for each
     /// section.
     pub fn to_toml_string(&self) -> String {
-        format!(
+        let mut toml_str = format!(
             r#"# alpaca-trader configuration
 # Generated automatically on first launch. Edit and restart to apply changes.
 # Credentials (API keys) are stored separately in the OS keychain, never here.
@@ -309,35 +313,38 @@ refresh_interval_ms = {refresh_ms}
 [ui]
 # Colour theme. Accepted values: "default" | "dark" | "high-contrast"
 theme = "{theme}"
+# Toggle dashboard panels. All default to true.
 show_account_panel = {show_account}
 show_watchlist     = {show_watchlist}
 show_positions     = {show_positions}
 show_orders        = {show_orders}
-# Default equity chart range. Accepted values: "1D" | "1W" | "1M" | "YTD"
+# Default historical date range for the equity chart.
+# Accepted values: "1D" | "5D" | "1M" | "3M" | "1Y" | "ALL"
 default_equity_range = "{equity_range}"
-# Chart marker style. Accepted values: "braille" | "dot" | "block" | "bar" | "half_block"
+# Visual marker style for chart data points.
+# Accepted values: "dot" | "block" | "braille"
 chart_marker = "{chart_marker}"
 
 [stream]
-# Max reconnect attempts (0 = unlimited)
-reconnect_max_attempts = {reconnect_max}
-# Base backoff between reconnects in milliseconds (doubles each attempt, capped at 30 s)
+# WebSocket reconnection tuning.
+reconnect_max_attempts    = {reconnect_max}
 reconnect_backoff_base_ms = {reconnect_base}
 
 [notifications]
+# Toggle desktop notification popups for order execution fills.
 fill_notifications_enabled = {fill_enabled}
+# Notification display duration in milliseconds.
 fill_notification_ttl_ms   = {fill_ttl}
+# TUI status bar message duration in milliseconds.
 status_message_ttl_ms      = {status_ttl}
 
 [safety]
-# Prompt for confirmation before removing a watchlist symbol
+# Require user confirmation before removing a symbol from the watchlist.
 confirm_watchlist_remove = {confirm_remove}
 
 [proxy]
 # Leave commented to use HTTP_PROXY / HTTPS_PROXY environment variables
 # http   = "http://proxy.corp.com:8080"
-# socks5 = "socks5://proxy.corp.com:1080"
-# no_proxy = "localhost,127.0.0.1"
 "#,
             default_env = self.app.default_env,
             refresh_ms = self.app.refresh_interval_ms,
@@ -354,7 +361,29 @@ confirm_watchlist_remove = {confirm_remove}
             fill_ttl = self.notifications.fill_notification_ttl_ms,
             status_ttl = self.notifications.status_message_ttl_ms,
             confirm_remove = self.safety.confirm_watchlist_remove,
-        )
+        );
+
+        if !self.price_alerts.is_empty() {
+            toml_str.push_str("\n[price_alerts]\n");
+            let mut sorted_keys: Vec<&String> = self.price_alerts.keys().collect();
+            sorted_keys.sort();
+            for key in sorted_keys {
+                if let Some(alert) = self.price_alerts.get(key) {
+                    if alert.above.is_some() || alert.below.is_some() {
+                        let mut parts = Vec::new();
+                        if let Some(above) = alert.above {
+                            parts.push(format!("above = {above}"));
+                        }
+                        if let Some(below) = alert.below {
+                            parts.push(format!("below = {below}"));
+                        }
+                        toml_str.push_str(&format!("{key} = {{ {} }}\n", parts.join(", ")));
+                    }
+                }
+            }
+        }
+
+        toml_str
     }
 
     /// Returns the configured status-message TTL as a [`Duration`].
@@ -627,5 +656,25 @@ chart_marker = "dot"
             AppPrefs::default(),
             "write failure path should still return defaults"
         );
+    }
+
+    #[test]
+    fn price_alerts_round_trip() {
+        let mut p = AppPrefs::default();
+        let mut alerts = HashMap::new();
+        alerts.insert("AAPL".to_string(), crate::types::PriceAlert {
+            above: Some(185.0),
+            below: Some(170.0),
+            ..Default::default()
+        });
+        alerts.insert("TSLA".to_string(), crate::types::PriceAlert {
+            above: Some(250.5),
+            below: None,
+            ..Default::default()
+        });
+        p.price_alerts = alerts;
+        let toml_str = p.to_toml_string();
+        let p2: AppPrefs = toml::from_str(&toml_str).unwrap();
+        assert_eq!(p.price_alerts, p2.price_alerts);
     }
 }

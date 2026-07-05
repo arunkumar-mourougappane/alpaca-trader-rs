@@ -1,4 +1,4 @@
-use crossterm::event::{Event as CEvent, EventStream};
+use crossterm::event::{Event as CEvent, EventStream, KeyEventKind};
 use futures::StreamExt;
 use tokio::sync::mpsc::Sender;
 use tokio_util::sync::CancellationToken;
@@ -11,7 +11,7 @@ pub async fn run(tx: Sender<AppEvent>, cancel: CancellationToken) {
         tokio::select! {
             Some(Ok(evt)) = stream.next() => {
                 let event: Option<AppEvent> = match evt {
-                    CEvent::Key(k) => Some(AppEvent::Input(k)),
+                    CEvent::Key(k) if k.kind != KeyEventKind::Release => Some(AppEvent::Input(k)),
                     CEvent::Mouse(m) => Some(AppEvent::Mouse(m)),
                     CEvent::Resize(w, h) => Some(AppEvent::Resize(w, h)),
                     _ => None,
