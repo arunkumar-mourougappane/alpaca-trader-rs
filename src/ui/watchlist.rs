@@ -431,12 +431,10 @@ mod tests {
         use crate::update::update;
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-        let key = |code: KeyCode| {
-            crate::events::Event::Input(KeyEvent::new(code, KeyModifiers::NONE))
-        };
-        let shift_key = |code: KeyCode| {
-            crate::events::Event::Input(KeyEvent::new(code, KeyModifiers::SHIFT))
-        };
+        let key =
+            |code: KeyCode| crate::events::Event::Input(KeyEvent::new(code, KeyModifiers::NONE));
+        let shift_key =
+            |code: KeyCode| crate::events::Event::Input(KeyEvent::new(code, KeyModifiers::SHIFT));
 
         // 1. App starts with watchlist AAPL
         let mut app = make_test_app();
@@ -450,7 +448,10 @@ mod tests {
 
         // 3. Press Shift-A (uppercase A) to open SetAlert modal
         update(&mut app, shift_key(KeyCode::Char('A')));
-        assert!(matches!(app.modal, Some(crate::app::Modal::SetAlert { .. })));
+        assert!(matches!(
+            app.modal,
+            Some(crate::app::Modal::SetAlert { .. })
+        ));
 
         // 4. Input "185.00" into the active "above" field
         update(&mut app, key(KeyCode::Char('1')));
@@ -470,6 +471,10 @@ mod tests {
 
         // 7. Render watchlist - verify AAPL 🔔 is now rendered
         let output2 = render_watchlist_to_string(&mut app);
-        assert!(output2.contains("AAPL 🔔"), "expected AAPL 🔔 in output, got:\n{}", output2);
+        assert!(
+            output2.contains("AAPL 🔔"),
+            "expected AAPL 🔔 in output, got:\n{}",
+            output2
+        );
     }
 }
