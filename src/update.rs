@@ -1302,7 +1302,9 @@ mod tests {
         assert_eq!(app.price_alerts.len(), 2);
         update(&mut app, key(KeyCode::Char('C')));
         assert!(app.price_alerts.is_empty());
-        assert!(app.current_status_text().contains("Cleared all price alerts (2)"));
+        assert!(app
+            .current_status_text()
+            .contains("Cleared all price alerts (2)"));
     }
 
     #[test]

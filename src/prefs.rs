@@ -662,16 +662,22 @@ chart_marker = "dot"
     fn price_alerts_round_trip() {
         let mut p = AppPrefs::default();
         let mut alerts = HashMap::new();
-        alerts.insert("AAPL".to_string(), crate::types::PriceAlert {
-            above: Some(185.0),
-            below: Some(170.0),
-            ..Default::default()
-        });
-        alerts.insert("TSLA".to_string(), crate::types::PriceAlert {
-            above: Some(250.5),
-            below: None,
-            ..Default::default()
-        });
+        alerts.insert(
+            "AAPL".to_string(),
+            crate::types::PriceAlert {
+                above: Some(185.0),
+                below: Some(170.0),
+                ..Default::default()
+            },
+        );
+        alerts.insert(
+            "TSLA".to_string(),
+            crate::types::PriceAlert {
+                above: Some(250.5),
+                below: None,
+                ..Default::default()
+            },
+        );
         p.price_alerts = alerts;
         let toml_str = p.to_toml_string();
         let p2: AppPrefs = toml::from_str(&toml_str).unwrap();
