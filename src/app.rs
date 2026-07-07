@@ -606,6 +606,7 @@ impl PrefsState {
 pub enum ConfirmAction {
     CancelOrder(String),
     ClearAllAlerts,
+    DiscardPrefs(Box<PrefsState>),
 }
 
 /// Focusable input field in the [`Modal::SetAlert`] dialog.
