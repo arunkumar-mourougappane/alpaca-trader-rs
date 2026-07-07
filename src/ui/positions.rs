@@ -91,11 +91,11 @@ pub fn render(frame: &mut Frame, area: ratatui::layout::Rect, app: &mut App) {
     let mut rows: Vec<Row> = sorted
         .iter()
         .map(|p| {
-            let clean = |v: f64| if v > 0.0 { Some(v) } else { None };
+            let clean = |p: Option<f64>| p.filter(|&v| v > 0.0);
             let cur_price = app
                 .quotes
                 .get(&p.symbol)
-                .and_then(|q| q.ap.or(q.bp).and_then(clean))
+                .and_then(|q| clean(q.ap).or_else(|| clean(q.bp)))
                 .map(|v| format!("${:.2}", v))
                 .unwrap_or_else(|| format_price(&p.current_price));
 
@@ -700,6 +700,26 @@ mod tests {
             "MSFT".into(),
             Quote {
                 ap: None,
+                bp: Some(299.50),
+                ..Default::default()
+            },
+        );
+        let output = render_positions_to_string(&mut app);
+        assert!(
+            output.contains("299.50"),
+            "expected live bid price in cur-price column, got: {output}"
+        );
+    }
+
+    #[test]
+    fn positions_live_quote_bid_used_when_ask_is_zero() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.positions.push(make_position("MSFT", "50.00"));
+        app.quotes.insert(
+            "MSFT".into(),
+            Quote {
+                ap: Some(0.0),
                 bp: Some(299.50),
                 ..Default::default()
             },

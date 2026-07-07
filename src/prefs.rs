@@ -298,6 +298,25 @@ impl AppPrefs {
     /// Serialises to a TOML string with descriptive comments for each
     /// section.
     pub fn to_toml_string(&self) -> String {
+        let proxy_http = self
+            .proxy
+            .http
+            .as_deref()
+            .map(|v| format!("http   = \"{v}\""))
+            .unwrap_or_else(|| "# http   = \"http://proxy.corp.com:8080\"".into());
+        let proxy_socks5 = self
+            .proxy
+            .socks5
+            .as_deref()
+            .map(|v| format!("socks5 = \"{v}\""))
+            .unwrap_or_else(|| "# socks5 = \"socks5://proxy.corp.com:1080\"".into());
+        let proxy_no_proxy = self
+            .proxy
+            .no_proxy
+            .as_deref()
+            .map(|v| format!("no_proxy = \"{v}\""))
+            .unwrap_or_else(|| "# no_proxy = \"localhost,127.0.0.1\"".into());
+
         let mut toml_str = format!(
             r#"# alpaca-trader configuration
 # Generated automatically on first launch. Edit and restart to apply changes.
@@ -344,7 +363,9 @@ confirm_watchlist_remove = {confirm_remove}
 
 [proxy]
 # Leave commented to use HTTP_PROXY / HTTPS_PROXY environment variables
-# http   = "http://proxy.corp.com:8080"
+{proxy_http}
+{proxy_socks5}
+{proxy_no_proxy}
 "#,
             default_env = self.app.default_env,
             refresh_ms = self.app.refresh_interval_ms,
@@ -361,6 +382,9 @@ confirm_watchlist_remove = {confirm_remove}
             fill_ttl = self.notifications.fill_notification_ttl_ms,
             status_ttl = self.notifications.status_message_ttl_ms,
             confirm_remove = self.safety.confirm_watchlist_remove,
+            proxy_http = proxy_http,
+            proxy_socks5 = proxy_socks5,
+            proxy_no_proxy = proxy_no_proxy,
         );
 
         if !self.price_alerts.is_empty() {
@@ -377,7 +401,7 @@ confirm_watchlist_remove = {confirm_remove}
                         if let Some(below) = alert.below {
                             parts.push(format!("below = {below}"));
                         }
-                        toml_str.push_str(&format!("{key} = {{ {} }}\n", parts.join(", ")));
+                        toml_str.push_str(&format!("\"{key}\" = {{ {} }}\n", parts.join(", ")));
                     }
                 }
             }
@@ -678,9 +702,29 @@ chart_marker = "dot"
                 ..Default::default()
             },
         );
+        alerts.insert(
+            "BRK.B".to_string(),
+            crate::types::PriceAlert {
+                above: Some(350.0),
+                below: Some(340.0),
+                ..Default::default()
+            },
+        );
         p.price_alerts = alerts;
         let toml_str = p.to_toml_string();
         let p2: AppPrefs = toml::from_str(&toml_str).unwrap();
         assert_eq!(p.price_alerts, p2.price_alerts);
+    }
+
+    #[test]
+    fn proxy_round_trip() {
+        let mut p = AppPrefs::default();
+        p.proxy.http = Some("http://proxy.corp.com:8080".to_string());
+        p.proxy.socks5 = Some("socks5://proxy.corp.com:1080".to_string());
+        p.proxy.no_proxy = Some("localhost,127.0.0.1".to_string());
+
+        let toml_str = p.to_toml_string();
+        let p2: AppPrefs = toml::from_str(&toml_str).unwrap();
+        assert_eq!(p.proxy, p2.proxy);
     }
 }

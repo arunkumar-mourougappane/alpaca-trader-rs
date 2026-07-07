@@ -392,6 +392,28 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
 
     let symbol = q.symbol.clone();
 
+    // Derive the previous price from the previous quote (if any) or snapshot (if any).
+    let prev_price = app
+        .quotes
+        .get(&symbol)
+        .map(|prev_q| match (clean(prev_q.ap), clean(prev_q.bp)) {
+            (Some(a), Some(b)) => (a + b) / 2.0,
+            (Some(a), None) => a,
+            (None, Some(b)) => b,
+            _ => 0.0,
+        })
+        .filter(|&p| p > 0.0)
+        .or_else(|| {
+            app.snapshots.get(&symbol).and_then(|s| {
+                let clean_f64 = |val: f64| if val > 0.0 { Some(val) } else { None };
+                s.latest_trade
+                    .as_ref()
+                    .and_then(|t| clean_f64(t.p))
+                    .or_else(|| s.daily_bar.as_ref().and_then(|b| clean_f64(b.c)))
+                    .or_else(|| s.prev_daily_bar.as_ref().and_then(|b| clean_f64(b.c)))
+            })
+        });
+
     // Collect threshold values and current trigger states up front so we
     // don't hold a mutable borrow on `app.price_alerts` while calling the
     // status-push helpers (which also borrow `app` mutably).
@@ -412,15 +434,18 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
     if let Some(threshold) = above {
         if price >= threshold {
             if !above_triggered {
-                // Mark triggered.
+                let is_crossing = prev_price.is_some_and(|prev| prev < threshold);
+                if is_crossing {
+                    let msg = format!(
+                        "🔔 {symbol} above ${threshold:.2} — alert triggered! (${price:.2})"
+                    );
+                    app.push_transient_status(msg);
+                    // Ring the terminal bell.
+                    let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x07");
+                }
                 if let Some(a) = app.price_alerts.get_mut(&symbol) {
                     a.above_triggered = true;
                 }
-                let msg =
-                    format!("🔔 {symbol} above ${threshold:.2} — alert triggered! (${price:.2})");
-                app.push_transient_status(msg);
-                // Ring the terminal bell.
-                let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x07");
             }
         } else if above_triggered {
             // Price retreated below the threshold — reset so it can fire again.
@@ -434,13 +459,17 @@ fn evaluate_price_alert(app: &mut App, q: &crate::types::Quote) {
     if let Some(threshold) = below {
         if price <= threshold {
             if !below_triggered {
+                let is_crossing = prev_price.is_some_and(|prev| prev > threshold);
+                if is_crossing {
+                    let msg = format!(
+                        "🔔 {symbol} below ${threshold:.2} — alert triggered! (${price:.2})"
+                    );
+                    app.push_transient_status(msg);
+                    let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x07");
+                }
                 if let Some(a) = app.price_alerts.get_mut(&symbol) {
                     a.below_triggered = true;
                 }
-                let msg =
-                    format!("🔔 {symbol} below ${threshold:.2} — alert triggered! (${price:.2})");
-                app.push_transient_status(msg);
-                let _ = std::io::Write::write_all(&mut std::io::stdout(), b"\x07");
             }
         } else if below_triggered {
             // Price risen back above the threshold — reset.
@@ -1285,6 +1314,7 @@ mod tests {
     #[test]
     fn watchlist_uppercase_c_clears_all_alerts() {
         let mut app = watchlist_app();
+        app.prefs.safety.confirm_watchlist_remove = false;
         app.price_alerts.insert(
             "AAPL".into(),
             crate::types::PriceAlert {
@@ -1302,6 +1332,40 @@ mod tests {
         assert_eq!(app.price_alerts.len(), 2);
         update(&mut app, key(KeyCode::Char('C')));
         assert!(app.price_alerts.is_empty());
+        assert!(app
+            .current_status_text()
+            .contains("Cleared all price alerts (2)"));
+    }
+
+    #[test]
+    fn watchlist_uppercase_c_with_confirmation_clears_all_alerts() {
+        let mut app = watchlist_app();
+        app.prefs.safety.confirm_watchlist_remove = true;
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                above: Some(200.0),
+                ..Default::default()
+            },
+        );
+        app.price_alerts.insert(
+            "MSFT".into(),
+            crate::types::PriceAlert {
+                below: Some(300.0),
+                ..Default::default()
+            },
+        );
+        assert_eq!(app.price_alerts.len(), 2);
+
+        // 1. Press Shift-C -> opens Modal::Confirm
+        update(&mut app, key(KeyCode::Char('C')));
+        assert_eq!(app.price_alerts.len(), 2); // not cleared yet
+        assert!(matches!(app.modal, Some(Modal::Confirm { .. })));
+
+        // 2. Press 'y' inside the modal to confirm -> clears alerts
+        update(&mut app, key(KeyCode::Char('y')));
+        assert!(app.price_alerts.is_empty());
+        assert!(app.modal.is_none());
         assert!(app
             .current_status_text()
             .contains("Cleared all price alerts (2)"));
@@ -1340,6 +1404,8 @@ mod tests {
                 ..Default::default()
             },
         );
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 199.0)));
+        app.status_queue.clear();
         update(&mut app, Event::MarketQuote(make_quote("AAPL", 201.0)));
         assert!(
             app.current_status_text().contains("above"),
@@ -1384,6 +1450,8 @@ mod tests {
                 ..Default::default()
             },
         );
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 199.0)));
+        app.status_queue.clear();
         update(&mut app, Event::MarketQuote(make_quote("AAPL", 201.0)));
         let first_status = app.current_status_text().to_string();
         // Second tick still above threshold — should NOT fire again.
@@ -1432,6 +1500,8 @@ mod tests {
                 ..Default::default()
             },
         );
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 151.0)));
+        app.status_queue.clear();
         update(&mut app, Event::MarketQuote(make_quote("AAPL", 149.0)));
         assert!(
             app.current_status_text().contains("below"),
@@ -1459,6 +1529,8 @@ mod tests {
                 ..Default::default()
             },
         );
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 199.0)));
+        app.status_queue.clear();
         // Ask=201, bid=199 → mid = 200.0; exactly at threshold → fires.
         let q = crate::types::Quote {
             symbol: "AAPL".into(),
@@ -1470,6 +1542,59 @@ mod tests {
         assert!(
             app.price_alerts["AAPL"].above_triggered,
             "mid-price at threshold should trigger alert"
+        );
+    }
+
+    #[test]
+    fn alert_uses_bid_price_when_only_bid_present() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                above: Some(200.0),
+                ..Default::default()
+            },
+        );
+        update(&mut app, Event::MarketQuote(make_quote("AAPL", 199.0)));
+        app.status_queue.clear();
+        let q = crate::types::Quote {
+            symbol: "AAPL".into(),
+            ap: None,
+            bp: Some(205.0),
+            ..Default::default()
+        };
+        update(&mut app, Event::MarketQuote(q));
+        assert!(
+            app.price_alerts["AAPL"].above_triggered,
+            "bid price should trigger alert if ask is missing"
+        );
+    }
+
+    #[test]
+    fn alert_skipped_when_quote_has_zero_prices() {
+        let (mut app, _rx) = make_app_with_cmd();
+        app.price_alerts.insert(
+            "AAPL".into(),
+            crate::types::PriceAlert {
+                above: Some(200.0),
+                below: Some(100.0),
+                ..Default::default()
+            },
+        );
+        let q = crate::types::Quote {
+            symbol: "AAPL".into(),
+            ap: Some(0.0),
+            bp: Some(0.0),
+            ..Default::default()
+        };
+        update(&mut app, Event::MarketQuote(q));
+        assert!(
+            !app.price_alerts["AAPL"].above_triggered,
+            "0.0 price should be filtered out and not trigger above alert"
+        );
+        assert!(
+            !app.price_alerts["AAPL"].below_triggered,
+            "0.0 price should be filtered out and not trigger below alert"
         );
     }
 

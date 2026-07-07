@@ -680,7 +680,7 @@ fn render_ohlcv_section(
             (None, Some(b)) => Some(b),
             _ => None,
         })
-        .or_else(|| daily.map(|b| b.c).filter(|&v| v > 0.0));
+        .or_else(|| clean(daily.map(|b| b.c)));
 
     let change_pct: Option<f64> = price.zip(prev.map(|b| b.c)).map(|(p, pc)| {
         if pc != 0.0 {
