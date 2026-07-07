@@ -411,8 +411,12 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                 format!("Cancelling {}…", &id[..id.len().min(8)]),
                             );
                         }
-                        ConfirmAction::DiscardPrefs(_) => {
-                            app.push_transient_status("Preferences discarded");
+                        ConfirmAction::ClearAllAlerts => {
+                            let count = app.price_alerts.len();
+                            app.price_alerts.clear();
+                            app.push_transient_status(format!(
+                                "Cleared all price alerts ({count})"
+                            ));
                         }
                     }
                     app.modal = None;

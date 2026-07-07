@@ -304,18 +304,10 @@ fn load_one_entry(user: &str) -> Result<Option<String>, KeychainStatus> {
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn offer_keychain_save(prefix: &str, key: &str, secret: &str) {
     eprint!("Store credentials in OS keychain for future logins? [Y/n]: ");
-    #[cfg(target_os = "windows")]
     let answer = match rpassword::read_password() {
         Ok(ans) => ans,
         Err(_) => return,
     };
-
-    #[cfg(not(target_os = "windows"))]
-    let mut answer = String::new();
-    #[cfg(not(target_os = "windows"))]
-    if io::stdin().read_line(&mut answer).is_err() {
-        return;
-    }
     if !(answer.trim().is_empty() || answer.trim().eq_ignore_ascii_case("y")) {
         return;
     }

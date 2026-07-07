@@ -57,9 +57,17 @@ pub(crate) fn handle_watchlist_key(app: &mut App, key: crossterm::event::KeyEven
         }
         // 'C' (uppercase) — clear all price alerts.
         KeyCode::Char('C') => {
-            let count = app.price_alerts.len();
-            app.price_alerts.clear();
-            app.push_transient_status(format!("Cleared all price alerts ({count})"));
+            if app.prefs.safety.confirm_watchlist_remove {
+                app.modal = Some(Modal::Confirm {
+                    message: format!("Clear all {} price alerts?", app.price_alerts.len()),
+                    action: crate::app::ConfirmAction::ClearAllAlerts,
+                    confirmed: false,
+                });
+            } else {
+                let count = app.price_alerts.len();
+                app.price_alerts.clear();
+                app.push_transient_status(format!("Cleared all price alerts ({count})"));
+            }
         }
         KeyCode::Char('d') => {
             if let (Some(symbol), Some(wl)) =

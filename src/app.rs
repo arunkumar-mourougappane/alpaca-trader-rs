@@ -605,8 +605,7 @@ impl PrefsState {
 #[derive(Debug, Clone)]
 pub enum ConfirmAction {
     CancelOrder(String),
-    /// User pressed Esc on dirty preferences; stashes the draft so 'n' can restore it.
-    DiscardPrefs(Box<PrefsState>),
+    ClearAllAlerts,
 }
 
 /// Focusable input field in the [`Modal::SetAlert`] dialog.
@@ -1200,8 +1199,8 @@ impl App {
                 let price = self
                     .quotes
                     .get(&p.symbol)
-                    .and_then(|q| q.ap.or(q.bp))
-                    .or_else(|| p.current_price.parse::<f64>().ok())?;
+                    .and_then(|q| q.ap.or(q.bp).filter(|&v| v > 0.0))
+                    .or_else(|| p.current_price.parse::<f64>().ok().filter(|&v| v > 0.0))?;
                 Some(qty * price)
             })
             .sum();
@@ -2301,5 +2300,53 @@ mod tests {
         );
         let c = StatusMessage::persistent("other");
         assert!(a != c);
+    }
+
+    #[test]
+    fn test_push_equity_from_quotes_filters_zero_prices() {
+        use crate::types::Quote;
+        let mut app = make_test_app();
+        app.equity_range = EquityRange::OneDay;
+
+        // Set up cash
+        app.account = Some(crate::types::AccountInfo {
+            cash: "1000.00".to_string(),
+            ..Default::default()
+        });
+
+        // Set up positions
+        app.positions = vec![
+            make_position_with_price("AAPL", "10", "150.00"),
+            make_position_with_price("TSLA", "5", "250.00"),
+        ];
+
+        // 1. Zero/invalid quotes injected
+        app.quotes.insert(
+            "AAPL".to_string(),
+            Quote {
+                symbol: "AAPL".to_string(),
+                ap: Some(0.0),
+                bp: Some(0.0),
+                ..Default::default()
+            },
+        );
+        app.quotes.insert(
+            "TSLA".to_string(),
+            Quote {
+                symbol: "TSLA".to_string(),
+                ap: Some(300.0),
+                bp: None,
+                ..Default::default()
+            },
+        );
+
+        app.push_equity_from_quotes();
+
+        // Cash: 1000.0
+        // AAPL: filters out quote price (0.0) -> falls back to current_price (150.0) * 10 = 1500.0
+        // TSLA: quote price is valid (300.0) * 5 = 1500.0
+        // Total equity = 1000.0 + 1500.0 + 1500.0 = 4000.0
+        // Expected value in cents: 400000
+        assert_eq!(app.equity_history.last(), Some(&400000));
     }
 }
