@@ -418,6 +418,9 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                                 "Cleared all price alerts ({count})"
                             ));
                         }
+                        ConfirmAction::DiscardPrefs(_) => {
+                            app.push_transient_status("Preferences discarded");
+                        }
                     }
                     app.modal = None;
                     return;
@@ -432,6 +435,7 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
                 if confirmed {
                     match &action {
                         ConfirmAction::CancelOrder(_) => {}
+                        ConfirmAction::ClearAllAlerts => {}
                         ConfirmAction::DiscardPrefs(_) => {
                             app.push_transient_status("Preferences discarded");
                         }
@@ -1041,10 +1045,8 @@ fn activate_prefs_field(state: &mut PrefsState) {
 /// Apply a confirmed dropdown selection to the draft prefs.
 fn apply_dropdown_selection(state: &mut PrefsState, selected: &str) {
     match state.section {
-        PrefsSection::App => {
-            if state.field_index == 0 {
-                state.draft.app.default_env = selected.to_string();
-            }
+        PrefsSection::App if state.field_index == 0 => {
+            state.draft.app.default_env = selected.to_string();
         }
         PrefsSection::Ui => match state.field_index {
             0 => state.draft.ui.theme = selected.to_string(),
@@ -1067,12 +1069,10 @@ fn apply_dropdown_selection(state: &mut PrefsState, selected: &str) {
 /// Apply a confirmed text-edit buffer to the draft prefs.
 fn apply_text_edit(state: &mut PrefsState, buf: &str) {
     match state.section {
-        PrefsSection::App => {
-            if state.field_index == 1 {
-                if let Ok(v) = buf.parse::<u64>() {
-                    // Floor at 100 ms; 0 would cause infinite-loop polling.
-                    state.draft.app.refresh_interval_ms = v.max(100);
-                }
+        PrefsSection::App if state.field_index == 1 => {
+            if let Ok(v) = buf.parse::<u64>() {
+                // Floor at 100 ms; 0 would cause infinite-loop polling.
+                state.draft.app.refresh_interval_ms = v.max(100);
             }
         }
         PrefsSection::Stream => match state.field_index {
