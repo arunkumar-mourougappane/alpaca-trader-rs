@@ -2,14 +2,14 @@
 
 Test coverage strategy, mock patterns, crate rationale, and test case inventory for `alpaca-trader-rs`.
 
-**Current state: 800 tests implemented and passing** (`cargo test`).
+**Current state: 1254 tests implemented and passing** (`cargo test`).
 
 | Binary | Count | Scope |
 |---|---|---|
-| `lib` (unit + UI) | 670 | `types`, `config`, `app`, `update`, `input/*`, `ui/*` — state logic, keyboard dispatch, render coverage |
-| `bin` (integration) | 100 | `AlpacaClient` — all HTTP methods via wiremock |
-| `bin` (doc tests) | 29 | Inline `# Example` blocks in public API docs |
-| `bin` (smoke) | 1 | Basic smoke test |
+| `lib` (`src/lib.rs`) | 134 | `types`, `config`, `stream`, `prefs`, `logging` — library-level unit and integration tests |
+| `bin` (`src/main.rs`) | 1090 | `app`, `update`, `input/*`, `ui/*`, `handlers/*` — app state logic, keyboard dispatch, render coverage |
+| `tests/client_tests.rs` (integration) | 29 | `AlpacaClient` — all HTTP methods via wiremock |
+| Doc tests | 1 | Inline `# Example` blocks in public API docs |
 
 ---
 

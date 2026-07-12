@@ -27,13 +27,8 @@ Add a new panel (tab `5`) showing all closed orders with per-trade P&L, filterab
 
 ---
 
-### Price Alerts / Triggers
-Allow the user to set a price threshold for any symbol. When the live quote crosses the threshold the TUI flashes a notification and rings the terminal bell.
-
-- **Storage**: in-memory `HashMap<Symbol, AlertThreshold>` (persisted to config file when #61 lands)
-- **Trigger**: evaluated in the market stream handler on each quote tick
-- **UI**: `A` key in Watchlist panel → "Set Alert" modal; active alerts shown with `🔔` marker in the watchlist row
-- **Files**: `src/app.rs`, `src/stream/`, `src/ui/watchlist.rs`, new `src/input/alerts.rs`
+### ~~Price Alerts / Triggers~~ — ✅ Implemented (v0.8.0, #156, #178, closes #101)
+Users can set an above/below price threshold for any watchlist symbol; a crossing quote flashes the status bar and rings the terminal bell. Alerts (including whether they've already fired) persist to `config.toml` across restarts, and `Shift-C` bulk-clears all alerts. See `docs/ui-mockups.md` (Panel 2 — Watchlist) for the current UI.
 
 ---
 
@@ -127,3 +122,15 @@ Filter the full universe of tradeable symbols by criteria (price range, volume, 
 | [#60](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/60) | `--dry-run` flag to simulate order submissions | ✅ Implemented |
 | [#61](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/61) | Persist user preferences to `~/.config/alpaca-trader/config.toml` | ✅ Implemented |
 | [#62](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/62) | Theme switching (default / dark / high-contrast) via `T` key | ✅ Implemented |
+| [#76](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/76) | Distinguish stream reconnecting from permanently offline in header | ✅ Implemented (v0.8.0, #149) |
+| [#94](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/94) | Extended order types: Stop, Stop-Limit, Trailing Stop, Extended Hours | ✅ Implemented (v0.8.0, #155) |
+| [#101](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/101) | Watchlist price alerts (threshold notification + bell) | ✅ Implemented (v0.8.0, #156, #178) |
+| [#102](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/102) | Bracket order support (take-profit + stop-loss legs) | ✅ Implemented (v0.8.0, #160) |
+| [#146](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/146) | Intraday chart: hardcoded `16:00` x-axis label misleading mid-session | ✅ Implemented (v0.8.0, #161) |
+| [#147](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/147) | Configurable chart marker style | ✅ Implemented (v0.8.0, #168) |
+| [#148](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/148) | Unify Symbol Detail / Position Detail modal layout | ✅ Implemented (v0.8.0, #171) |
+| [#162](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/162) | Switch from MIT OR Apache-2.0 dual license to MIT only | ✅ Implemented (v0.8.0) |
+| [#163](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/163) | `.env` loading should work in debug builds without a feature flag | ✅ Implemented (v0.8.0) |
+| [#169](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/169) | In-app Preferences modal with Credentials management | ✅ Implemented (v0.8.0, #170) |
+| [#172](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/172) | Library: multi-day historical OHLCV bars with pagination | ✅ Implemented (v0.8.0, #176) |
+| [#173](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/issues/173) | Library: fetch a single order by ID | ✅ Implemented (v0.8.0, #177) |

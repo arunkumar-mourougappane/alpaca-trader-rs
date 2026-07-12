@@ -7,6 +7,52 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.8.0] — 2026-07-12
+
+Adds bracket order support, extended order types (Stop / Stop-Limit / Trailing Stop / Extended Hours), watchlist price alerts with persistence, an in-app Preferences modal with keychain-backed Credentials management, a configurable chart marker style, and a three-state stream reconnect indicator. Fixes several zero-price display bugs during closed-market hours, switches to an MIT-only license, and changes `.env` loading to debug builds only. Test count grows from **800 → 1254**.
+
+### Added
+
+#### Orders
+- **Bracket order support** (`src/app.rs`, `src/handlers/commands.rs`, `src/input/modal.rs`, `src/ui/modals.rs`, `src/input/validation.rs`) — order entry modal gains a Bracket checkbox (Market/Limit orders only) that submits entry + take-profit + stop-loss legs atomically via `order_class=bracket`; full directional price validation. (#160, closes #102)
+- **Extended order types** (`src/app.rs`, `src/types.rs`, `src/commands.rs`) — Stop, Stop-Limit, and Trailing Stop (price or percent) order types, plus an Extended Hours flag, replacing the old binary Market/Limit toggle. (#155, closes #94)
+
+#### Watchlist & Alerts
+- **Price threshold alerts** (`src/app.rs`, `src/stream/`, `src/ui/watchlist.rs`, `src/input/watchlist.rs`) — set an above/below price threshold per watchlist symbol; a live quote crossing the threshold flashes the status bar and rings the terminal bell. (#156, #178, closes #101)
+- **Alert persistence** (`src/prefs.rs`, `src/types.rs`) — alerts (including triggered state, so a restart doesn't re-fire an already-acknowledged breach) round-trip through the `[price_alerts]` section of `config.toml`, including symbols with dotted tickers (e.g. `BRK.B`). (#178)
+- **`Shift-C` bulk-clear** (`src/input/watchlist.rs`) — clears all configured alerts at once, gated behind `confirm_watchlist_remove` with a confirmation modal. (#178)
+
+#### Preferences
+- **In-app Preferences modal** (`P` key) (`src/app.rs`, `src/ui/modals.rs`, `src/input/modal.rs`) — edit App, UI, Stream, Notifications, Safety, Proxy, and Credentials sections live; `Ctrl-S` saves and applies immediately. (#170, closes #169)
+- **Credentials section** (`src/credentials.rs`) — manage live and paper Alpaca API key/secret pairs independently from within the app, writing to the OS keychain (macOS Keychain / Windows Credential Store / Linux keyutils). (#170)
+- **Configurable chart marker style** (`src/prefs.rs`) — `chart_marker` preference (`braille` / `dot` / `block` / `bar` / `half_block`) applied to all chart widgets. (#168, closes #147)
+
+#### Charts
+- **Dynamic intraday chart labels** (`src/ui/account.rs`, `src/ui/modals.rs`) — the X-axis end label now reflects the time of the last received bar instead of a hardcoded `"16:00"`; Y-axis min/max price labels added so the price range is readable without the crosshair tooltip. (#161, closes #146)
+
+#### Connectivity
+- **Stream reconnect indicator** (`src/events.rs`, `src/stream/`, `src/ui/dashboard.rs`) — dashboard header differentiates initial loading, active reconnection (with attempt count), and permanent offline states per stream, instead of a single ambiguous warning badge. (#149, closes #76)
+
+#### Library
+- **`AlpacaClient::get_historical_bars`** (`src/client.rs`) — paginated multi-day historical OHLCV bars. (#176, closes #172)
+- **`AlpacaClient::get_order`** (`src/client.rs`) — fetch a single order by ID for efficient fill polling. (#177, closes #173)
+- **`AlpacaClient::get_asset`, `replace_watchlist`, `get_watchlist_by_name`** (`src/client.rs`) — additional REST client coverage. (#150)
+
+### Changed
+- **License: MIT-only** — dropped the Apache-2.0 dual-license option; `Cargo.toml`, `LICENSE.md`, `README.md`, `CONTRIBUTING.md`, and `docs/licensing.md` updated accordingly, `LICENSE-APACHE` removed. (#162)
+- **`.env` loading is debug-build only** (`src/main.rs`) — `#[cfg(debug_assertions)]` replaces the `dev-env` feature flag, so `.env` loads transparently in `cargo build` without extra flags; release builds rely on environment variables, OS keychain, or the interactive prompt only. (#163)
+- **Unified Symbol Detail / Position Detail modal layout** (`src/ui/modals.rs`) — both modals now share a single `render_detail_modal` implementation and layout, giving Position Detail feature parity with Symbol Detail (OHLCV row, crosshair, asset flags) and vice versa (position summary, open orders pane). (#171, closes #148)
+
+### Fixed
+- **Zero prices during closed-market hours** (`src/app.rs`, `src/ui/positions.rs`, `src/ui/modals.rs`) — watchlist, positions, equity chart, and symbol/position detail modals now filter out non-positive live quotes and fall back to the last known REST price instead of showing `$0.00` or a false equity cliff. (#178)
+- **Windows double-input on key release** (`src/main.rs`) — Crossterm key-release events are now ignored, fixing duplicate keystrokes on Windows terminals. (#178)
+- **Windows keychain prompt stdin hang** (`src/credentials.rs`) — `rpassword::read_password()` used uniformly (not split by `#[cfg(target_os = "windows")]`) for the non-echoed y/n keychain-save prompt. (#178)
+- **Proxy config no longer erased on exit** (`src/prefs.rs`) — `to_toml_string()` now round-trips `[proxy]` `http`/`socks5`/`no_proxy` fields instead of emitting a hardcoded comment template that a later unconditional `write_to` call would silently overwrite.
+
+[0.8.0]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.7.1...v0.8.0
+
+---
+
 ## [0.7.1] — 2026-05-22
 
 Patch release fixing TUI sluggishness during market hours. No new features or breaking changes.

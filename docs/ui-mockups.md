@@ -77,8 +77,9 @@ Every screen shares this outer chrome:
 │  GLW     Corning Incorporated           $47.18    -0.18%       3.2M         │
 │  QCOM    QUALCOMM                      $168.40    +0.72%       6.8M         │
 │  TSM     Taiwan Semiconductor          $182.15    +1.15%       7.3M         │
+│▶ HOOD 🔔 Robinhood Markets              $28.63    +3.41%       8.9M         │
 │                                                                              │
-│ a:Add  d:Remove  Enter:Detail  /:Search                                     │
+│ a:Add  d:Remove  Enter:Detail  /:Search  A:Alert  Shift-C:Clear Alerts      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,6 +87,10 @@ Every screen shares this outer chrome:
 - Price and Change: green if positive, red if negative
 - Prices update live from WebSocket `Event::MarketQuote`
 - `/` opens an inline search bar above the table header that filters rows by symbol as you type
+- `🔔` marker shown next to a symbol with an active price alert (above and/or below threshold configured)
+- `A` opens the **Set Alert** modal for the selected symbol (above / below price threshold); when an alert threshold is crossed, the status bar flashes and the terminal bell rings
+- `Shift-C` bulk-clears all configured alerts; gated behind a confirmation modal when `confirm_watchlist_remove` is enabled
+- Alerts (including whether they've already fired) persist to `config.toml` across restarts
 
 ---
 
@@ -150,8 +155,15 @@ Triggered by `o` from any panel. Pre-fills Symbol if a row is selected.
 ║  Symbol  [ AMD            ]              ║
 ║  Side    ( ● BUY )  ( ○ SELL )          ║
 ║  Type    [ LIMIT  ▾       ]              ║
+║          (Market/Limit/Stop/StopLimit/   ║
+║           TrailingStop)                  ║
 ║  Qty     [ 10             ]              ║
 ║  Price   [ 141.00         ]  (limit only)║
+║  Extended Hours  [ ]                     ║
+║  Bracket         [x]  (Market/Limit only)║
+║  Take Profit $   [ 150.00       ]        ║
+║  Stop Loss $     [ 135.00       ]        ║
+║  Stop Loss Limit $ [            ] (opt.) ║
 ║                                          ║
 ║  ─────────────────────────────────────   ║
 ║  Est. Total    $1,410.00                 ║
@@ -165,16 +177,20 @@ Triggered by `o` from any panel. Pre-fills Symbol if a row is selected.
 
 **Behavior:**
 - Price field is hidden / greyed when Type = MARKET
+- Stop Price / Trail Amount + Trail Mode (Price/Percent) rows appear for Stop, Stop-Limit, and Trailing Stop types respectively
+- Extended Hours toggle is only valid for Limit + Day TIF combinations; validation blocks submission otherwise
+- Bracket checkbox appears only for Market/Limit order types and BUY/SELL (not SellShort) side; toggling it reveals Take Profit $ and Stop Loss $ fields, plus an optional Stop Loss Limit $ (blank = market SL leg, filled = stop-limit SL leg)
+- Bracket validation enforces price direction (e.g. for a buy: TP above SL and above the limit entry price; SL below the limit entry price); a validation error keeps the modal open
 - Est. Total recalculates as Qty and Price change
 - Buying Power indicator: green `✓ sufficient` / red `✗ insufficient`
 - Submit button is disabled (dimmed) when buying power is insufficient or required fields are empty
-- `Tab` / `Shift-Tab` moves focus between fields; focused field has a highlighted border
+- `Tab` / `Shift-Tab` moves focus between fields (skipping hidden ones); focused field has a highlighted border
 
 ---
 
-## Modal — Symbol Detail
+## Modal — Symbol Detail / Position Detail
 
-Triggered by `Enter` on a **Watchlist** row.
+Both modals share a single unified layout (`render_detail_modal`, 60 × 92% of the terminal). **Symbol Detail** is triggered by `Enter` on a **Watchlist** row; **Position Detail** by `Enter` on a **Positions** row. Position Detail additionally shows a position-summary + open-orders section when the symbol is held; Symbol Detail shows it only if the searched symbol happens to be held too.
 
 ```
 ╔═ AMD — Advanced Micro Devices ═══════════╗
@@ -184,49 +200,32 @@ Triggered by `Enter` on a **Watchlist** row.
 ║  Low     $140.85    Volume  28.7M        ║
 ║                                          ║
 ║  ── Intraday ──────────────────────────  ║
+║  $143.20 ┐                               ║
 ║  ⠀⠀⠀⢀⣀⠤⠤⢄⡀⠀⠀⠀⣀⡠⠔⠒⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ║
 ║  ⡠⠒⠉⠀⠀⠀⠀⠀⠈⠑⠒⠊⠀⠀⠀⠀⠀⠀⠀⠙⠒⠤⣀⣀⡠⠔⠉⠁⠀  ║
-║  09:30                             16:00 ║
+║  $140.85 ┘                               ║
+║  09:30                             11:47 ║
 ║                                          ║
 ║  Exchange    NASDAQ   Class    us_equity ║
 ║  Tradable    ✓        Shortable ✓        ║
 ║  Fractionable ✓       ETB      ✓        ║
+║                                          ║
+║  ── Position (if held) ──────────────    ║
+║  Qty 50  Avg Cost $138.20  P&L +$232.50  ║
+║  ── Open Orders ──────────────────────   ║
+║  a3f2… BUY 10 LIMIT $141.00 PENDING      ║
 ║                                          ║
 ║  o:Buy  s:Sell  w:Toggle Watchlist  Esc  ║
 ╚══════════════════════════════════════════╝
 ```
 
 - Price and Change update live from WebSocket while modal is open
-- `w` adds/removes symbol from the watchlist (toggles)
+- `w` adds/removes symbol from the watchlist (toggles); `s` opens Order Entry pre-filled SELL (Position Detail and, since the layout unification, Symbol Detail too)
 - Asset flags (`Tradable`, `Shortable`, `ETB`, `Fractionable`) sourced from watchlist asset data
-- Intraday chart: rendered as a **no-fill line chart** using `ratatui::widgets::Chart` with `GraphType::Line` and `Marker::Braille`; x-axis bounds = `[0.0, total_bars]`, y-axis auto-scaled to data min/max
-
----
-
-## Modal — Position Detail
-
-Triggered by `Enter` on a **Positions** row.
-
-```
-╔═ AMD — Position Detail ══════════════════╗
-║                                          ║
-║  Qty       50       Avg Cost  $138.20    ║
-║  Cur Price $142.85  Mkt Value $7,142.50  ║
-║  Unrealized P&L     +$232.50  (+3.36%)   ║
-║                                          ║
-║  ── Intraday ──────────────────────────  ║
-║  ⠀⠀⠀⢀⣀⠤⠤⢄⡀⠀⠀⠀⣀⡠⠔⠒⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀  ║
-║  ⡠⠒⠉⠀⠀⠀⠀⠀⠈⠑⠒⠊⠀⠀⠀⠀⠀⠀⠀⠀⠙⠒⠤⣀⣀⡠⠔⠉⠁⠀  ║
-║  09:30                             16:00 ║
-║                                          ║
-║  o:New Order                        Esc  ║
-╚══════════════════════════════════════════╝
-```
-
-- Distinct from **Symbol Detail** — shows held-position metrics (Qty, Avg Cost, Unrealized P&L) rather than asset metadata
-- Intraday chart fetched via `Command::FetchIntradayBars` on open; same `Chart` widget as Symbol Detail
-- `o` opens Order Entry pre-filled with the position's symbol (SELL side)
-- `Esc` dismisses; no `s`, `w` actions (those belong to Symbol Detail only)
+- Intraday chart: rendered as a **no-fill line chart** using `ratatui::widgets::Chart` with `GraphType::Line` and a configurable marker (`chart_marker` preference; braille by default)
+- **X-axis end label is dynamic** — reflects the timestamp of the last received bar (e.g. `11:47` mid-session) rather than always showing `16:00`; a full day's bars still show `16:00`
+- **Y-axis min/max price labels** — the chart's low/high price for the visible range is printed directly on the axis, so the price scale is readable without needing the crosshair
+- `←`/`→` moves a crosshair over the chart with a tooltip showing the date/time and price at that point (both modals, since the unification in #171)
 
 ---
 
@@ -251,21 +250,24 @@ Triggered by `?` from any context.
 ║  c    Cancel selected order              ║
 ║  a    Add symbol to watchlist            ║
 ║  d    Remove symbol from watchlist       ║
+║  A    Set price alert (Watchlist)        ║
+║  Shift-C  Clear all price alerts         ║
 ║  r    Force refresh                      ║
 ║  s/S  Cycle / toggle sort column/dir     ║
 ║  f    Filter orders by symbol            ║
 ║  p    Toggle equity range (1D/1W/1M/YTD) ║
 ║  Ctrl-F / /  Global symbol search        ║
 ║                                          ║
-║  ACCOUNT CHART                           ║
+║  ACCOUNT / DETAIL CHART                  ║
 ║  ←/h / →/l  Move crosshair              ║
 ║  Esc         Clear crosshair             ║
 ║                                          ║
 ║  GLOBAL                                  ║
 ║  q / Ctrl-C   Quit                       ║
 ║  T            Cycle theme                ║
+║  P            Open Preferences           ║
 ║  ?            This help screen           ║
-║  A            About this app             ║
+║  A            About this app (non-Watchlist)║
 ║                                          ║
 ║             Press any key to close       ║
 ╚══════════════════════════════════════════╝
@@ -280,7 +282,7 @@ Triggered by `A` (uppercase) from any context. Displays app metadata, author inf
 ```
 ╔═ About alpaca-trader-rs ══════════════════╗
 ║                                           ║
-║   alpaca-trader-rs  v0.6.0                ║
+║   alpaca-trader-rs  v0.8.0                ║
 ║                                           ║
 ║   Alpaca Markets TUI trading terminal     ║
 ║   and async REST client library.          ║
@@ -339,8 +341,9 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `q` / `Ctrl-C` | Quit |
 | `r` | Force REST re-poll |
 | `T` | Cycle theme (default → dark → high-contrast) |
+| `P` | Open Preferences modal |
 | `?` | Toggle help overlay |
-| `A` | Open About modal |
+| `A` (non-Watchlist) | Open About modal |
 | `Ctrl-F` / `/` (non-Watchlist) | Open global symbol search modal |
 | `Esc` | Close any open modal |
 
@@ -361,6 +364,8 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `a` | Open Add Symbol text input |
 | `d` | Remove selected symbol (confirmation prompt) |
 | `/` | Focus inline search bar; filters rows as you type |
+| `A` | Open Set Alert modal for the selected symbol (above/below price threshold) |
+| `Shift-C` | Clear all configured price alerts (confirmation prompt if `confirm_watchlist_remove` is enabled) |
 
 ### Positions Panel
 
@@ -401,21 +406,17 @@ All values are baked in at `cargo build` time — no runtime file I/O needed.
 | `Enter` | Advance to next field; submit when Submit button is focused |
 | `Esc` | Close modal without submitting |
 
-### Symbol Detail Modal (Watchlist)
+### Symbol Detail Modal (Watchlist) & Position Detail Modal (Positions)
+
+Since the layout unification (#171), both modals accept the same key set:
 
 | Key | Action |
 |-----|--------|
 | `o` | Open Order Entry pre-filled with symbol (BUY) |
 | `s` | Open Order Entry pre-filled with symbol (SELL) |
 | `w` | Toggle symbol in/out of the active watchlist |
-| `Esc` | Close modal |
-
-### Position Detail Modal (Positions)
-
-| Key | Action |
-|-----|--------|
-| `o` | Open Order Entry pre-filled with symbol (SELL) |
-| `Esc` | Close modal |
+| `←`/`→` | Move intraday chart crosshair |
+| `Esc` | Close modal (also clears any active crosshair) |
 
 ---
 
@@ -456,6 +457,7 @@ explicit save (`Ctrl-S` or `Enter` on the Save button).
 ║  │  Notifications  │  │                                          │   ║
 ║  │  Safety         │  │                                          │   ║
 ║  │  Proxy          │  │                                          │   ║
+║  │  Credentials    │  │                                          │   ║
 ║  └─────────────────┘  └──────────────────────────────────────── ┘   ║
 ║                                                                      ║
 ║  Tab:Next Section  ↑/↓:Move Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel ║
@@ -524,6 +526,32 @@ explicit save (`Ctrl-S` or `Enter` on the Save button).
 ║  Tab:Next Section  ↑/↓:Move Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
+
+### Credentials section
+
+```
+╔═ Preferences ════════════════════════════════════════════════════════╗
+║                                                                      ║
+║  ┌─ Sections ──────┐  ┌─ Credentials ──────────────────────────┐   ║
+║  │  App            │  │                                          │   ║
+║  │  UI             │  │  [LIVE]  APCA-API-KEY-ID    [ ●●●●●●●● ] │   ║
+║  │  Stream         │  │  [LIVE]  APCA-API-SECRET    [ ●●●●●●●● ] │   ║
+║  │  Notifications  │  │  [PAPER] APCA-API-KEY-ID    [ not set  ] │   ║
+║  │  Safety         │  │  [PAPER] APCA-API-SECRET    [ **‸       ] │   ║
+║  │  Proxy          │  │                                          │   ║
+║  │▶ Credentials    │  │                                          │   ║
+║  └─────────────────┘  └──────────────────────────────────────── ┘   ║
+║                                                                      ║
+║  Tab:Next Section  ↑/↓:Move Field  Enter:Edit  Ctrl-S:Save  Esc:Cancel ║
+╚══════════════════════════════════════════════════════════════════════╝
+```
+
+- Saved keychain values render as `●` (masked); a value being typed in the current edit session renders as `*`; an unset field shows `[ not set ]`
+- `[LIVE]` and `[PAPER]` key/secret pairs are validated independently on `Ctrl-S` — submitting a key without its matching secret (or vice versa) shows a red per-env error banner and keeps the modal open
+- Both env pairs can be updated in the same save; only the currently-active env's in-memory `AlpacaConfig` key/secret is synced immediately, the other is written to the keychain for use on next switch
+- Values are written via `credentials::save_to_keychain()` to the OS-native store (macOS Keychain / Windows Credential Store / Linux keyutils) — never persisted to `config.toml`
+
+---
 
 ### Unsaved changes indicator
 

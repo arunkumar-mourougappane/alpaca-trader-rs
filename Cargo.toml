@@ -1,9 +1,12 @@
 [package]
 name = "alpaca-trader-rs"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.88"
-authors = ["Arunkumar Mourougappane <amouroug.dev@gmail.com>"]
+authors = [
+    "Arunkumar Mourougappane <amouroug.dev@gmail.com>",
+    "Samyak Gangwal <sam.gangwal97@gmail.com>",
+]
 license = "MIT"
 description = "Alpaca Markets trading toolkit — async REST client library and interactive TUI trading terminal"
 repository = "https://github.com/arunkumar-mourougappane/alpaca-trader-rs"
