@@ -68,6 +68,11 @@ alpaca-trader-rs/
 │   ├── credentials.rs      # 4-tier credential resolution (env → keychain → prompt)
 │   ├── clipboard.rs        # Cross-platform clipboard write helper
 │   ├── logging.rs          # File + syslog tracing subscriber setup
+│   ├── handlers/
+│   │   ├── mod.rs          # Re-exports commands, input, rest handlers
+│   │   ├── rest.rs         # Background REST polling loop → Event channel
+│   │   ├── commands.rs     # Command → REST/WS side-effect dispatch (order submission, cancels, etc.)
+│   │   └── input.rs        # Terminal input stream → Event channel (crossterm EventStream)
 │   ├── input/
 │   │   ├── mod.rs          # Shared nav helper (j/k/g/G) and key() / ctrl() factories
 │   │   ├── modal.rs        # Key handler for all modal states

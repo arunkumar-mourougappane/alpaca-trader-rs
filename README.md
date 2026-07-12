@@ -42,9 +42,14 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 | Watchlist panel — Volume, Change%, live search | ✅ |
 | Positions panel — totals footer, column sorting, position detail modal | ✅ |
 | Orders panel — Open/Filled/Cancelled sub-tabs, column sorting, symbol filter | ✅ |
-| Order Entry modal — Side, Type, TIF dropdowns | ✅ |
-| Symbol Detail modal — OHLCV, intraday chart, watchlist toggle | ✅ |
+| Order Entry modal — Side, Type (Market/Limit/Stop/Stop-Limit/Trailing Stop), TIF, Extended Hours | ✅ |
+| Bracket orders — take-profit and stop-loss legs on Market/Limit orders | ✅ |
+| Watchlist price alerts — above/below threshold, status flash + terminal bell, persisted to disk | ✅ |
+| Symbol Detail / Position Detail modal — OHLCV, intraday chart, crosshair, asset flags, watchlist toggle | ✅ |
 | Global symbol search (Ctrl-F / `/`) | ✅ |
+| In-app Preferences modal (`P`) — App, UI, Stream, Notifications, Safety, Proxy, and Credentials sections | ✅ |
+| Configurable chart marker style (braille / dot / block / bar / half-block) | ✅ |
+| Stream status indicator — loading / reconnecting (with attempt count) / offline per stream | ✅ |
 | Help and About overlays | ✅ |
 | Mouse — row selection, double-click to open detail, click outside to dismiss | ✅ |
 | Runtime colour theme switching (`T`) | ✅ |
@@ -57,8 +62,9 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 |---|---|
 | Typed async REST client (`AlpacaClient`) | ✅ |
 | WebSocket market data + account/trade streaming | ✅ |
-| Live order submission and cancellation | ✅ |
-| Watchlist add / remove | ✅ |
+| Live order submission and cancellation, single-order lookup | ✅ |
+| Multi-day historical OHLCV bars (paginated) | ✅ |
+| Watchlist add / remove / replace, asset lookup | ✅ |
 
 ### Infrastructure
 
@@ -68,10 +74,11 @@ An Alpaca Markets trading toolkit for Rust — ships as both an **integratable l
 | `--dry-run` mode — simulate orders without sending to Alpaca | ✅ |
 | OS-native keychain credential storage | ✅ |
 | Interactive first-run credential prompt | ✅ |
+| `.env` loading in debug builds; release builds use env vars / keychain / prompt only | ✅ |
 | Persistent user preferences (TOML config file) | ✅ |
 | Windows, macOS, and Linux support | ✅ |
 | GitHub Actions CI, security audit, Codecov, release builds | ✅ |
-| 800 tests (unit + integration) | ✅ |
+| 1254 tests (unit + integration) | ✅ |
 
 ---
 
@@ -163,8 +170,9 @@ alpaca-trader --reset live    # remove live keychain entries
 | `/` · `Ctrl-F` | Search (watchlist filter on Watchlist tab; global search on all others) |
 | `s` / `S` | Cycle sort column / toggle direction (Positions & Orders) |
 | `f` | Symbol filter (Orders panel) |
+| `A` / `Shift-C` | Set price alert · clear all alerts (Watchlist panel) |
 | `←`/`→` · `p` | Chart crosshair · cycle range 1D/1W/1M/YTD (Account panel) |
-| `r` · `T` · `?`/`A` | Refresh · theme · Help/About |
+| `r` · `T` · `P` · `?` / `A` | Refresh · theme · Preferences · Help/About (`A` outside Watchlist) |
 | `Esc` | Dismiss modal / clear filter |
 | `q` / `Ctrl-C` | Quit |
 
