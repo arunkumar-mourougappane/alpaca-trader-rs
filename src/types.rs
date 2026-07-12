@@ -821,8 +821,9 @@ pub struct PortfolioHistory {
 /// An in-memory price alert for a single watchlist symbol.
 ///
 /// Both bounds are optional; a symbol can have an upper bound, a lower bound,
-/// or both simultaneously.  Alerts are session-only by default — they are not
-/// persisted to disk.
+/// or both simultaneously.  Alerts and their triggered state are persisted
+/// to disk so a restart doesn't re-fire a bell for a breach that was already
+/// acknowledged.
 ///
 /// The alert fires when a real-time quote crosses the threshold: the status bar
 /// flashes a message and the terminal bell (`\x07`) is written to stdout.
@@ -834,11 +835,13 @@ pub struct PriceAlert {
     /// Trigger when the ask or mid price falls **below** this threshold.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub below: Option<f64>,
-    /// Tracks whether the "above" alert has already fired this session,
-    /// so it doesn't re-trigger on every subsequent tick above the threshold.
-    #[serde(skip, default)]
+    /// Tracks whether the "above" alert has already fired, so it doesn't
+    /// re-trigger on every subsequent tick above the threshold (including
+    /// across restarts). Resets when the price retreats below the threshold.
+    #[serde(default)]
     pub above_triggered: bool,
-    /// Tracks whether the "below" alert has already fired this session.
-    #[serde(skip, default)]
+    /// Tracks whether the "below" alert has already fired. Resets when the
+    /// price retreats above the threshold.
+    #[serde(default)]
     pub below_triggered: bool,
 }

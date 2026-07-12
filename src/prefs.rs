@@ -401,6 +401,12 @@ confirm_watchlist_remove = {confirm_remove}
                         if let Some(below) = alert.below {
                             parts.push(format!("below = {below}"));
                         }
+                        if alert.above_triggered {
+                            parts.push("above_triggered = true".to_string());
+                        }
+                        if alert.below_triggered {
+                            parts.push("below_triggered = true".to_string());
+                        }
                         toml_str.push_str(&format!("\"{key}\" = {{ {} }}\n", parts.join(", ")));
                     }
                 }
@@ -691,7 +697,8 @@ chart_marker = "dot"
             crate::types::PriceAlert {
                 above: Some(185.0),
                 below: Some(170.0),
-                ..Default::default()
+                above_triggered: true,
+                below_triggered: false,
             },
         );
         alerts.insert(
@@ -699,7 +706,8 @@ chart_marker = "dot"
             crate::types::PriceAlert {
                 above: Some(250.5),
                 below: None,
-                ..Default::default()
+                above_triggered: false,
+                below_triggered: true,
             },
         );
         alerts.insert(
@@ -707,7 +715,8 @@ chart_marker = "dot"
             crate::types::PriceAlert {
                 above: Some(350.0),
                 below: Some(340.0),
-                ..Default::default()
+                above_triggered: true,
+                below_triggered: true,
             },
         );
         p.price_alerts = alerts;
