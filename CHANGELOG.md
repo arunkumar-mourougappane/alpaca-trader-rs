@@ -7,6 +7,22 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.8.1] — 2026-09-07
+
+Maintenance release. There are **no source changes** since v0.8.0 — `src/` and `tests/` are byte-identical. This release exists to ship a refreshed dependency tree and a CI configuration fix. No new features, no behaviour changes, no API changes.
+
+### Changed
+
+- **Dependency refresh** (`Cargo.toml`, `Cargo.lock`) — direct dependencies bumped: `anyhow` 1.0.103 → 1.0.104, `clap` 4.6.1 → 4.6.6, `futures` 0.3.32 → 0.3.34, `serde` 1.0.228 → 1.0.229, `serde_json` 1.0.150 → 1.0.151, `tokio` 1.52.3 → 1.53.1, `tokio-tungstenite` 0.29.0 → 0.30.0, `tokio-util` 0.7.18 → 0.7.19, `toml` 1.1.2 → 1.1.5. 186 packages change version in `Cargo.lock` in total; the locked package count drops from 453 to 450. `tokio-tungstenite` is used only inside `src/stream/` and does not appear in any public signature, so its major bump is not a breaking change for library consumers.
+
+### Internal
+
+- **Dependabot no longer proposes MSRV bumps** (`.github/dependabot.yml`) — the `dtolnay/rust-toolchain` ignore rule added in #49 used `versions: ["*"]`, which is not honoured as a range for the `github-actions` ecosystem. Dependabot kept opening PRs that repointed the MSRV job at the action's placeholder branches for unreleased Rust versions, failing CI with `could not download nonexistent rust version` (most recently 1.120 in #191). Omitting `versions` ignores every update for that action, keeping the MSRV job pinned to 1.88. (#194)
+
+[0.8.1]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.8.0...v0.8.1
+
+---
+
 ## [0.8.0] — 2026-07-12
 
 Adds bracket order support, extended order types (Stop / Stop-Limit / Trailing Stop / Extended Hours), watchlist price alerts with persistence, an in-app Preferences modal with keychain-backed Credentials management, a configurable chart marker style, and a three-state stream reconnect indicator. Fixes several zero-price display bugs during closed-market hours, switches to an MIT-only license, and changes `.env` loading to debug builds only. Test count grows from **800 → 1254**.
