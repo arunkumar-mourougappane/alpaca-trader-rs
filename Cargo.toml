@@ -56,7 +56,7 @@ arboard    = "3"
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender   = "0.2"
-dirs               = "6"
+dirs               = "7"
 
 # Platform-conditional keychain storage (no C-library dependency on any platform)
 [target.'cfg(target_os = "macos")'.dependencies]
