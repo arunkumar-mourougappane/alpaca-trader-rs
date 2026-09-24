@@ -6,7 +6,7 @@
 
 ## License Text
 
-- [LICENSE-MIT](../LICENSE-MIT) — MIT License
+- [LICENSE](../LICENSE) — full MIT License text
 
 ---
 
