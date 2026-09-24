@@ -98,7 +98,7 @@ alpaca-trader-rs/
 ├── docs/                   # Full documentation
 ├── .env.example
 ├── Cargo.toml
-├── LICENSE.md
+├── LICENSE
 └── README.md
 ```
 

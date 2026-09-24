@@ -6,7 +6,7 @@
 [![codecov](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/arunkumar-mourougappane/alpaca-trader-rs)
 [![Crates.io](https://img.shields.io/crates/v/alpaca-trader-rs.svg)](https://crates.io/crates/alpaca-trader-rs)
 ![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 An Alpaca Markets trading toolkit for Rust — ships as both an **integratable library** and a **standalone TUI trading app**.
 
@@ -250,7 +250,7 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 
 ## Licensing
 
-Licensed under the [MIT License](LICENSE-MIT).
+Licensed under the [MIT License](LICENSE).
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you shall be licensed under the MIT License, without any additional terms or conditions.
 
