@@ -1,19 +1,31 @@
-# Release Notes — v0.8.1
+# Release Notes — v0.8.2
 
-**Release date:** 2026-09-07
+**Release date:** 2026-09-24
 **MSRV:** Rust 1.88+ (unchanged)
-**Previous release:** [v0.8.0](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.8.0)
+**Previous release:** [v0.8.1](https://github.com/arunkumar-mourougappane/alpaca-trader-rs/releases/tag/v0.8.1)
 
 ---
 
 ## Overview
 
-v0.8.1 is a **maintenance release**. `src/` and `tests/` are byte-identical to v0.8.0 — there are no new features, no behaviour changes, and no bug fixes. The release ships two things:
+v0.8.2 is a **maintenance release**. `src/` and `tests/` are byte-identical to v0.8.1 — there are no new features, no behaviour changes, and no bug fixes in application code. The release ships two things:
 
-1. **A refreshed dependency tree** — nine direct dependencies and 186 packages overall move forward, most notably `tokio` 1.52.3 → 1.53.1 and `tokio-tungstenite` 0.29 → 0.30
-2. **A CI configuration fix** — Dependabot no longer proposes bumps that repoint the MSRV job at nonexistent Rust toolchains
+1. **A dependency refresh that closes a security advisory** — `rustls` moves to 0.23.45, clearing RUSTSEC-2026-0285, alongside routine bumps to `clap`, `dirs`, `reqwest`, and `toml`
+2. **A license file cleanup** — the two license files collapse into a single `LICENSE`
 
-If you are already on v0.8.0 and build from a published binary, there is nothing user-visible in this release. It matters mainly if you depend on `alpaca-trader-rs` as a library and want the newer transitive versions in your own lockfile.
+The advisory is the reason to take this release. Everything else is housekeeping.
+
+---
+
+## Security
+
+**RUSTSEC-2026-0285 — `rustls` 0.23.44 → 0.23.45** (medium, CVSS 5.3)
+
+`rustls` 0.23.44 incorrectly accepted TLS 1.3 handshake messages across encryption level boundaries. `cargo audit` flagged it against the v0.8.1 lockfile.
+
+`rustls` is transitive here — it arrives through `reqwest` directly and via `hyper-rustls`, `tokio-rustls`, and `rustls-platform-verifier` — so the fix is a lockfile bump with no `Cargo.toml` change and no code change. `cargo audit` reports no vulnerabilities against this release. (#201)
+
+If you depend on `alpaca-trader-rs` as a library, your own lockfile decides your `rustls` version; run `cargo update -p rustls` to pick up 0.23.45 regardless of which version of this crate you are on.
 
 ---
 
@@ -21,33 +33,30 @@ If you are already on v0.8.0 and build from a published binary, there is nothing
 
 Direct dependencies:
 
-| Crate | v0.8.0 | v0.8.1 |
-|---|---|---|
-| `anyhow` | 1.0.103 | 1.0.104 |
-| `clap` | 4.6.1 | 4.6.6 |
-| `futures` | 0.3.32 | 0.3.34 |
-| `serde` | 1.0.228 | 1.0.229 |
-| `serde_json` | 1.0.150 | 1.0.151 |
-| `tokio` | 1.52.3 | 1.53.1 |
-| `tokio-tungstenite` | 0.29.0 | 0.30.0 |
-| `tokio-util` | 0.7.18 | 0.7.19 |
-| `toml` | 1.1.2+spec-1.1.0 | 1.1.5+spec-1.1.0 |
+| Crate | v0.8.1 | v0.8.2 | PR |
+|---|---|---|---|
+| `clap` | 4.6.6 | 4.6.7 | #200 |
+| `dirs` | 6.0.0 | 7.0.0 | #197 |
+| `reqwest` | 0.13.4 | 0.13.5 | #198 |
+| `toml` | 1.1.5+spec-1.1.0 | 1.1.6+spec-1.1.0 | #199 |
 
-Across the whole lockfile, 186 packages change version, 8 are added and 16 are dropped, leaving 450 locked packages (down from 453). The largest transitive move is `aws-lc-sys` 0.40.0 → 0.45.0, which also drops the `wit-bindgen` / `wasm-encoder` build crates it no longer needs.
+Transitively, `rustls` 0.23.44 → 0.23.45 (above) and `base64` 0.23.1 enters the lockfile next to the existing 0.22.1 as a new `reqwest` dependency. The locked package count goes from 449 to 450.
 
-**On `tokio-tungstenite` 0.29 → 0.30:** this is a major version bump of a dependency, but it is used only inside `src/stream/account.rs` and `src/stream/market.rs` and does not appear in any public signature. Library consumers are unaffected — no type from `tokio_tungstenite` crosses the crate boundary.
+**On `dirs` 6 → 7:** the only breaking change in `dirs` 7.0.0 is `preference_dir` on Windows, which now resolves to `RoamingAppData` instead of `LocalAppData`. This crate does not call `preference_dir` — `src/prefs.rs` uses `config_dir` and `src/logging.rs` uses `home_dir` and `data_local_dir`. Config and log file locations are unchanged on every platform, and no migration is needed.
 
 ---
 
-## Internal
+## Licensing
 
-- **Dependabot MSRV ignore rule fixed** (`.github/dependabot.yml`) — the rule added in #49 used `versions: ["*"]`, which is not honoured as a range for the `github-actions` ecosystem. Dependabot therefore kept opening PRs that repointed the MSRV job at `dtolnay/rust-toolchain`'s placeholder branches for unreleased Rust versions, failing CI with `could not download nonexistent rust version` (most recently 1.120 in #191). Dropping `versions` makes the rule ignore every update for that action, keeping the MSRV job pinned to 1.88. (#194)
+The project carried two license files: `LICENSE-MIT` with the license text and `LICENSE.md`, a short pointer to it. They are now a single `LICENSE` — the conventional name GitHub, crates.io, and cargo packaging look for.
+
+The license itself does not change: the text is the standard unmodified MIT License, and `Cargo.toml` still declares `license = "MIT"`. Links in `README.md`, `docs/licensing.md`, and `docs/architecture.md` were updated to the new path.
 
 ---
 
 ## Tests
 
-**1254 tests total** — unchanged from v0.8.0, all passing against the refreshed lockfile:
+**1254 tests total** — unchanged from v0.8.1, all passing against the refreshed lockfile:
 
 | Scope | Count |
 |---|---|
@@ -60,7 +69,7 @@ Across the whole lockfile, 186 packages change version, 8 are added and 16 are d
 
 ## Upgrade Notes
 
-No action required. `config.toml`, credentials, and stored alerts are read unchanged; there are no new or renamed configuration keys, and no API surface has changed since v0.8.0.
+No action required. `config.toml`, credentials, and stored alerts are read unchanged; there are no new or renamed configuration keys, and no API surface has changed since v0.8.1.
 
 ---
 

@@ -7,6 +7,23 @@ This project does not use semantic versioning — releases are tagged by date.
 
 ---
 
+## [0.8.2] — 2026-09-24
+
+Maintenance release. There are **no source changes** since v0.8.1 — `src/` and `tests/` are byte-identical. This release ships a refreshed dependency tree that includes a security fix for a transitive `rustls` advisory, and consolidates the project's two license files into a single `LICENSE`.
+
+### Security
+
+- **`rustls` 0.23.44 → 0.23.45** (`Cargo.lock`) — fixes [RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285) (medium, 5.3): TLS 1.3 handshake messages were incorrectly accepted across encryption level boundaries. `rustls` is a transitive dependency reached through `reqwest` (directly and via `hyper-rustls`, `tokio-rustls`, `rustls-platform-verifier`), so the fix is a lockfile bump with no `Cargo.toml` change. `cargo audit` reports no vulnerabilities again. (#201)
+
+### Changed
+
+- **Dependency refresh** (`Cargo.toml`, `Cargo.lock`) — direct dependencies bumped: `clap` 4.6.6 → 4.6.7 (#200), `dirs` 6.0.0 → 7.0.0 (#197), `reqwest` 0.13.4 → 0.13.5 (#198), `toml` 1.1.5 → 1.1.6 (#199). `base64` 0.23.1 enters the lockfile next to the existing 0.22.1 as a new `reqwest` dependency, taking the locked package count from 449 to 450. The `dirs` 7.0.0 major bump changes only `preference_dir` on Windows; this crate calls `home_dir`, `data_local_dir`, and `config_dir`, so config and log locations are unchanged on every platform.
+- **Single `LICENSE` file** — `LICENSE-MIT` renamed to `LICENSE`, the conventional name GitHub, crates.io, and cargo packaging look for, and the redundant `LICENSE.md` pointer file removed. The text is the standard unmodified MIT License and `Cargo.toml` still declares `license = "MIT"`; links in `README.md`, `docs/licensing.md`, and `docs/architecture.md` updated to match.
+
+[0.8.2]: https://github.com/arunkumar-mourougappane/alpaca-trader-rs/compare/v0.8.1...v0.8.2
+
+---
+
 ## [0.8.1] — 2026-09-07
 
 Maintenance release. There are **no source changes** since v0.8.0 — `src/` and `tests/` are byte-identical. This release exists to ship a refreshed dependency tree and a CI configuration fix. No new features, no behaviour changes, no API changes.
