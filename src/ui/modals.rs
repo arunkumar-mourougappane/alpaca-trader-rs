@@ -2850,6 +2850,121 @@ mod tests {
         );
     }
 
+    // ── render_order_entry bracket section ────────────────────────────────────
+
+    /// Like `render_order_entry_to_string` but tall enough for the bracket legs.
+    fn render_order_entry_tall(app: &mut App, state: crate::app::OrderEntryState) -> String {
+        let backend = TestBackend::new(120, 60);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                let modal = Modal::OrderEntry(state);
+                render(frame, area, &modal, app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area().height)
+            .map(|row| {
+                (0..buffer.area().width)
+                    .map(|col| {
+                        buffer
+                            .cell(ratatui::layout::Position { x: col, y: row })
+                            .map(|c| c.symbol().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn render_order_entry_limit_shows_unchecked_bracket_without_legs() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Limit;
+        let output = render_order_entry_tall(&mut app, state);
+        assert!(output.contains("Bracket order (TP + SL legs)"), "{output}");
+        assert!(output.contains("[ ]"), "bracket should be unchecked");
+        assert!(
+            !output.contains("SL Lmt"),
+            "legs hidden when bracket is off"
+        );
+    }
+
+    #[test]
+    fn render_order_entry_market_shows_bracket_checkbox() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Market;
+        let output = render_order_entry_tall(&mut app, state);
+        assert!(output.contains("Bracket order (TP + SL legs)"), "{output}");
+    }
+
+    #[test]
+    fn render_order_entry_stop_order_hides_bracket() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Stop;
+        state.bracket = true;
+        let output = render_order_entry_tall(&mut app, state);
+        assert!(!output.contains("Bracket order"), "{output}");
+        assert!(!output.contains("SL Lmt"), "{output}");
+    }
+
+    #[test]
+    fn render_order_entry_bracket_enabled_shows_leg_values() {
+        use crate::app::{FullOrderType, OrderEntryState};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Limit;
+        state.bracket = true;
+        state.take_profit_price = "210.50".into();
+        state.stop_loss_price = "190.25".into();
+        state.stop_loss_limit_price = "189.75".into();
+        let output = render_order_entry_tall(&mut app, state);
+        assert!(output.contains("[x]"), "bracket should be checked");
+        assert!(output.contains("TP $"), "{output}");
+        assert!(output.contains("210.50"), "{output}");
+        assert!(output.contains("SL $"), "{output}");
+        assert!(output.contains("190.25"), "{output}");
+        assert!(output.contains("SL Lmt"), "{output}");
+        assert!(output.contains("189.75"), "{output}");
+    }
+
+    #[test]
+    fn render_order_entry_focused_bracket_leg_shows_cursor() {
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
+        for field in [
+            OrderField::TakeProfit,
+            OrderField::StopLoss,
+            OrderField::StopLossLimit,
+        ] {
+            let mut app = make_test_app();
+            let mut state = OrderEntryState::new("AAPL".into());
+            state.order_type = FullOrderType::Limit;
+            state.bracket = true;
+            state.focused_field = field;
+            let output = render_order_entry_tall(&mut app, state);
+            assert!(output.contains('▋'), "focused leg should show cursor");
+        }
+    }
+
+    #[test]
+    fn render_order_entry_focused_bracket_checkbox_renders() {
+        use crate::app::{FullOrderType, OrderEntryState, OrderField};
+        let mut app = make_test_app();
+        let mut state = OrderEntryState::new("AAPL".into());
+        state.order_type = FullOrderType::Market;
+        state.focused_field = OrderField::Bracket;
+        let output = render_order_entry_tall(&mut app, state);
+        assert!(output.contains("[ ]"), "{output}");
+    }
+
     // ── render_order_entry additional branches ────────────────────────────────
 
     #[test]

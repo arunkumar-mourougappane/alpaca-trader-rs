@@ -378,6 +378,41 @@ mod tests {
         );
     }
 
+    fn header_with_clock(is_open: bool, now: &str, next_open: &str) -> String {
+        let mut app = make_test_app();
+        app.clock = Some(crate::types::MarketClock {
+            is_open,
+            timestamp: now.into(),
+            next_open: next_open.into(),
+            next_close: "2026-05-13T20:00:00Z".into(),
+        });
+        render_header_to_string(&app)
+    }
+
+    #[test]
+    fn header_shows_market_state_open() {
+        let output = header_with_clock(true, "2026-05-12T15:00:00Z", "2026-05-13T13:30:00Z");
+        assert!(output.contains("OPEN"), "got: {output:?}");
+    }
+
+    #[test]
+    fn header_shows_market_state_pre_market() {
+        let output = header_with_clock(false, "2026-05-13T11:30:00Z", "2026-05-13T13:30:00Z");
+        assert!(output.contains("PRE-MARKET"), "got: {output:?}");
+    }
+
+    #[test]
+    fn header_shows_market_state_after_hours() {
+        let output = header_with_clock(false, "2026-05-12T21:00:00Z", "2026-05-13T13:30:00Z");
+        assert!(output.contains("AFTER-HOURS"), "got: {output:?}");
+    }
+
+    #[test]
+    fn header_shows_market_state_closed() {
+        let output = header_with_clock(false, "2026-05-16T00:00:00Z", "2026-05-18T13:30:00Z");
+        assert!(output.contains("CLOSED"), "got: {output:?}");
+    }
+
     #[test]
     fn header_shows_market_initial_loading_indicator() {
         let mut app = make_test_app();
