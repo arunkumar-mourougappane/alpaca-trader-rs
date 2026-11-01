@@ -744,8 +744,10 @@ pub(crate) fn handle_modal_key(app: &mut App, key: crossterm::event::KeyEvent) {
             // Text-edit mode: chars + Backspace, Enter confirms.
             if state.editing_buf.is_some() {
                 let is_cred = state.section == PrefsSection::Credentials;
+                // Credentials and proxy URLs are free text; every other field is numeric.
+                let free_text = is_cred || state.section == PrefsSection::Proxy;
                 match key.code {
-                    KeyCode::Char(c) if is_cred || c.is_ascii_digit() || c == '.' => {
+                    KeyCode::Char(c) if free_text || c.is_ascii_digit() || c == '.' => {
                         if let Some(ref mut buf) = state.editing_buf {
                             buf.push(c);
                         }
@@ -3411,6 +3413,35 @@ mod tests {
             Some("A-1"),
             "credential edit accepts all chars"
         );
+    }
+
+    #[test]
+    fn prefs_proxy_edit_mode_accepts_url_chars() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Proxy;
+        state.field_index = 0;
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        for c in "http://proxy:3128".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        let s = prefs_state(&app);
+        assert_eq!(s.draft.proxy.http.as_deref(), Some("http://proxy:3128"));
+    }
+
+    #[test]
+    fn prefs_non_proxy_numeric_field_still_rejects_letters() {
+        let mut app = make_test_app();
+        let mut state = PrefsState::new(&app.prefs);
+        state.section = PrefsSection::Stream;
+        state.field_index = 0;
+        state.editing_buf = Some(String::new());
+        app.modal = Some(Modal::Preferences(state));
+        press(&mut app, KeyCode::Char('a'));
+        press(&mut app, KeyCode::Char('5'));
+        assert_eq!(prefs_state(&app).editing_buf.as_deref(), Some("5"));
     }
 
     #[test]
