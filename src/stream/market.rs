@@ -35,8 +35,7 @@ pub async fn run(
     symbol_rx: watch::Receiver<Vec<String>>,
     prefs: AppPrefs,
 ) {
-    let rules = ProxyRules::from_prefs_and_env(&prefs.proxy);
-    run_inner(tx, cancel, config, symbol_rx, DATA_URL, prefs, rules).await
+    run_inner(tx, cancel, config, symbol_rx, DATA_URL, prefs).await
 }
 
 async fn run_inner(
@@ -46,8 +45,8 @@ async fn run_inner(
     mut symbol_rx: watch::Receiver<Vec<String>>,
     url: &str,
     prefs: AppPrefs,
-    rules: ProxyRules,
 ) {
+    let rules = ProxyRules::from_prefs_and_env(&prefs.proxy);
     let base_backoff = prefs.reconnect_backoff_base();
     let max_attempts = prefs.stream.reconnect_max_attempts;
     let mut backoff = base_backoff;
@@ -329,10 +328,21 @@ mod tests {
 mod integration {
     use super::*;
     use crate::config::AlpacaEnv;
-    use crate::prefs::AppPrefs;
+    use crate::proxy::hermetic_prefs;
     use futures::SinkExt;
     use tokio::sync::{mpsc, watch};
     use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+    /// `run_once` with no proxy, so tests never depend on the environment.
+    async fn run_once_direct(
+        tx: &Sender<Event>,
+        cancel: &CancellationToken,
+        config: &AlpacaConfig,
+        symbol_rx: &mut watch::Receiver<Vec<String>>,
+        url: &str,
+    ) -> anyhow::Result<()> {
+        run_once(tx, cancel, config, symbol_rx, url, &ProxyRules::direct()).await
+    }
 
     fn test_config() -> AlpacaConfig {
         AlpacaConfig {
@@ -385,16 +395,9 @@ mod integration {
         let url2 = url.clone();
         let tx2 = tx.clone();
         tokio::spawn(async move {
-            run_once(
-                &tx2,
-                &cancel2,
-                &test_config(),
-                &mut sym_rx,
-                &url2,
-                &ProxyRules::direct(),
-            )
-            .await
-            .ok();
+            run_once_direct(&tx2, &cancel2, &test_config(), &mut sym_rx, &url2)
+                .await
+                .ok();
             cancel2.cancel();
         });
 
@@ -440,15 +443,7 @@ mod integration {
         let cancel = CancellationToken::new();
         let (_sym_tx, mut sym_rx) = watch::channel(vec!["AAPL".to_string()]);
 
-        let result = run_once(
-            &tx,
-            &cancel,
-            &test_config(),
-            &mut sym_rx,
-            &url,
-            &ProxyRules::direct(),
-        )
-        .await;
+        let result = run_once_direct(&tx, &cancel, &test_config(), &mut sym_rx, &url).await;
         assert!(result.is_err(), "auth failure should return Err");
     }
 
@@ -477,15 +472,7 @@ mod integration {
         let cancel = CancellationToken::new();
         let (_sym_tx, mut sym_rx) = watch::channel(vec!["AAPL".to_string()]);
 
-        let result = run_once(
-            &tx,
-            &cancel,
-            &test_config(),
-            &mut sym_rx,
-            &url,
-            &ProxyRules::direct(),
-        )
-        .await;
+        let result = run_once_direct(&tx, &cancel, &test_config(), &mut sym_rx, &url).await;
         assert!(
             result.is_err(),
             "unexpected welcome frame should return Err"
@@ -522,15 +509,7 @@ mod integration {
         let url2 = url.clone();
 
         let task = tokio::spawn(async move {
-            run_once(
-                &tx,
-                &cancel2,
-                &config,
-                &mut sym_rx,
-                &url2,
-                &ProxyRules::direct(),
-            )
-            .await
+            run_once_direct(&tx, &cancel2, &config, &mut sym_rx, &url2).await
         });
 
         // Give the stream time to authenticate and enter the main loop
@@ -598,16 +577,7 @@ mod integration {
 
         let url2 = url.clone();
         tokio::spawn(async move {
-            run_inner(
-                tx,
-                cancel2,
-                test_config(),
-                sym_rx,
-                &url2,
-                AppPrefs::default(),
-                ProxyRules::direct(),
-            )
-            .await;
+            run_inner(tx, cancel2, test_config(), sym_rx, &url2, hermetic_prefs()).await;
         });
 
         let mut saw_reconnecting = false;
@@ -683,16 +653,9 @@ mod integration {
         let url2 = url.clone();
         let config = test_config();
         tokio::spawn(async move {
-            run_once(
-                &tx,
-                &cancel2,
-                &config,
-                &mut sym_rx,
-                &url2,
-                &ProxyRules::direct(),
-            )
-            .await
-            .ok();
+            run_once_direct(&tx, &cancel2, &config, &mut sym_rx, &url2)
+                .await
+                .ok();
         });
 
         // Wait for the initial subscribe to be processed
@@ -772,16 +735,9 @@ mod integration {
         let url2 = url.clone();
         let config = test_config();
         tokio::spawn(async move {
-            run_once(
-                &tx,
-                &cancel2,
-                &config,
-                &mut sym_rx,
-                &url2,
-                &ProxyRules::direct(),
-            )
-            .await
-            .ok();
+            run_once_direct(&tx, &cancel2, &config, &mut sym_rx, &url2)
+                .await
+                .ok();
         });
 
         tokio::time::sleep(Duration::from_millis(150)).await;
