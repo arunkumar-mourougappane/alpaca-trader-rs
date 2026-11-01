@@ -75,6 +75,7 @@ async fn poll_account(client: &AlpacaClient, tx: &Sender<Event>) {
             let _ = tx.send(Event::AccountUpdated(a)).await;
         }
         Err(e) => {
+            tracing::warn!("Account poll failed: {:#}", e);
             let _ = tx
                 .send(Event::StatusMsg(format!("Account error: {}", e)))
                 .await;
@@ -88,6 +89,7 @@ async fn poll_positions(client: &AlpacaClient, tx: &Sender<Event>) {
             let _ = tx.send(Event::PositionsUpdated(p)).await;
         }
         Err(e) => {
+            tracing::warn!("Positions poll failed: {:#}", e);
             let _ = tx
                 .send(Event::StatusMsg(format!("Positions error: {}", e)))
                 .await;
@@ -101,6 +103,7 @@ async fn poll_orders(client: &AlpacaClient, tx: &Sender<Event>) {
             let _ = tx.send(Event::OrdersUpdated(o)).await;
         }
         Err(e) => {
+            tracing::warn!("Orders poll failed: {:#}", e);
             let _ = tx
                 .send(Event::StatusMsg(format!("Orders error: {}", e)))
                 .await;
@@ -122,6 +125,7 @@ async fn poll_watchlist(client: &AlpacaClient, tx: &Sender<Event>) {
     let summaries = match client.list_watchlists().await {
         Ok(s) => s,
         Err(e) => {
+            tracing::warn!("Watchlist list poll failed: {:#}", e);
             let _ = tx
                 .send(Event::StatusMsg(format!("Watchlist error: {}", e)))
                 .await;
@@ -138,6 +142,7 @@ async fn poll_watchlist(client: &AlpacaClient, tx: &Sender<Event>) {
             poll_snapshots(client, tx, &symbols).await;
         }
         Err(e) => {
+            tracing::warn!("Watchlist poll failed: {:#}", e);
             let _ = tx
                 .send(Event::StatusMsg(format!("Watchlist error: {}", e)))
                 .await;
