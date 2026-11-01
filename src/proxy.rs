@@ -411,6 +411,27 @@ mod tests {
         let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
     }
 
+    /// Read the client's request up to the blank line, as a real proxy would.
+    async fn read_head(s: &mut TcpStream) -> String {
+        let mut head = Vec::new();
+        let mut buf = [0u8; 256];
+        while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = s.read(&mut buf).await.unwrap();
+            assert!(n > 0, "client closed before finishing its request");
+            head.extend_from_slice(&buf[..n]);
+        }
+        String::from_utf8_lossy(&head).into_owned()
+    }
+
+    /// Discard everything until the peer closes. A stub that waits for the
+    /// client to give up must not close first: closing with unread data makes
+    /// the OS reset the connection, and Windows delivers that reset before the
+    /// client has read what was already sent. A read error counts as closed.
+    async fn drain_until_closed(s: &mut TcpStream) {
+        let mut buf = [0u8; 512];
+        while s.read(&mut buf).await.unwrap_or(0) > 0 {}
+    }
+
     /// HTTP CONNECT proxy answering with `status_line`; on a 2xx it tunnels to
     /// `to`. Resolves with the request head the client sent.
     async fn spawn_connect_proxy(
@@ -421,20 +442,14 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let handle = tokio::spawn(async move {
             let (mut s, _) = listener.accept().await.unwrap();
-            let mut head = Vec::new();
-            let mut buf = [0u8; 256];
-            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n = s.read(&mut buf).await.unwrap();
-                assert!(n > 0, "client closed before finishing CONNECT");
-                head.extend_from_slice(&buf[..n]);
-            }
+            let head = read_head(&mut s).await;
             s.write_all(format!("{status_line}\r\n\r\n").as_bytes())
                 .await
                 .unwrap();
             if status_line.contains(" 200 ") {
                 bridge(s, to).await;
             }
-            String::from_utf8_lossy(&head).into_owned()
+            head
         });
         (addr, handle)
     }
@@ -786,8 +801,8 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let stub = tokio::spawn(async move {
             let (mut s, _) = listener.accept().await.unwrap();
-            let _ = s.read(&mut [0u8; 512]).await; // take the CONNECT, then stall
-            let _ = s.read(&mut [0u8; 1]).await; // until the client gives up
+            read_head(&mut s).await; // take the CONNECT, then stall
+            drain_until_closed(&mut s).await; // until the client gives up
         });
         let rules =
             ProxyRules::from_prefs_and_env(&prefs(Some(&format!("http://{addr}")), None, None));
@@ -862,8 +877,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             let (mut s, _) = listener.accept().await.unwrap();
-            let mut buf = [0u8; 512];
-            let _ = s.read(&mut buf).await; // take the CONNECT, then hang up
+            read_head(&mut s).await; // take the whole CONNECT, then hang up
         });
         let rules =
             ProxyRules::from_prefs_and_env(&prefs(Some(&format!("http://{addr}")), None, None));
@@ -874,8 +888,9 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             let (mut s, _) = listener.accept().await.unwrap();
+            read_head(&mut s).await;
             let _ = s.write_all(&vec![b'a'; MAX_CONNECT_HEAD + 100]).await;
-            let _ = s.read(&mut [0u8; 1]).await; // until the client gives up
+            drain_until_closed(&mut s).await; // until the client gives up
         });
         let rules =
             ProxyRules::from_prefs_and_env(&prefs(Some(&format!("http://{addr}")), None, None));
