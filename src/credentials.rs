@@ -22,6 +22,24 @@ use crate::config::{AlpacaEnv, ResolvedCredentials};
 
 const SERVICE: &str = "alpaca-trader-rs";
 
+/// Open the keychain entry for `user` under the app's service name.
+///
+/// Every keychain access goes through here. Under `cfg(test)` it first swaps
+/// in keyring's in-memory mock store, so unit tests can never read, overwrite
+/// or delete the real credentials the app stores under [`SERVICE`] (and never
+/// trigger an OS keychain prompt, which hangs a non-interactive test run).
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+fn entry(user: &str) -> keyring::Result<keyring::Entry> {
+    #[cfg(test)]
+    {
+        static MOCK: std::sync::Once = std::sync::Once::new();
+        MOCK.call_once(|| {
+            keyring::set_default_credential_builder(keyring::mock::default_credential_builder())
+        });
+    }
+    keyring::Entry::new(SERVICE, user)
+}
+
 const DEFAULT_LIVE_ENDPOINT: &str = "https://api.alpaca.markets";
 const DEFAULT_PAPER_ENDPOINT: &str = "https://paper-api.alpaca.markets/v2";
 
@@ -213,7 +231,7 @@ pub fn reset(env: AlpacaEnv) {
         let mut any_error = false;
 
         for user in [&key_user, &secret_user] {
-            match keyring::Entry::new(SERVICE, user) {
+            match entry(user) {
                 Ok(entry) => match entry.delete_credential() {
                     Ok(()) => removed += 1,
                     Err(keyring::Error::NoEntry) => {}
@@ -285,7 +303,7 @@ fn try_keychain_load(prefix: &str) -> Result<Option<(String, String)>, KeychainS
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn load_one_entry(user: &str) -> Result<Option<String>, KeychainStatus> {
-    let entry = keyring::Entry::new(SERVICE, user)
+    let entry = entry(user)
         .map_err(|e| KeychainStatus::Hard(anyhow::anyhow!("keyring init error: {e}")))?;
 
     match entry.get_password() {
@@ -360,10 +378,10 @@ pub fn save_to_keychain(env: AlpacaEnv, key: &str, secret: &str) -> Result<()> {
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn save_keychain_pair(prefix: &str, key: &str, secret: &str) -> Result<()> {
-    keyring::Entry::new(SERVICE, &format!("{prefix}-api-key"))
+    entry(&format!("{prefix}-api-key"))
         .and_then(|e| e.set_password(key))
         .map_err(|e| anyhow::anyhow!("keychain write error (key): {e}"))?;
-    keyring::Entry::new(SERVICE, &format!("{prefix}-api-secret"))
+    entry(&format!("{prefix}-api-secret"))
         .and_then(|e| e.set_password(secret))
         .map_err(|e| anyhow::anyhow!("keychain write error (secret): {e}"))?;
     Ok(())
@@ -594,44 +612,36 @@ mod tests {
     // ── load_from_keychain / save_to_keychain ─────────────────────────────────
 
     #[test]
-    fn load_from_keychain_live_returns_option_without_panic() {
-        // Exercises the platform-conditional load path.  On supported platforms
-        // this queries the OS keychain; the entry is almost certainly absent in a
-        // test environment, so None is the expected result.  On unsupported
-        // platforms the cfg-gated branch always returns None.
-        let result = load_from_keychain(AlpacaEnv::Live);
-        // We only assert absence of panic; the actual value depends on the host.
-        assert!(result.is_none() || result.is_some());
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn keychain_is_mocked_under_test() {
+        // Guard: unit tests must never reach the OS keychain, where the app
+        // keeps the user's real credentials.
+        let e = entry("live-api-key").unwrap();
+        assert!(
+            e.get_credential()
+                .downcast_ref::<keyring::mock::MockCredential>()
+                .is_some(),
+            "unit tests are talking to the real OS keychain"
+        );
     }
 
     #[test]
-    fn load_from_keychain_paper_returns_option_without_panic() {
-        let result = load_from_keychain(AlpacaEnv::Paper);
-        assert!(result.is_none() || result.is_some());
+    fn load_from_keychain_returns_none_when_nothing_is_stored() {
+        // The mock store starts empty, so this no longer depends on the host.
+        assert!(load_from_keychain(AlpacaEnv::Live).is_none());
+        assert!(load_from_keychain(AlpacaEnv::Paper).is_none());
     }
 
     #[test]
-    fn save_to_keychain_live_executes_without_panic() {
-        // Exercises the platform-conditional write path and, if successful,
-        // immediately removes the test entry to avoid polluting the keychain.
-        let result = save_to_keychain(AlpacaEnv::Live, "test-cov-key", "test-cov-secret");
-        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-        if result.is_ok() {
-            let _ = keyring::Entry::new(SERVICE, "live-api-key").map(|e| e.delete_credential());
-            let _ = keyring::Entry::new(SERVICE, "live-api-secret").map(|e| e.delete_credential());
-        }
-        // Accept both Ok and Err (keychain may be unavailable in CI).
-        let _ = result;
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn save_to_keychain_succeeds_for_both_environments() {
+        save_to_keychain(AlpacaEnv::Live, "test-cov-key", "test-cov-secret").unwrap();
+        save_to_keychain(AlpacaEnv::Paper, "test-cov-key", "test-cov-secret").unwrap();
     }
 
     #[test]
-    fn save_to_keychain_paper_executes_without_panic() {
-        let result = save_to_keychain(AlpacaEnv::Paper, "test-cov-key", "test-cov-secret");
-        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
-        if result.is_ok() {
-            let _ = keyring::Entry::new(SERVICE, "paper-api-key").map(|e| e.delete_credential());
-            let _ = keyring::Entry::new(SERVICE, "paper-api-secret").map(|e| e.delete_credential());
-        }
-        let _ = result;
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    fn save_to_keychain_is_unsupported_on_this_platform() {
+        assert!(save_to_keychain(AlpacaEnv::Live, "k", "s").is_err());
     }
 }
