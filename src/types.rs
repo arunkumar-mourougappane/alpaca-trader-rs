@@ -1,5 +1,5 @@
 //! Domain types used throughout the library and the binary crate.
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
@@ -293,6 +293,100 @@ mod tests {
     fn market_state_invalid_timestamp_falls_back_to_closed() {
         let clock = make_clock(false, "not-a-date", "also-bad", "2026-05-13T20:00:00Z");
         assert_eq!(clock.market_state(), MarketState::Closed);
+    }
+
+    fn utc(s: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn countdown_open_reports_time_to_close() {
+        let clock = make_clock(
+            true,
+            "2026-05-12T17:46:00Z",
+            "2026-05-13T13:30:00Z",
+            "2026-05-12T20:00:00Z",
+        );
+        assert_eq!(
+            clock.countdown(utc("2026-05-12T17:46:00Z")).as_deref(),
+            Some("closes in 2h 14m")
+        );
+    }
+
+    #[test]
+    fn countdown_closed_reports_time_to_open() {
+        let clock = make_clock(
+            false,
+            "2026-05-12T21:00:00Z",
+            "2026-05-13T13:30:00Z",
+            "2026-05-13T20:00:00Z",
+        );
+        assert_eq!(
+            clock.countdown(utc("2026-05-12T21:00:00Z")).as_deref(),
+            Some("opens in 16h 30m")
+        );
+    }
+
+    #[test]
+    fn countdown_weekend_uses_days_and_hours() {
+        let clock = make_clock(
+            false,
+            "2026-05-16T00:00:00Z",
+            "2026-05-18T13:30:00Z",
+            "2026-05-18T20:00:00Z",
+        );
+        assert_eq!(
+            clock.countdown(utc("2026-05-16T00:00:00Z")).as_deref(),
+            Some("opens in 2d 13h")
+        );
+    }
+
+    #[test]
+    fn countdown_under_an_hour_shows_minutes_only() {
+        let clock = make_clock(
+            true,
+            "2026-05-12T19:15:00Z",
+            "2026-05-13T13:30:00Z",
+            "2026-05-12T20:00:00Z",
+        );
+        assert_eq!(
+            clock.countdown(utc("2026-05-12T19:15:00Z")).as_deref(),
+            Some("closes in 45m")
+        );
+    }
+
+    #[test]
+    fn countdown_under_a_minute() {
+        let clock = make_clock(
+            true,
+            "2026-05-12T19:59:30Z",
+            "2026-05-13T13:30:00Z",
+            "2026-05-12T20:00:00Z",
+        );
+        assert_eq!(
+            clock.countdown(utc("2026-05-12T19:59:30Z")).as_deref(),
+            Some("closes in <1m")
+        );
+    }
+
+    #[test]
+    fn countdown_none_when_target_in_past() {
+        let clock = make_clock(
+            true,
+            "2026-05-12T15:00:00Z",
+            "2026-05-13T13:30:00Z",
+            "2026-05-12T20:00:00Z",
+        );
+        assert!(clock.countdown(utc("2026-05-12T20:00:00Z")).is_none());
+        assert!(clock.countdown(utc("2026-05-12T20:05:00Z")).is_none());
+    }
+
+    #[test]
+    fn countdown_none_on_unparseable_timestamp() {
+        let clock = make_clock(false, "bad", "not-a-date", "also-bad");
+        assert!(clock.countdown(utc("2026-05-12T15:00:00Z")).is_none());
     }
 
     #[test]
@@ -657,6 +751,37 @@ impl MarketClock {
             }
             _ => MarketState::Closed,
         }
+    }
+
+    /// Human-readable time until the next session boundary relative to `now`:
+    /// `"closes in 2h 14m"` while open, `"opens in 17h 5m"` otherwise.
+    ///
+    /// Returns `None` when the target timestamp cannot be parsed or is not in
+    /// the future (e.g. a stale clock between polls).
+    pub fn countdown(&self, now: DateTime<Utc>) -> Option<String> {
+        let (verb, target) = if self.is_open {
+            ("closes", &self.next_close)
+        } else {
+            ("opens", &self.next_open)
+        };
+        let target = DateTime::parse_from_rfc3339(target)
+            .ok()?
+            .with_timezone(&Utc);
+        let secs = (target - now).num_seconds();
+        if secs <= 0 {
+            return None;
+        }
+        let (mins, hours, days) = (secs / 60 % 60, secs / 3600 % 24, secs / 86400);
+        let span = if days > 0 {
+            format!("{days}d {hours}h")
+        } else if hours > 0 {
+            format!("{hours}h {mins}m")
+        } else if mins > 0 {
+            format!("{mins}m")
+        } else {
+            "<1m".to_string()
+        };
+        Some(format!("{verb} in {span}"))
     }
 }
 
