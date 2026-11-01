@@ -12,5 +12,6 @@ pub mod config;
 pub mod events;
 pub mod logging;
 pub mod prefs;
+pub mod proxy;
 pub mod stream;
 pub mod types;

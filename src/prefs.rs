@@ -186,8 +186,9 @@ impl Default for SafetySection {
 
 /// HTTP/SOCKS proxy settings.
 ///
-/// Leave all fields unset to use the `HTTP_PROXY` / `HTTPS_PROXY`
-/// environment variables automatically (tracked in issue #90).
+/// Leave all fields unset to use the `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`
+/// environment variables instead. Applies to REST requests (via `reqwest`) and
+/// to the WebSocket streams (see [`crate::proxy`]).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct ProxySection {

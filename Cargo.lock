@@ -35,6 +35,7 @@ dependencies = [
  "dirs",
  "dotenvy",
  "futures",
+ "hyper-util",
  "keyring",
  "ratatui",
  "reqwest",
