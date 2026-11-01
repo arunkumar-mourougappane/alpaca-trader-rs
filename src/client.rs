@@ -1305,16 +1305,8 @@ mod tests {
 
             let mut req = [0u8; 4];
             s.read_exact(&mut req).await.unwrap();
-            let host_len = match req[3] {
-                1 => 4,
-                4 => 16,
-                _ => {
-                    let mut n = [0u8; 1];
-                    s.read_exact(&mut n).await.unwrap();
-                    n[0] as usize
-                }
-            };
-            let mut host = vec![0u8; host_len];
+            assert_eq!(req[3], 1, "stub only supports IPv4 targets");
+            let mut host = [0u8; 4];
             s.read_exact(&mut host).await.unwrap();
             let mut port = [0u8; 2];
             s.read_exact(&mut port).await.unwrap();
@@ -1347,5 +1339,107 @@ mod tests {
         let client = AlpacaClient::with_proxy(cfg, &prefs).unwrap();
         assert_eq!(client.get_account().await.unwrap().status, "ACTIVE");
         assert_eq!(requested_port.await.unwrap(), 4242);
+    }
+
+    // ── Error paths shared by every endpoint ──────────────────────────────────
+
+    /// Call every public endpoint once, discarding the success values.
+    async fn call_every_endpoint(client: &AlpacaClient) -> Vec<(&'static str, Result<()>)> {
+        use crate::types::OrderRequest;
+        let order = OrderRequest {
+            symbol: "AAPL".into(),
+            qty: Some("1".into()),
+            side: "buy".into(),
+            order_type: "market".into(),
+            time_in_force: "day".into(),
+            ..Default::default()
+        };
+        vec![
+            ("get_account", client.get_account().await.map(drop)),
+            ("get_positions", client.get_positions().await.map(drop)),
+            ("get_orders", client.get_orders("all").await.map(drop)),
+            ("submit_order", client.submit_order(&order).await.map(drop)),
+            ("cancel_order", client.cancel_order("o1").await),
+            ("get_order", client.get_order("o1").await.map(drop)),
+            ("get_clock", client.get_clock().await.map(drop)),
+            ("list_watchlists", client.list_watchlists().await.map(drop)),
+            ("get_watchlist", client.get_watchlist("w1").await.map(drop)),
+            (
+                "add_to_watchlist",
+                client.add_to_watchlist("w1", "AAPL").await.map(drop),
+            ),
+            (
+                "remove_from_watchlist",
+                client.remove_from_watchlist("w1", "AAPL").await.map(drop),
+            ),
+            ("get_asset", client.get_asset("AAPL").await.map(drop)),
+            (
+                "replace_watchlist",
+                client
+                    .replace_watchlist("w1", Some("n"), &["AAPL"])
+                    .await
+                    .map(drop),
+            ),
+            (
+                "get_watchlist_by_name",
+                client.get_watchlist_by_name("n").await.map(drop),
+            ),
+            (
+                "get_portfolio_history",
+                client.get_portfolio_history("1D", "1Min").await.map(drop),
+            ),
+            (
+                "get_snapshots",
+                client.get_snapshots(&["AAPL".to_string()]).await.map(drop),
+            ),
+            (
+                "get_intraday_bars",
+                client.get_intraday_bars("AAPL").await.map(drop),
+            ),
+            (
+                "get_historical_bars",
+                client
+                    .get_historical_bars("AAPL", "1Day", "2024-01-02", "2024-01-03")
+                    .await
+                    .map(drop),
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn every_endpoint_reports_request_failure_when_unreachable() {
+        // Nothing listens on port 1, so send() fails for every call.
+        let client = AlpacaClient::new(paper_config("http://127.0.0.1:1".into()));
+        for (name, result) in call_every_endpoint(&client).await {
+            let err = result.expect_err(name);
+            assert!(
+                err.to_string().contains("request failed"),
+                "{name}: unexpected error {err:#}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_endpoint_rejects_credentials_with_invalid_header_characters() {
+        let mut cfg = paper_config("http://127.0.0.1:1".into());
+        cfg.key = "bad\nkey".into();
+        let client = AlpacaClient::new(cfg);
+        for (name, result) in call_every_endpoint(&client).await {
+            let err = result.expect_err(name);
+            assert!(
+                err.to_string().contains("invalid header characters"),
+                "{name}: unexpected error {err:#}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_endpoint_rejects_secret_with_invalid_header_characters() {
+        let mut cfg = paper_config("http://127.0.0.1:1".into());
+        cfg.secret = "bad\nsecret".into();
+        let client = AlpacaClient::new(cfg);
+        let (name, result) = call_every_endpoint(&client).await.remove(0);
+        let err = result.expect_err(name);
+        assert!(err.to_string().contains("API secret"), "{err:#}");
     }
 }
