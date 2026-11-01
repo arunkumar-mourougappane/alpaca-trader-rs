@@ -87,6 +87,8 @@ impl AlpacaClient {
             .send()
             .await
             .context("GET /account request failed")?
+            .error_for_status()
+            .context("GET /account returned an error status")?
             .json::<AccountInfo>()
             .await
             .context("GET /account parse failed")
@@ -548,6 +550,23 @@ mod tests {
         let client = AlpacaClient::new(paper_config(server.uri()));
         let err = client.get_account().await.unwrap_err();
         assert!(err.to_string().contains("parse failed"));
+    }
+
+    #[tokio::test]
+    async fn get_account_returns_error_on_unauthorized() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/account"))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_json(json!({"message": "forbidden."})),
+            )
+            .mount(&server)
+            .await;
+
+        let client = AlpacaClient::new(paper_config(server.uri()));
+        let err = client.get_account().await.unwrap_err();
+        assert!(err.to_string().contains("error status"));
+        assert!(format!("{err:#}").contains("401"));
     }
 
     #[tokio::test]
