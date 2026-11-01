@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Local, Utc};
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
@@ -19,7 +19,7 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         c.negative
     };
 
-    let (market_status, market_color) = app
+    let (market_status, market_color, market_glyph) = app
         .clock
         .as_ref()
         .map(|cl| {
@@ -30,9 +30,23 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
                 MarketState::AfterHours => Color::Magenta,
                 MarketState::Closed => c.dim,
             };
-            (state.as_str(), color)
+            let glyph = if state == MarketState::Closed {
+                "○"
+            } else {
+                "●"
+            };
+            (state.as_str(), color, glyph)
         })
-        .unwrap_or(("—", c.dim));
+        .unwrap_or(("—", c.dim, "○"));
+
+    // "closes in 2h 14m" / "opens in 17h 5m", computed against the wall clock so
+    // it stays accurate between clock polls.
+    let market_countdown = app
+        .clock
+        .as_ref()
+        .and_then(|cl| cl.countdown(Utc::now()))
+        .map(|s| format!("  {s}"))
+        .unwrap_or_default();
 
     let now = Local::now().format("%H:%M:%S ET  %Y-%m-%d").to_string();
 
@@ -57,11 +71,12 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw("   "),
         Span::styled("Market: ", c.dim_style()),
         Span::styled(
-            market_status,
+            format!("{market_glyph} {market_status}"),
             Style::default()
                 .fg(market_color)
                 .add_modifier(Modifier::BOLD),
         ),
+        Span::styled(market_countdown, c.dim_style()),
         Span::styled(format!("   {}", now), c.dim_style()),
         Span::styled(fetch_indicator, c.dim_style()),
     ];
@@ -587,5 +602,41 @@ mod tests {
             output.contains("Account"),
             "render_tabs should include tab labels; got: {output:?}"
         );
+    }
+
+    fn clock_in(is_open: bool, secs: i64) -> crate::types::MarketClock {
+        let target = (Utc::now() + chrono::Duration::seconds(secs)).to_rfc3339();
+        crate::types::MarketClock {
+            is_open,
+            timestamp: Utc::now().to_rfc3339(),
+            next_open: target.clone(),
+            next_close: target,
+        }
+    }
+
+    #[test]
+    fn header_open_shows_filled_glyph_and_closes_in() {
+        let mut app = make_test_app();
+        app.clock = Some(clock_in(true, 2 * 3600 + 30 * 60));
+        let output = render_header_to_string(&app);
+        assert!(output.contains("● OPEN"), "got: {output:?}");
+        assert!(output.contains("closes in 2h"), "got: {output:?}");
+    }
+
+    #[test]
+    fn header_closed_shows_hollow_glyph_and_opens_in() {
+        let mut app = make_test_app();
+        app.clock = Some(clock_in(false, 40 * 3600));
+        let output = render_header_to_string(&app);
+        assert!(output.contains("○ CLOSED"), "got: {output:?}");
+        assert!(output.contains("opens in 1d"), "got: {output:?}");
+    }
+
+    #[test]
+    fn header_without_clock_shows_dash_and_no_countdown() {
+        let app = make_test_app();
+        let output = render_header_to_string(&app);
+        assert!(output.contains("○ —"), "got: {output:?}");
+        assert!(!output.contains(" in "), "got: {output:?}");
     }
 }
