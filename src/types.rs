@@ -57,8 +57,8 @@ mod tests {
         assert_eq!(acc.equity, "100000");
         assert_eq!(acc.buying_power, "200000");
         assert_eq!(acc.cash, "100000");
-        assert_eq!(acc.daytrade_count, 0);
-        assert!(!acc.pattern_day_trader);
+        assert_eq!(acc.daytrade_count, Some(0));
+        assert_eq!(acc.pattern_day_trader, Some(false));
         assert_eq!(acc.currency, "USD");
         assert!(acc.portfolio_value.is_none());
         // New fields default to empty string when absent
@@ -90,6 +90,36 @@ mod tests {
             (day_pl - 843.22).abs() < 0.01,
             "Day P&L should be ~843.22, got {day_pl}"
         );
+    }
+
+    #[test]
+    fn account_info_deserializes_without_daytrade_count() {
+        let json = r#"{
+            "status": "ACTIVE",
+            "equity": "100000",
+            "buying_power": "200000",
+            "cash": "100000",
+            "long_market_value": "0",
+            "pattern_day_trader": false,
+            "currency": "USD"
+        }"#;
+        let acc: AccountInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(acc.daytrade_count, None);
+        assert_eq!(acc.pattern_day_trader, Some(false));
+    }
+
+    #[test]
+    fn account_info_deserializes_without_pattern_day_trader() {
+        let json = r#"{
+            "status": "ACTIVE",
+            "equity": "100000",
+            "buying_power": "200000",
+            "cash": "100000",
+            "long_market_value": "0",
+            "currency": "USD"
+        }"#;
+        let acc: AccountInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(acc.pattern_day_trader, None);
     }
 
     #[test]
@@ -358,9 +388,13 @@ pub struct AccountInfo {
     #[serde(default)]
     pub short_market_value: String,
     /// Number of day trades made in the rolling 5-business-day window.
-    pub daytrade_count: u32,
+    /// Absent from some API responses, in which case the count is unknown.
+    #[serde(default)]
+    pub daytrade_count: Option<u32>,
     /// Whether the account has been flagged as a pattern day trader.
-    pub pattern_day_trader: bool,
+    /// Absent from some API responses, in which case the flag is unknown.
+    #[serde(default)]
+    pub pattern_day_trader: Option<bool>,
     /// Account currency (typically `"USD"`).
     pub currency: String,
     /// Total portfolio value; may be absent on some account types.

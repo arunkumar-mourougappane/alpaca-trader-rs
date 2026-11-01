@@ -191,8 +191,8 @@ async fn get_account_deserializes_all_fields() {
     assert_eq!(acc.status, "ACTIVE");
     assert_eq!(acc.equity, "100000");
     assert_eq!(acc.buying_power, "200000");
-    assert_eq!(acc.daytrade_count, 0);
-    assert!(!acc.pattern_day_trader);
+    assert_eq!(acc.daytrade_count, Some(0));
+    assert_eq!(acc.pattern_day_trader, Some(false));
 }
 
 #[tokio::test]

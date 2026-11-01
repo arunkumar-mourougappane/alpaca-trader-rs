@@ -56,15 +56,19 @@ fn render_summary(frame: &mut Frame, area: Rect, app: &App) {
 
         // Day trade counter: "X / 3", turns red at limit
         let dt_str = format_daytrade_count(acc.daytrade_count);
-        let dt_style = if acc.daytrade_count >= 3 {
+        let dt_style = if acc.daytrade_count.is_some_and(|n| n >= 3) {
             c.negative_style()
         } else {
             c.bold_style()
         };
 
         // PDT flag: Yes (red) / No (normal)
-        let pdt_str = if acc.pattern_day_trader { "Yes" } else { "No" };
-        let pdt_style = if acc.pattern_day_trader {
+        let pdt_str = match acc.pattern_day_trader {
+            Some(true) => "Yes",
+            Some(false) => "No",
+            None => "N/A",
+        };
+        let pdt_style = if acc.pattern_day_trader == Some(true) {
             c.negative_style()
         } else {
             c.bold_style()
@@ -340,9 +344,12 @@ fn format_day_pl(pl: f64, pct: f64) -> String {
     format!("{}${:.2} ({}{:.2}%)", sign, pl.abs(), sign, pct.abs())
 }
 
-/// Format a day-trade count as `"X / 3"`.
-pub fn format_daytrade_count(count: u32) -> String {
-    format!("{} / 3", count)
+/// Format a day-trade count as `"X / 3"`, or `"N/A"` when the API omitted it.
+pub fn format_daytrade_count(count: Option<u32>) -> String {
+    match count {
+        Some(n) => format!("{} / 3", n),
+        None => "N/A".into(),
+    }
 }
 
 fn label_t(s: &str, c: &ThemeColors) -> Span<'static> {
@@ -999,22 +1006,27 @@ mod tests {
 
     #[test]
     fn format_daytrade_count_zero() {
-        assert_eq!(format_daytrade_count(0), "0 / 3");
+        assert_eq!(format_daytrade_count(Some(0)), "0 / 3");
     }
 
     #[test]
     fn format_daytrade_count_two() {
-        assert_eq!(format_daytrade_count(2), "2 / 3");
+        assert_eq!(format_daytrade_count(Some(2)), "2 / 3");
     }
 
     #[test]
     fn format_daytrade_count_at_limit() {
-        assert_eq!(format_daytrade_count(3), "3 / 3");
+        assert_eq!(format_daytrade_count(Some(3)), "3 / 3");
     }
 
     #[test]
     fn format_daytrade_count_above_limit() {
-        assert_eq!(format_daytrade_count(5), "5 / 3");
+        assert_eq!(format_daytrade_count(Some(5)), "5 / 3");
+    }
+
+    #[test]
+    fn format_daytrade_count_unknown() {
+        assert_eq!(format_daytrade_count(None), "N/A");
     }
 
     // ── render_summary with new fields ───────────────────────────────────────
@@ -1073,7 +1085,7 @@ mod tests {
     #[test]
     fn render_summary_daytrade_count_normal() {
         let acc = crate::types::AccountInfo {
-            daytrade_count: 1,
+            daytrade_count: Some(1),
             ..Default::default()
         };
         let output = render_summary_to_string(acc);
@@ -1085,9 +1097,23 @@ mod tests {
     }
 
     #[test]
+    fn render_summary_daytrade_count_missing_shows_na() {
+        let acc = crate::types::AccountInfo {
+            daytrade_count: None,
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("N/A"),
+            "should show 'N/A' when daytrade count is absent, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
     fn render_summary_daytrade_count_at_limit() {
         let acc = crate::types::AccountInfo {
-            daytrade_count: 3,
+            daytrade_count: Some(3),
             ..Default::default()
         };
         let output = render_summary_to_string(acc);
@@ -1101,7 +1127,7 @@ mod tests {
     #[test]
     fn render_summary_pdt_flag_no() {
         let acc = crate::types::AccountInfo {
-            pattern_day_trader: false,
+            pattern_day_trader: Some(false),
             ..Default::default()
         };
         let output = render_summary_to_string(acc);
@@ -1115,13 +1141,28 @@ mod tests {
     #[test]
     fn render_summary_pdt_flag_yes() {
         let acc = crate::types::AccountInfo {
-            pattern_day_trader: true,
+            pattern_day_trader: Some(true),
             ..Default::default()
         };
         let output = render_summary_to_string(acc);
         assert!(
             output.contains("Yes"),
             "should show 'Yes' for PDT flag, got:\n{}",
+            output
+        );
+    }
+
+    #[test]
+    fn render_summary_pdt_flag_missing_shows_na() {
+        let acc = crate::types::AccountInfo {
+            daytrade_count: Some(0),
+            pattern_day_trader: None,
+            ..Default::default()
+        };
+        let output = render_summary_to_string(acc);
+        assert!(
+            output.contains("N/A"),
+            "should show 'N/A' when PDT flag is absent, got:\n{}",
             output
         );
     }
