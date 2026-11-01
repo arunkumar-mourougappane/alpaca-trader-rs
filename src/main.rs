@@ -131,7 +131,13 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!(env = config.env_label(), "alpaca-trader starting");
 
-    let client = Arc::new(AlpacaClient::new(config.clone()));
+    let client = Arc::new(
+        AlpacaClient::with_proxy(config.clone(), &prefs.proxy).map_err(|e| {
+            tracing::error!(error = %e, "proxy configuration error");
+            eprintln!("Proxy configuration error: {e}");
+            e
+        })?,
+    );
     let refresh_notify = Arc::new(Notify::new());
 
     // Command channel — sync update() → async command handler

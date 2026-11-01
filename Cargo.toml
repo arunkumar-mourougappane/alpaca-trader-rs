@@ -34,7 +34,7 @@ path = "src/lib.rs"
 [dependencies]
 # Library
 tokio             = { version = "1",    features = ["full"] }
-reqwest           = { version = "0.13", features = ["json", "query"] }
+reqwest           = { version = "0.13", features = ["json", "query", "socks"] }
 tokio-tungstenite = { version = "0.30", features = ["native-tls"] }
 serde             = { version = "1",    features = ["derive"] }
 serde_json        = "1"

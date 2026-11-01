@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::config::{AlpacaConfig, AlpacaEnv};
+use crate::prefs::ProxySection;
 use crate::types::{
     AccountInfo, Asset, BarsResponse, HistoricalBar, HistoricalBarsResponse, MarketClock,
     MinuteBar, Order, OrderRequest, PortfolioHistory, Position, Snapshot, Watchlist,
@@ -21,13 +22,47 @@ pub struct AlpacaClient {
     config: AlpacaConfig,
 }
 
+/// Build the proxy described by the `[proxy]` preferences, if any.
+///
+/// `socks5` wins over `http` when both are set. Returns `Ok(None)` when no proxy
+/// is configured so the caller falls back to `HTTP_PROXY` / `HTTPS_PROXY`.
+/// The URL is deliberately left out of the error: it may embed credentials.
+fn proxy_from_prefs(cfg: &ProxySection) -> Result<Option<reqwest::Proxy>> {
+    let non_empty = |s: &Option<String>| s.clone().filter(|v| !v.trim().is_empty());
+    let Some(url) = non_empty(&cfg.socks5).or_else(|| non_empty(&cfg.http)) else {
+        return Ok(None);
+    };
+    let proxy = reqwest::Proxy::all(url.trim()).context("invalid proxy URL in preferences")?;
+    let no_proxy = non_empty(&cfg.no_proxy).and_then(|list| reqwest::NoProxy::from_string(&list));
+    Ok(Some(proxy.no_proxy(no_proxy)))
+}
+
 impl AlpacaClient {
     /// Create a new client using the given configuration.
+    ///
+    /// Uses reqwest's defaults, so `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`
+    /// are honoured. Use [`AlpacaClient::with_proxy`] to apply saved preferences.
     pub fn new(config: AlpacaConfig) -> Self {
         Self {
             http: reqwest::Client::new(),
             config,
         }
+    }
+
+    /// Create a client that routes REST traffic through the proxy in `proxy`.
+    ///
+    /// Priority: `[proxy]` preferences, then the `HTTP_PROXY` / `HTTPS_PROXY`
+    /// environment variables, then a direct connection. Fails if the configured
+    /// proxy URL is invalid rather than silently connecting directly.
+    pub fn with_proxy(config: AlpacaConfig, proxy: &ProxySection) -> Result<Self> {
+        let mut builder = reqwest::Client::builder();
+        if let Some(p) = proxy_from_prefs(proxy)? {
+            builder = builder.proxy(p);
+        }
+        Ok(Self {
+            http: builder.build().context("failed to build HTTP client")?,
+            config,
+        })
     }
 
     /// Returns `true` when this client is configured for the paper trading environment.
@@ -1137,5 +1172,180 @@ mod tests {
 
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].close, 400.0);
+    }
+
+    // ── Proxy support ─────────────────────────────────────────────────────────
+
+    fn account_json() -> serde_json::Value {
+        json!({
+            "status": "ACTIVE", "equity": "100000", "buying_power": "200000",
+            "cash": "50000", "long_market_value": "50000", "currency": "USD"
+        })
+    }
+
+    async fn mock_account(server: &MockServer, api_path: &str) {
+        Mock::given(method("GET"))
+            .and(path(api_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(account_json()))
+            .mount(server)
+            .await;
+    }
+
+    fn http_proxy(url: String) -> ProxySection {
+        ProxySection {
+            http: Some(url),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn proxy_from_prefs_none_when_unset_or_blank() {
+        assert!(proxy_from_prefs(&ProxySection::default())
+            .unwrap()
+            .is_none());
+        let blank = ProxySection {
+            http: Some("  ".into()),
+            socks5: Some(String::new()),
+            no_proxy: Some("localhost".into()),
+        };
+        assert!(proxy_from_prefs(&blank).unwrap().is_none());
+    }
+
+    #[test]
+    fn proxy_from_prefs_accepts_http_and_socks5() {
+        assert!(
+            proxy_from_prefs(&http_proxy("http://proxy.corp.com:8080".into()))
+                .unwrap()
+                .is_some()
+        );
+        let socks = ProxySection {
+            socks5: Some("socks5://proxy.corp.com:1080".into()),
+            no_proxy: Some("localhost,127.0.0.1".into()),
+            ..Default::default()
+        };
+        assert!(proxy_from_prefs(&socks).unwrap().is_some());
+    }
+
+    #[test]
+    fn proxy_from_prefs_rejects_invalid_url_without_leaking_it() {
+        let bad = "://user:hunter2@";
+        let err = proxy_from_prefs(&http_proxy(bad.into())).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("invalid proxy URL"), "{msg}");
+        assert!(!msg.contains("hunter2"), "credentials leaked: {msg}");
+    }
+
+    #[test]
+    fn with_proxy_errors_on_invalid_url() {
+        let cfg = paper_config("http://alpaca.test/v2".into());
+        assert!(AlpacaClient::with_proxy(cfg, &http_proxy("://".into())).is_err());
+    }
+
+    #[tokio::test]
+    async fn with_proxy_default_prefs_connect_directly() {
+        let target = MockServer::start().await;
+        mock_account(&target, "/account").await;
+        let client =
+            AlpacaClient::with_proxy(paper_config(target.uri()), &ProxySection::default()).unwrap();
+        assert_eq!(client.get_account().await.unwrap().status, "ACTIVE");
+    }
+
+    #[tokio::test]
+    async fn with_proxy_routes_rest_through_http_proxy() {
+        let proxy = MockServer::start().await;
+        mock_account(&proxy, "/v2/account").await;
+        // The target host does not exist: the call can only succeed via the proxy.
+        let cfg = paper_config("http://alpaca.invalid/v2".into());
+        let client = AlpacaClient::with_proxy(cfg, &http_proxy(proxy.uri())).unwrap();
+        assert_eq!(client.get_account().await.unwrap().status, "ACTIVE");
+        assert_eq!(proxy.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn with_proxy_no_proxy_list_bypasses_the_proxy() {
+        let proxy = MockServer::start().await;
+        mock_account(&proxy, "/account").await;
+        let target = MockServer::start().await;
+        mock_account(&target, "/account").await;
+
+        // Without no_proxy the request goes via the proxy...
+        let via_proxy =
+            AlpacaClient::with_proxy(paper_config(target.uri()), &http_proxy(proxy.uri())).unwrap();
+        via_proxy.get_account().await.unwrap();
+        assert_eq!(proxy.received_requests().await.unwrap().len(), 1);
+        assert_eq!(target.received_requests().await.unwrap().len(), 0);
+
+        // ...and with the host listed it goes straight to the target.
+        let prefs = ProxySection {
+            http: Some(proxy.uri()),
+            no_proxy: Some("127.0.0.1".into()),
+            ..Default::default()
+        };
+        let direct = AlpacaClient::with_proxy(paper_config(target.uri()), &prefs).unwrap();
+        direct.get_account().await.unwrap();
+        assert_eq!(proxy.received_requests().await.unwrap().len(), 1);
+        assert_eq!(target.received_requests().await.unwrap().len(), 1);
+    }
+
+    /// Minimal SOCKS5 server: no-auth handshake, records the requested target
+    /// port, then answers the tunnelled HTTP request with `body` as JSON.
+    async fn spawn_socks5_stub(
+        body: String,
+    ) -> (std::net::SocketAddr, tokio::task::JoinHandle<u16>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut hdr = [0u8; 2];
+            s.read_exact(&mut hdr).await.unwrap();
+            let mut methods = vec![0u8; hdr[1] as usize];
+            s.read_exact(&mut methods).await.unwrap();
+            s.write_all(&[5, 0]).await.unwrap();
+
+            let mut req = [0u8; 4];
+            s.read_exact(&mut req).await.unwrap();
+            let host_len = match req[3] {
+                1 => 4,
+                4 => 16,
+                _ => {
+                    let mut n = [0u8; 1];
+                    s.read_exact(&mut n).await.unwrap();
+                    n[0] as usize
+                }
+            };
+            let mut host = vec![0u8; host_len];
+            s.read_exact(&mut host).await.unwrap();
+            let mut port = [0u8; 2];
+            s.read_exact(&mut port).await.unwrap();
+            s.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await.unwrap();
+
+            let mut buf = vec![0u8; 4096];
+            let _ = s.read(&mut buf).await.unwrap();
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                 content-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            s.write_all(resp.as_bytes()).await.unwrap();
+            let _ = s.shutdown().await;
+            u16::from_be_bytes(port)
+        });
+        (addr, handle)
+    }
+
+    #[tokio::test]
+    async fn with_proxy_routes_rest_through_socks5_proxy() {
+        let (addr, requested_port) = spawn_socks5_stub(account_json().to_string()).await;
+        let prefs = ProxySection {
+            socks5: Some(format!("socks5://{addr}")),
+            ..Default::default()
+        };
+        // Nothing listens on 4242: only the SOCKS5 tunnel can answer.
+        let cfg = paper_config("http://127.0.0.1:4242".into());
+        let client = AlpacaClient::with_proxy(cfg, &prefs).unwrap();
+        assert_eq!(client.get_account().await.unwrap().status, "ACTIVE");
+        assert_eq!(requested_port.await.unwrap(), 4242);
     }
 }
