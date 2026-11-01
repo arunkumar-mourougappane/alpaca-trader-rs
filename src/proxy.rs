@@ -127,6 +127,20 @@ impl ProxyRules {
     }
 }
 
+/// Preferences that send loopback traffic direct without reading the
+/// environment, so stream tests do not depend on a developer's `HTTP_PROXY`.
+#[cfg(test)]
+pub(crate) fn hermetic_prefs() -> crate::prefs::AppPrefs {
+    crate::prefs::AppPrefs {
+        proxy: ProxySection {
+            http: Some("http://127.0.0.1:1".into()),
+            no_proxy: Some("127.0.0.1".into()),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
 enum Route {
     Direct,
     Proxy { addr: String, kind: Kind },
@@ -379,12 +393,13 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
-            while let Ok((tcp, _)) = listener.accept().await {
+            // Two connections is the most any test makes.
+            for _ in 0..2 {
+                let (tcp, _) = listener.accept().await.unwrap();
                 tokio::spawn(async move {
-                    if let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await {
-                        let _ = ws.send(Message::Text("hello".into())).await;
-                        let _ = ws.close(None).await;
-                    }
+                    let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                    let _ = ws.send(Message::Text("hello".into())).await;
+                    let _ = ws.close(None).await;
                 });
             }
         });
@@ -410,9 +425,7 @@ mod tests {
             let mut buf = [0u8; 256];
             while !head.windows(4).any(|w| w == b"\r\n\r\n") {
                 let n = s.read(&mut buf).await.unwrap();
-                if n == 0 {
-                    break;
-                }
+                assert!(n > 0, "client closed before finishing CONNECT");
                 head.extend_from_slice(&buf[..n]);
             }
             s.write_all(format!("{status_line}\r\n\r\n").as_bytes())
@@ -556,38 +569,87 @@ mod tests {
         assert_eq!(&*msg.into_text().unwrap(), "hello");
     }
 
+    fn err_text<T>(result: Result<T>) -> String {
+        result
+            .err()
+            .map(|e| format!("{e:#}"))
+            .expect("expected an error")
+    }
+
     async fn connect_err(url: &str, rules: &ProxyRules) -> String {
-        match connect_ws(url, rules).await {
-            Err(e) => format!("{e:#}"),
-            Ok(_) => panic!("expected {url} to fail"),
-        }
+        err_text(connect_ws(url, rules).await)
     }
 
     fn route_err(rules: &ProxyRules, wss: bool, host: &str) -> String {
-        match rules.route(wss, host) {
-            Err(e) => format!("{e:#}"),
-            Ok(_) => panic!("expected route to fail"),
+        err_text(rules.route(wss, host))
+    }
+
+    impl Route {
+        fn into_proxy(self) -> Option<(String, Kind)> {
+            match self {
+                Route::Proxy { addr, kind } => Some((addr, kind)),
+                Route::Direct => None,
+            }
         }
+    }
+
+    impl Kind {
+        /// `(credentials, remote_dns)` for a SOCKS5 kind.
+        fn into_socks5(self) -> Option<(Option<(String, String)>, bool)> {
+            match self {
+                Kind::Socks5 { auth, remote_dns } => Some((auth, remote_dns)),
+                Kind::HttpConnect { .. } => None,
+            }
+        }
+    }
+
+    fn proxy_route(rules: &ProxyRules, host: &str) -> (String, Kind) {
+        rules
+            .route(true, host)
+            .unwrap()
+            .into_proxy()
+            .expect("expected a proxy route")
+    }
+
+    /// Environment with every proxy variable cleared except those given.
+    fn proxy_env(
+        https: Option<&str>,
+        no_proxy: Option<&str>,
+    ) -> Vec<(&'static str, Option<String>)> {
+        let mut vars: Vec<(&'static str, Option<String>)> = [
+            "ALL_PROXY",
+            "all_proxy",
+            "https_proxy",
+            "no_proxy",
+            "REQUEST_METHOD",
+        ]
+        .iter()
+        .map(|k| (*k, None))
+        .collect();
+        vars.push(("HTTPS_PROXY", https.map(Into::into)));
+        vars.push(("NO_PROXY", no_proxy.map(Into::into)));
+        vars
     }
 
     // ── Routing ───────────────────────────────────────────────────────────────
 
     #[test]
     fn route_is_direct_without_a_proxy() {
-        let r = ProxyRules::direct().route(true, "stream.data.alpaca.markets");
-        assert!(matches!(r, Ok(Route::Direct)));
+        let route = ProxyRules::direct()
+            .route(true, "stream.data.alpaca.markets")
+            .unwrap();
+        assert!(route.into_proxy().is_none());
     }
 
     #[test]
     fn route_uses_http_proxy_with_default_port() {
         let rules = ProxyRules::from_prefs_and_env(&prefs(Some("http://proxy.corp"), None, None));
-        match rules.route(true, "stream.data.alpaca.markets") {
-            Ok(Route::Proxy { addr, kind }) => {
-                assert_eq!(addr, "proxy.corp:80");
-                assert!(matches!(kind, Kind::HttpConnect { auth: None }));
-            }
-            _ => panic!("expected an HTTP proxy route"),
-        }
+        let (addr, kind) = proxy_route(&rules, "stream.data.alpaca.markets");
+        assert_eq!(addr, "proxy.corp:80");
+        assert!(matches!(kind, Kind::HttpConnect { auth: None }));
+        // An HTTP CONNECT proxy is not a SOCKS5 one.
+        let (_, kind) = proxy_route(&rules, "stream.data.alpaca.markets");
+        assert!(kind.into_socks5().is_none());
     }
 
     #[test]
@@ -597,27 +659,17 @@ mod tests {
             Some("socks5h://u:p@sox.corp"),
             None,
         ));
-        match rules.route(true, "api.alpaca.markets") {
-            Ok(Route::Proxy { addr, kind }) => {
-                assert_eq!(addr, "sox.corp:1080");
-                match kind {
-                    Kind::Socks5 { auth, remote_dns } => {
-                        assert!(remote_dns);
-                        assert_eq!(auth, Some(("u".into(), "p".into())));
-                    }
-                    _ => panic!("expected SOCKS5"),
-                }
-            }
-            _ => panic!("expected a SOCKS5 route"),
-        }
+        let (addr, kind) = proxy_route(&rules, "api.alpaca.markets");
+        assert_eq!(addr, "sox.corp:1080");
+        let (auth, remote_dns) = kind.into_socks5().expect("SOCKS5 kind");
+        assert!(remote_dns);
+        assert_eq!(auth, Some(("u".into(), "p".into())));
+
         let local = ProxyRules::from_prefs_and_env(&prefs(None, Some("socks5://sox.corp"), None));
-        match local.route(true, "api.alpaca.markets") {
-            Ok(Route::Proxy {
-                kind: Kind::Socks5 { remote_dns, .. },
-                ..
-            }) => assert!(!remote_dns),
-            _ => panic!("expected a SOCKS5 route"),
-        }
+        let (_, kind) = proxy_route(&local, "api.alpaca.markets");
+        let (auth, remote_dns) = kind.into_socks5().expect("SOCKS5 kind");
+        assert!(!remote_dns);
+        assert!(auth.is_none());
     }
 
     #[test]
@@ -627,64 +679,56 @@ mod tests {
             None,
             Some("localhost,.alpaca.markets"),
         ));
-        assert!(matches!(
-            rules.route(true, "stream.data.alpaca.markets"),
-            Ok(Route::Direct)
-        ));
-        assert!(matches!(
-            rules.route(true, "example.com"),
-            Ok(Route::Proxy { .. })
-        ));
+        let bypass = rules.route(true, "stream.data.alpaca.markets").unwrap();
+        assert!(bypass.into_proxy().is_none());
+        let (addr, _) = proxy_route(&rules, "example.com");
+        assert_eq!(addr, "proxy.corp:3128");
     }
 
     #[test]
     fn route_rejects_https_unsupported_and_invalid_proxies() {
-        let https = ProxyRules::from_prefs_and_env(&prefs(Some("https://p.corp:443"), None, None));
-        assert!(route_err(&https, true, "a.example").contains("not supported"));
-
-        let ftp = ProxyRules::from_prefs_and_env(&prefs(Some("ftp://p.corp"), None, None));
-        assert!(route_err(&ftp, true, "a.example").contains("unsupported proxy scheme"));
-
-        let junk = ProxyRules::from_prefs_and_env(&prefs(Some("not a url"), None, None));
-        assert!(route_err(&junk, true, "a.example").contains("invalid proxy URL"));
-
-        let no_scheme = ProxyRules::from_prefs_and_env(&prefs(Some("proxy.corp:8080"), None, None));
-        assert!(route_err(&no_scheme, true, "a.example").contains("invalid proxy URL"));
+        let route_err_for = |url: &str| {
+            let rules = ProxyRules::from_prefs_and_env(&prefs(Some(url), None, None));
+            route_err(&rules, true, "a.example")
+        };
+        assert!(route_err_for("https://p.corp:443").contains("not supported"));
+        // Never falls back to a direct connection.
+        assert!(route_err_for("ftp://p.corp").contains("unsupported proxy scheme"));
+        assert!(route_err_for("socks4://p.corp").contains("unsupported proxy scheme"));
+        assert!(route_err_for("not a url").contains("invalid proxy URL"));
+        assert!(route_err_for("proxy.corp:8080").contains("invalid proxy URL"));
+        assert!(route_err_for("http://").contains("invalid proxy URL"));
     }
 
     #[test]
     fn route_reads_environment_when_prefs_are_blank() {
-        let unset = [
-            "ALL_PROXY",
-            "all_proxy",
-            "https_proxy",
-            "NO_PROXY",
-            "no_proxy",
-            "REQUEST_METHOD",
-        ];
-        let mut vars: Vec<(&str, Option<&str>)> = unset.iter().map(|k| (*k, None)).collect();
-        vars.push(("HTTPS_PROXY", Some("http://envproxy.corp:3128")));
-        temp_env::with_vars(vars.clone(), || {
+        temp_env::with_vars(proxy_env(Some("http://envproxy.corp:3128"), None), || {
             let rules = ProxyRules::from_prefs_and_env(&ProxySection::default());
-            match rules.route(true, "stream.data.alpaca.markets") {
-                Ok(Route::Proxy { addr, .. }) => assert_eq!(addr, "envproxy.corp:3128"),
-                _ => panic!("expected the environment proxy"),
-            }
+            let (addr, _) = proxy_route(&rules, "stream.data.alpaca.markets");
+            assert_eq!(addr, "envproxy.corp:3128");
             // Saved preferences still win over the environment.
             let over =
                 ProxyRules::from_prefs_and_env(&prefs(Some("http://cfg.corp:1"), None, None));
-            match over.route(true, "stream.data.alpaca.markets") {
-                Ok(Route::Proxy { addr, .. }) => assert_eq!(addr, "cfg.corp:1"),
-                _ => panic!("expected the configured proxy"),
-            }
+            let (addr, _) = proxy_route(&over, "stream.data.alpaca.markets");
+            assert_eq!(addr, "cfg.corp:1");
         });
-        vars.push(("NO_PROXY", Some(".alpaca.markets")));
-        temp_env::with_vars(vars, || {
+        temp_env::with_vars(
+            proxy_env(Some("http://envproxy.corp:3128"), Some(".alpaca.markets")),
+            || {
+                let rules = ProxyRules::from_prefs_and_env(&ProxySection::default());
+                let route = rules.route(true, "stream.data.alpaca.markets").unwrap();
+                assert!(route.into_proxy().is_none());
+            },
+        );
+    }
+
+    #[test]
+    fn route_rejects_an_environment_proxy_it_cannot_speak() {
+        // hyper-util understands SOCKS4, which we do not implement.
+        temp_env::with_vars(proxy_env(Some("socks4://envsocks.corp:1080"), None), || {
             let rules = ProxyRules::from_prefs_and_env(&ProxySection::default());
-            assert!(matches!(
-                rules.route(true, "stream.data.alpaca.markets"),
-                Ok(Route::Direct)
-            ));
+            assert!(route_err(&rules, true, "stream.data.alpaca.markets")
+                .contains("unsupported proxy scheme"));
         });
     }
 
@@ -740,23 +784,19 @@ mod tests {
     async fn stalled_proxy_times_out() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let _held = listener.accept().await;
-            tokio::time::sleep(Duration::from_secs(5)).await;
+        let stub = tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let _ = s.read(&mut [0u8; 512]).await; // take the CONNECT, then stall
+            let _ = s.read(&mut [0u8; 1]).await; // until the client gives up
         });
         let rules =
             ProxyRules::from_prefs_and_env(&prefs(Some(&format!("http://{addr}")), None, None));
-        let err = match connect_ws_with_timeout(
-            "ws://alpaca.test:80/",
-            &rules,
-            Duration::from_millis(100),
-        )
-        .await
-        {
-            Err(e) => format!("{e:#}"),
-            Ok(_) => panic!("expected a timeout"),
-        };
+        let err = err_text(
+            connect_ws_with_timeout("ws://alpaca.test:80/", &rules, Duration::from_millis(100))
+                .await,
+        );
         assert!(err.contains("timed out"), "{err}");
+        stub.await.unwrap(); // the stub exits once the client gives up
     }
 
     // ── HTTP CONNECT ──────────────────────────────────────────────────────────
@@ -835,7 +875,7 @@ mod tests {
         tokio::spawn(async move {
             let (mut s, _) = listener.accept().await.unwrap();
             let _ = s.write_all(&vec![b'a'; MAX_CONNECT_HEAD + 100]).await;
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            let _ = s.read(&mut [0u8; 1]).await; // until the client gives up
         });
         let rules =
             ProxyRules::from_prefs_and_env(&prefs(Some(&format!("http://{addr}")), None, None));
